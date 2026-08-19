@@ -13,6 +13,10 @@ dist/
 build/
 .vite/
 coverage/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+.pnpm-store/
 
 # Environment
 .env
