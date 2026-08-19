@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node / React
+node_modules/
+dist/
+build/
+.vite/
+coverage/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# SQLite / local data
+*.sqlite
+*.sqlite3
+*.db
+
+# Logs and OS files
+*.log
+.DS_Store
+Thumbs.db
