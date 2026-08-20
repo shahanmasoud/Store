@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     app_name: str = "اتوماسیون فروشگاه حبوبات"
     api_v1_prefix: str = "/api/v1"
     database_url: str = Field(
-        default_factory=lambda: f"sqlite:///{Path(__file__).resolve().parents[2] / 'store.db'}"
+        default_factory=lambda: f"sqlite:///{(Path(__file__).resolve().parents[2] / 'store.db').as_posix()}"
     )
     secret_key: str = "change-this-secret-before-deployment"
     access_token_expire_minutes: int = 60 * 8

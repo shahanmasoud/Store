@@ -12,6 +12,81 @@ export type LoginResponse = {
   user: User;
 };
 
+export type ProductVariant = {
+  id: number;
+  product_id: number;
+  unit_id: number;
+  name: string;
+  sku?: string | null;
+  retail_price_rial: number;
+  wholesale_price_rial?: number | null;
+  min_wholesale_quantity?: string | number | null;
+  is_active: boolean;
+};
+
+export type PaymentMethod = "cash" | "card" | "transfer" | "credit" | "cheque" | "voucher";
+export type PaymentStatus = "received" | "pending";
+
+export type SaleInvoiceItemCreate = {
+  variant_id: number;
+  quantity: number;
+  unit_price_rial: number;
+  discount_amount_rial?: number;
+  estimated_cost_rial?: number;
+};
+
+export type PaymentCreate = {
+  method: PaymentMethod;
+  amount_rial: number;
+  status?: PaymentStatus;
+  reference_number?: string;
+  jalali_date?: string;
+  local_time?: string;
+  due_jalali_date?: string;
+  note?: string;
+};
+
+export type SaleInvoiceCreate = {
+  customer_name?: string;
+  jalali_date: string;
+  local_time: string;
+  discount_amount_rial: number;
+  note?: string;
+  items: SaleInvoiceItemCreate[];
+  payments: PaymentCreate[];
+};
+
+export type SaleInvoice = {
+  id: number;
+  invoice_number?: string | null;
+  customer_name?: string | null;
+  subtotal_rial: number;
+  discount_amount_rial: number;
+  total_rial: number;
+  paid_total_rial: number;
+  due_total_rial: number;
+  status: "active" | "canceled";
+  is_active: boolean;
+  jalali_date: string;
+  local_time: string;
+  timezone: string;
+};
+
+export type DailyJournalPayment = {
+  method: PaymentMethod;
+  received_rial: number;
+  pending_rial: number;
+};
+
+export type DailyJournal = {
+  jalali_date: string;
+  invoice_count: number;
+  sales_total_rial: number;
+  received_total_rial: number;
+  pending_total_rial: number;
+  payments: DailyJournalPayment[];
+};
+
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -38,6 +113,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     try {
       const body = await response.json();
       message = body.detail ?? body.message ?? message;
+      if (Array.isArray(body.detail)) {
+        message = body.detail.map((item: { msg?: string }) => item.msg).filter(Boolean).join("، ");
+      }
     } catch {
       message =
         response.status === 401 ? "نام کاربری یا رمز عبور درست نیست." : message;
@@ -57,5 +135,17 @@ export const api = {
   },
   me() {
     return request<User>("/auth/me");
+  },
+  productVariants() {
+    return request<ProductVariant[]>("/product-variants");
+  },
+  createSale(payload: SaleInvoiceCreate) {
+    return request<SaleInvoice>("/sales", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  dailyJournal(jalaliDate: string) {
+    return request<DailyJournal>(`/daily-journal?jalali_date=${encodeURIComponent(jalaliDate)}`);
   },
 };

@@ -27,7 +27,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -378,6 +379,307 @@ button {
   border-radius: 8px;
 }
 
+.module-card-active {
+  border-color: rgba(15, 118, 110, 0.42);
+  box-shadow: 0 18px 36px rgba(15, 118, 110, 0.12);
+}
+
+.module-action,
+.soft-button,
+.icon-button,
+.link-button {
+  min-height: 44px;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 900;
+}
+
+.module-action {
+  grid-column: 2;
+  align-self: end;
+  justify-self: start;
+  padding: 0 14px;
+  color: #ffffff;
+  background: var(--primary);
+  border: 0;
+}
+
+.sales-workspace {
+  max-width: 1180px;
+  margin: 28px auto 0;
+}
+
+.sales-header,
+.mini-section-header,
+.journal-form {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.sales-header {
+  margin-bottom: 18px;
+}
+
+.sales-header h2,
+.journal-form h2,
+.mini-section-header h3 {
+  margin: 0;
+  color: #142521;
+}
+
+.sales-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.8fr);
+  gap: 16px;
+}
+
+.sale-panel,
+.journal-panel {
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 16px 34px rgba(20, 43, 38, 0.07);
+}
+
+.sale-panel-main {
+  min-width: 0;
+}
+
+.sale-meta-grid,
+.add-item-form {
+  display: grid;
+  gap: 14px;
+}
+
+.sale-meta-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.sale-meta-grid label,
+.add-item-form label {
+  display: grid;
+  gap: 8px;
+  color: #2d3f3b;
+  font-weight: 800;
+}
+
+.sale-meta-grid input,
+.sale-meta-grid select,
+.add-item-form input,
+.add-item-form select,
+.payment-row input,
+.payment-row select,
+.journal-form input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px;
+  color: #152a25;
+  background: #fbfdfc;
+  border: 1px solid #cddbd5;
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.sale-meta-grid input:focus,
+.sale-meta-grid select:focus,
+.add-item-form input:focus,
+.add-item-form select:focus,
+.payment-row input:focus,
+.payment-row select:focus,
+.journal-form input:focus {
+  background: #ffffff;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.14);
+}
+
+.invoice-summary {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.invoice-summary div,
+.journal-summary div {
+  min-height: 84px;
+  padding: 16px;
+  background: #f8fbfa;
+}
+
+.invoice-summary span,
+.journal-summary span,
+.journal-breakdown span,
+.mini-section-header span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.invoice-summary strong,
+.journal-summary strong {
+  display: block;
+  margin-top: 8px;
+  color: #142b26;
+  font-size: 1.06rem;
+}
+
+.payment-list {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 10px;
+}
+
+.payment-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr 46px;
+  gap: 8px;
+  align-items: center;
+}
+
+.soft-button {
+  padding: 0 14px;
+  color: #0c5f55;
+  background: #e4f7f0;
+  border: 1px solid #b9e6d8;
+}
+
+.icon-button {
+  width: 46px;
+  padding: 0;
+  color: var(--danger);
+  background: #fff3f0;
+  border: 1px solid #ffd0c8;
+  font-size: 1.4rem;
+}
+
+.submit-sale-button {
+  grid-column: 1 / -1;
+}
+
+.success-message {
+  grid-column: 1 / -1;
+  margin: 2px 0;
+  padding: 10px 12px;
+  color: #05603a;
+  background: #ecfdf3;
+  border: 1px solid #abefc6;
+  border-radius: 8px;
+  line-height: 1.7;
+}
+
+.state-message {
+  margin: 12px 0;
+  padding: 12px;
+  color: var(--text-muted);
+  background: #f5f8f7;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  line-height: 1.7;
+}
+
+.compact-fields {
+  display: grid;
+  grid-template-columns: 0.75fr 1fr;
+  gap: 10px;
+}
+
+.invoice-items {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.invoice-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  background: #f8fbfa;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.invoice-item strong,
+.invoice-item span {
+  display: block;
+}
+
+.invoice-item span {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.link-button {
+  min-height: 34px;
+  margin-top: 6px;
+  padding: 0 10px;
+  color: var(--danger);
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.journal-panel {
+  margin-top: 16px;
+}
+
+.journal-form {
+  flex-wrap: wrap;
+}
+
+.journal-form input {
+  max-width: 180px;
+}
+
+.journal-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 14px;
+  overflow: hidden;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.journal-breakdown {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.journal-breakdown div {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  background: #f8fbfa;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.journal-breakdown strong {
+  color: #142521;
+}
+
+.text-danger {
+  color: var(--danger) !important;
+}
+
+.text-ok {
+  color: #057a55 !important;
+}
+
 .accent-teal {
   --card-accent: #0f766e;
   --card-soft: #e0f5f0;
@@ -472,6 +774,20 @@ button {
   .module-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .sales-grid,
+  .sale-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) 46px;
+  }
+
+  .journal-summary,
+  .journal-breakdown {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 680px) {
@@ -497,11 +813,33 @@ button {
   }
 
   .overview-band,
-  .module-grid {
+  .module-grid,
+  .invoice-summary,
+  .journal-summary,
+  .journal-breakdown,
+  .compact-fields {
     grid-template-columns: 1fr;
   }
 
   .module-card {
     min-height: 144px;
+  }
+
+  .sales-header,
+  .mini-section-header,
+  .journal-form,
+  .invoice-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .payment-row {
+    grid-template-columns: 1fr;
+  }
+
+  .icon-button,
+  .journal-form input {
+    width: 100%;
+    max-width: none;
   }
 }

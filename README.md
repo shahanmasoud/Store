@@ -41,6 +41,14 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
+Backend dev install/test from repo root:
+
+```powershell
+.\backend\install-dev.ps1
+```
+
+The script ignores machine-level pip mirror settings and installs from the official PyPI index.
+
 Frontend:
 
 ```powershell
