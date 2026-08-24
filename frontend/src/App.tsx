@@ -119,8 +119,46 @@ const moduleCards = [
   },
 ];
 
+const latinDigits = "0123456789";
+const persianDigits = "۰۱۲۳۴۵۶۷۸۹";
+const arabicDigits = "٠١٢٣٤٥٦٧٨٩";
+const jalaliMonths = ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"];
+
+function toEnglishDigits(value: string) {
+  return value.replace(/[۰-۹٠-٩]/g, (digit) => {
+    const persianIndex = persianDigits.indexOf(digit);
+    if (persianIndex >= 0) return latinDigits[persianIndex];
+    const arabicIndex = arabicDigits.indexOf(digit);
+    return arabicIndex >= 0 ? latinDigits[arabicIndex] : digit;
+  });
+}
+
+function toPersianDigits(value: string | number) {
+  return String(value).replace(/\d/g, (digit) => persianDigits[Number(digit)]);
+}
+
+function parseLocalizedNumber(value: FormDataEntryValue | string | null) {
+  const normalized = toEnglishDigits(String(value ?? ""))
+    .replace(/[,\s٬،]/g, "")
+    .replace("/", ".");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function rialToToman(value: number) {
+  return Math.round(Math.max(0, value) / 10);
+}
+
+function tomanToRial(value: number) {
+  return Math.round(Math.max(0, value) * 10);
+}
+
+function moneyInputValue(valueRial: number) {
+  return valueRial > 0 ? toPersianDigits(rialToToman(valueRial).toLocaleString("fa-IR")) : "";
+}
+
 function formatRial(value: number) {
-  return `${Math.max(0, value).toLocaleString("fa-IR")} ریال`;
+  return `${rialToToman(value).toLocaleString("fa-IR")} تومان`;
 }
 
 function formatDecimal(value: number | string) {
@@ -129,13 +167,25 @@ function formatDecimal(value: number | string) {
 }
 
 function normalizeMoney(value: FormDataEntryValue | string | null) {
-  const parsed = Number(String(value ?? "0").replace(/,/g, ""));
-  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 0;
+  return tomanToRial(parseLocalizedNumber(value));
 }
 
 function normalizeDecimal(value: FormDataEntryValue | null) {
-  const parsed = Number(String(value ?? "0").replace(",", "."));
+  const parsed = Number(toEnglishDigits(String(value ?? "0")).replace(",", "."));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function splitJalaliDate(value: string) {
+  const [year = "1405", month = "06", day = "02"] = toEnglishDigits(value).split("/");
+  return {
+    year: Number(year) || 1405,
+    month: Math.min(12, Math.max(1, Number(month) || 6)),
+    day: Math.min(31, Math.max(1, Number(day) || 2)),
+  };
+}
+
+function buildJalaliDate(year: number, month: number, day: number) {
+  return `${year}/${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}`;
 }
 
 function currentLocalTime() {
@@ -154,6 +204,75 @@ function makeDraftPayment(method: PaymentMethod, amountRial = 0): PaymentDraft {
     dueJalaliDate: "",
     note: "",
   };
+}
+
+function JalaliDateField({
+  label,
+  value,
+  onChange,
+  required = false,
+}: {
+  label?: string;
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = splitJalaliDate(value);
+  const days = Array.from({ length: selected.month <= 6 ? 31 : 30 }, (_, index) => index + 1);
+  const years = Array.from({ length: 5 }, (_, index) => 1403 + index);
+
+  function updateDate(patch: Partial<{ year: number; month: number; day: number }>) {
+    const next = { ...selected, ...patch };
+    const maxDay = next.month <= 6 ? 31 : 30;
+    onChange(buildJalaliDate(next.year, next.month, Math.min(next.day, maxDay)));
+  }
+
+  return (
+    <label className="date-field">
+      {label}
+      <button type="button" className="date-trigger" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+        <span>{toPersianDigits(value)}</span>
+        <small>انتخاب تاریخ</small>
+      </button>
+      {required ? <input className="sr-only" value={value} onChange={(event) => onChange(event.target.value)} required tabIndex={-1} /> : null}
+      {open ? (
+        <div className="date-popover" role="dialog" aria-label="انتخاب تاریخ شمسی">
+          <div className="date-controls">
+            <select value={selected.year} onChange={(event) => updateDate({ year: Number(event.target.value) })}>
+              {years.map((year) => (
+                <option value={year} key={year}>
+                  {toPersianDigits(year)}
+                </option>
+              ))}
+            </select>
+            <select value={selected.month} onChange={(event) => updateDate({ month: Number(event.target.value) })}>
+              {jalaliMonths.map((month, index) => (
+                <option value={index + 1} key={month}>
+                  {month}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="date-days">
+            {days.map((day) => (
+              <button
+                type="button"
+                className={day === selected.day ? "active" : ""}
+                key={day}
+                onClick={() => {
+                  updateDate({ day });
+                  setOpen(false);
+                }}
+              >
+                {toPersianDigits(day)}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </label>
+  );
 }
 
 function App() {
@@ -307,6 +426,40 @@ function DashboardView({
 }) {
   return (
     <>
+      <section className="command-hero" aria-label="مرکز عملیات فروشگاه">
+        <div className="command-copy">
+          <p className="eyebrow">مرکز عملیات حبوبات</p>
+          <h2>فروش، خرید و موجودی را از یک میز کار زنده کنترل کن.</h2>
+          <p>ورودی‌ها فارسی و تومانی هستند، تاریخ‌ها با تقویم شمسی انتخاب می‌شوند و هر فاکتور مستقیم به انبار و دفتر روزانه وصل می‌شود.</p>
+          <div className="hero-actions">
+            <button type="button" className="primary-button" onClick={onOpenSales}>
+              ثبت فروش
+            </button>
+            <button type="button" className="ghost-button" onClick={onOpenPurchase}>
+              ثبت خرید
+            </button>
+          </div>
+        </div>
+        <div className="grain-visual" aria-hidden="true">
+          <div className="grain-bowl">
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="grain-ticket">
+            <strong>{formatRial(24500000)}</strong>
+            <span>گردش نمونه امروز</span>
+          </div>
+          <div className="grain-stack">
+            <i />
+            <i />
+            <i />
+          </div>
+        </div>
+      </section>
+
       <section className="overview-band" aria-label="وضعیت امروز">
         <div>
           <span>امروز</span>
@@ -504,25 +657,22 @@ function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenI
               نام تأمین‌کننده
               <input value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder="مثلا عمده‌فروش بازار" required />
             </label>
-            <label>
-              تاریخ شمسی
-              <input value={purchaseDate} onChange={(event) => setPurchaseDate(event.target.value)} placeholder="1405/06/02" required />
-            </label>
+            <JalaliDateField label="تاریخ شمسی" value={purchaseDate} onChange={setPurchaseDate} required />
             <label>
               ساعت
               <input value={purchaseTime} onChange={(event) => setPurchaseTime(event.target.value)} placeholder="14:30" required />
             </label>
             <label>
               پرداخت‌شده
-              <input inputMode="numeric" value={paidAmount || ""} onChange={(event) => setPaidAmount(normalizeMoney(event.target.value))} placeholder="0" />
+              <input inputMode="numeric" value={moneyInputValue(paidAmount)} onChange={(event) => setPaidAmount(normalizeMoney(event.target.value))} placeholder="۰ تومان" />
             </label>
             <label>
               تخفیف فاکتور
-              <input inputMode="numeric" value={invoiceDiscount || ""} onChange={(event) => setInvoiceDiscount(normalizeMoney(event.target.value))} placeholder="0" />
+              <input inputMode="numeric" value={moneyInputValue(invoiceDiscount)} onChange={(event) => setInvoiceDiscount(normalizeMoney(event.target.value))} placeholder="۰ تومان" />
             </label>
             <label>
               هزینه اضافه فاکتور
-              <input inputMode="numeric" value={extraCost || ""} onChange={(event) => setExtraCost(normalizeMoney(event.target.value))} placeholder="0" />
+              <input inputMode="numeric" value={moneyInputValue(extraCost)} onChange={(event) => setExtraCost(normalizeMoney(event.target.value))} placeholder="۰ تومان" />
             </label>
             <label className="wide-field">
               توضیح
@@ -586,7 +736,7 @@ function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenI
                 </label>
                 <label>
                   قیمت خرید واحد
-                  <input name="unitCostRial" inputMode="numeric" placeholder="ریال" required />
+                  <input name="unitCostRial" inputMode="numeric" placeholder="تومان" required />
                 </label>
               </div>
               <label>
@@ -887,17 +1037,14 @@ function SalesView({ onBack }: { onBack: () => void }) {
               نام مشتری
               <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="اختیاری" />
             </label>
-            <label>
-              تاریخ شمسی
-              <input value={saleDate} onChange={(event) => setSaleDate(event.target.value)} placeholder="1405/06/02" required />
-            </label>
+            <JalaliDateField label="تاریخ شمسی" value={saleDate} onChange={setSaleDate} required />
             <label>
               ساعت
               <input value={saleTime} onChange={(event) => setSaleTime(event.target.value)} placeholder="14:30" required />
             </label>
             <label>
               تخفیف فاکتور
-              <input inputMode="numeric" value={invoiceDiscount || ""} onChange={(event) => setInvoiceDiscount(normalizeMoney(event.target.value))} placeholder="0" />
+              <input inputMode="numeric" value={moneyInputValue(invoiceDiscount)} onChange={(event) => setInvoiceDiscount(normalizeMoney(event.target.value))} placeholder="۰ تومان" />
             </label>
 
             <div className="invoice-summary" aria-label="جمع فاکتور">
@@ -933,16 +1080,16 @@ function SalesView({ onBack }: { onBack: () => void }) {
                   </select>
                   <input
                     inputMode="numeric"
-                    value={payment.amountRial || ""}
+                    value={moneyInputValue(payment.amountRial)}
                     onChange={(event) => updatePayment(payment.id, { amountRial: normalizeMoney(event.target.value) })}
-                    placeholder="مبلغ"
+                    placeholder="مبلغ تومان"
                   />
                   <select value={payment.status} onChange={(event) => updatePayment(payment.id, { status: event.target.value as PaymentStatus })}>
                     <option value="received">دریافت‌شده</option>
                     <option value="pending">در انتظار</option>
                   </select>
                   <input value={payment.referenceNumber} onChange={(event) => updatePayment(payment.id, { referenceNumber: event.target.value })} placeholder="شماره پیگیری/چک" />
-                  <input value={payment.dueJalaliDate} onChange={(event) => updatePayment(payment.id, { dueJalaliDate: event.target.value })} placeholder="سررسید" />
+                  <JalaliDateField value={payment.dueJalaliDate || saleDate} onChange={(dueJalaliDate) => updatePayment(payment.id, { dueJalaliDate })} />
                   <button type="button" className="icon-button" aria-label="حذف پرداخت" onClick={() => setPayments((current) => current.filter((item) => item.id !== payment.id))}>
                     ×
                   </button>
@@ -992,7 +1139,7 @@ function SalesView({ onBack }: { onBack: () => void }) {
                 </label>
                 <label>
                   قیمت واحد
-                  <input name="unitPriceRial" inputMode="numeric" placeholder="ریال" required />
+                  <input name="unitPriceRial" inputMode="numeric" placeholder="تومان" required />
                 </label>
               </div>
               <label>
@@ -1043,7 +1190,7 @@ function SalesView({ onBack }: { onBack: () => void }) {
             <p className="eyebrow">دفتر روزانه</p>
             <h2>خلاصه فروش یک روز</h2>
           </div>
-          <input value={journalDate} onChange={(event) => setJournalDate(event.target.value)} placeholder="1405/06/02" required />
+          <JalaliDateField value={journalDate} onChange={setJournalDate} required />
           <button type="submit" className="ghost-button" disabled={journalStatus === "loading"}>
             {journalStatus === "loading" ? "در حال دریافت..." : "نمایش گزارش"}
           </button>
