@@ -87,6 +87,63 @@ export type DailyJournal = {
   payments: DailyJournalPayment[];
 };
 
+export type PurchaseInvoiceItemCreate = {
+  variant_id: number;
+  quantity: number;
+  unit_cost_rial: number;
+  extra_cost_rial?: number;
+};
+
+export type PurchaseInvoiceItem = {
+  id: number;
+  variant_id: number;
+  quantity: number | string;
+  unit_cost_rial: number;
+  extra_cost_rial: number;
+  line_total_rial: number;
+};
+
+export type PurchaseInvoiceCreate = {
+  supplier_id?: number | null;
+  supplier_name?: string | null;
+  jalali_date: string;
+  local_time: string;
+  discount_amount_rial: number;
+  extra_cost_rial: number;
+  paid_total_rial: number;
+  note?: string | null;
+  items: PurchaseInvoiceItemCreate[];
+};
+
+export type PurchaseInvoice = {
+  id: number;
+  invoice_number?: string | null;
+  supplier_id?: number | null;
+  supplier_name?: string | null;
+  subtotal_rial: number;
+  discount_amount_rial: number;
+  extra_cost_rial: number;
+  total_rial: number;
+  paid_total_rial: number;
+  due_total_rial: number;
+  status: "active" | "canceled";
+  is_active: boolean;
+  jalali_date: string;
+  local_time: string;
+  timezone: string;
+  note?: string | null;
+  items: PurchaseInvoiceItem[];
+};
+
+export type InventoryItem = {
+  id: number;
+  variant_id: number;
+  variant_name: string;
+  quantity_on_hand: number | string;
+  weighted_average_cost_rial: number;
+  reorder_level?: number | string | null;
+};
+
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -147,5 +204,25 @@ export const api = {
   },
   dailyJournal(jalaliDate: string) {
     return request<DailyJournal>(`/daily-journal?jalali_date=${encodeURIComponent(jalaliDate)}`);
+  },
+  createPurchaseInvoice(payload: PurchaseInvoiceCreate) {
+    return request<PurchaseInvoice>("/purchase-invoices", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  purchaseInvoices() {
+    return request<PurchaseInvoice[]>("/purchase-invoices");
+  },
+  purchaseInvoice(id: number) {
+    return request<PurchaseInvoice>(`/purchase-invoices/${id}`);
+  },
+  cancelPurchaseInvoice(id: number) {
+    return request<PurchaseInvoice>(`/purchase-invoices/${id}/cancel`, {
+      method: "POST",
+    });
+  },
+  inventory() {
+    return request<InventoryItem[]>("/inventory");
   },
 };

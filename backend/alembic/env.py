@@ -5,7 +5,24 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import get_settings
 from app.db.base import Base
-from app.models import Category, Payment, PriceList, PriceRule, Product, ProductVariant, SaleInvoice, SaleInvoiceItem, Unit, User
+from app.models import (
+    Category,
+    InventoryItem,
+    InventoryTransaction,
+    Payment,
+    PriceList,
+    PriceRule,
+    Product,
+    ProductVariant,
+    PurchaseInvoice,
+    PurchaseInvoiceItem,
+    PurchaseLot,
+    SaleInvoice,
+    SaleInvoiceItem,
+    Supplier,
+    Unit,
+    User,
+)
 
 config = context.config
 settings = get_settings()

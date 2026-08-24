@@ -422,6 +422,13 @@ button {
   margin-bottom: 18px;
 }
 
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 .sales-header h2,
 .journal-form h2,
 .mini-section-header h3 {
@@ -464,6 +471,10 @@ button {
   gap: 8px;
   color: #2d3f3b;
   font-weight: 800;
+}
+
+.wide-field {
+  grid-column: span 2;
 }
 
 .sale-meta-grid input,
@@ -633,6 +644,67 @@ button {
   margin-top: 16px;
 }
 
+.inventory-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.inventory-summary div {
+  min-height: 88px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.inventory-summary span,
+.inventory-row span {
+  display: block;
+  color: var(--text-muted);
+  font-weight: 800;
+}
+
+.inventory-summary strong {
+  display: block;
+  margin-top: 8px;
+  color: #142b26;
+  font-size: 1.1rem;
+}
+
+.inventory-table {
+  display: grid;
+  gap: 8px;
+}
+
+.inventory-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) repeat(3, minmax(120px, 1fr));
+  gap: 12px;
+  align-items: center;
+  min-height: 58px;
+  padding: 12px;
+  background: #f8fbfa;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.inventory-row strong {
+  color: #142521;
+}
+
+.inventory-row-head {
+  min-height: 44px;
+  background: #e9f5f1;
+}
+
+.inventory-row-head span {
+  color: #17413b;
+}
+
 .journal-form {
   flex-wrap: wrap;
 }
@@ -780,12 +852,21 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .wide-field {
+    grid-column: auto;
+  }
+
   .payment-row {
     grid-template-columns: repeat(2, minmax(0, 1fr)) 46px;
   }
 
   .journal-summary,
-  .journal-breakdown {
+  .journal-breakdown,
+  .inventory-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -826,6 +907,7 @@ button {
   }
 
   .sales-header,
+  .header-actions,
   .mini-section-header,
   .journal-form,
   .invoice-item {
@@ -833,7 +915,16 @@ button {
     flex-direction: column;
   }
 
+  .header-actions {
+    width: 100%;
+  }
+
   .payment-row {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-row,
+  .inventory-summary {
     grid-template-columns: 1fr;
   }
 
