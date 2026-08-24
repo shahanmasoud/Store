@@ -7,9 +7,13 @@ from app.core.config import get_settings
 from app.db.base import Base
 from app.models import (
     Category,
+    Cheque,
+    ChequeEvent,
     InventoryItem,
     InventoryTransaction,
+    LedgerEntry,
     Payment,
+    Person,
     PriceList,
     PriceRule,
     Product,
@@ -19,6 +23,7 @@ from app.models import (
     PurchaseLot,
     SaleInvoice,
     SaleInvoiceItem,
+    Settlement,
     Supplier,
     Unit,
     User,
