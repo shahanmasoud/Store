@@ -152,7 +152,7 @@ def test_over_settlement_returns_409(client: TestClient, auth_headers: dict[str,
     )
 
     assert response.status_code == 409
-    assert response.json()["detail"] == "Settlement exceeds open balance."
+    assert response.json()["detail"] == "مبلغ تسویه از مانده باز بیشتر است."
 
 
 def test_cheque_lifecycle_events_update_status_and_append_events(

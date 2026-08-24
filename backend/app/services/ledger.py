@@ -16,7 +16,7 @@ from app.schemas.ledger import (
 def _person_or_404(db: Session, person_id: int) -> Person:
     person = db.get(Person, person_id)
     if not person or not person.is_active:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="شخص پیدا نشد.")
     return person
 
 
@@ -27,7 +27,7 @@ def _cheque_or_404(db: Session, cheque_id: int) -> Cheque:
         .where(Cheque.id == cheque_id)
     )
     if not cheque:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cheque not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="چک پیدا نشد.")
     return cheque
 
 
@@ -89,7 +89,7 @@ def create_settlement(db: Session, payload: SettlementCreate) -> Settlement:
     )
     open_balance = sum(entry.remaining_rial for entry in open_entries)
     if payload.amount_rial > open_balance:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Settlement exceeds open balance.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="مبلغ تسویه از مانده باز بیشتر است.")
 
     remaining_settlement = payload.amount_rial
     for entry in open_entries:
@@ -145,7 +145,7 @@ def create_cheque(db: Session, payload: ChequeCreate) -> Cheque:
 def add_cheque_event(db: Session, cheque_id: int, payload: ChequeEventCreate) -> Cheque:
     cheque = _cheque_or_404(db, cheque_id)
     if cheque.status == "canceled":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Canceled cheque cannot be changed.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="چک ابطال‌شده قابل تغییر نیست.")
     cheque.status = payload.event_type
     if payload.event_type == "canceled":
         cheque.is_active = False
