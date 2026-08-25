@@ -1,9 +1,10 @@
 import json
+import os
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.getenv("STORE_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 API_URL = f"{BASE_URL}/api/v1"
 
 

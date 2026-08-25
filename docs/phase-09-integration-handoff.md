@@ -18,3 +18,21 @@ Stable demo keys:
 - Sale payment reference: `PHASE09-DEMO-SALE`
 
 The script does not edit frontend files and does not require a migration.
+
+## Local smoke check
+
+After running the backend, validate the essential local flow:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m app.scripts.smoke_local
+```
+
+For a backend running on another port:
+
+```powershell
+$env:STORE_BASE_URL="http://127.0.0.1:8003"
+.\.venv\Scripts\python.exe -m app.scripts.smoke_local
+```
+
+The smoke check covers `/health`, `/ready`, admin login, and the authenticated product variants endpoint.

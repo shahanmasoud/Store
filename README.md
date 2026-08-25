@@ -68,6 +68,13 @@ cd backend
 .\.venv\Scripts\python.exe -m app.scripts.smoke_local
 ```
 
+If the backend is running on another local port:
+
+```powershell
+$env:STORE_BASE_URL="http://127.0.0.1:8003"
+.\.venv\Scripts\python.exe -m app.scripts.smoke_local
+```
+
 ## معماری
 
 - Backend: FastAPI, SQLAlchemy, Alembic, SQLite
