@@ -2234,3 +2234,189 @@ select,
     font-size: 2rem;
   }
 }
+
+/* Final exact-image home: preserve the approved mockup and only add clickable areas. */
+.app-layout:has(.home-reference-stage) {
+  display: block;
+  min-height: 100vh;
+  padding: 0;
+  overflow: auto;
+  background: #f6f8f8;
+}
+
+.app-layout:has(.home-reference-stage) .app-sidebar {
+  display: none;
+}
+
+.app-layout:has(.home-reference-stage) .app-main {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+}
+
+.home-dashboard-reference:has(.home-reference-stage) {
+  display: grid;
+  min-height: 100vh;
+  overflow: auto;
+}
+
+.home-reference-stage {
+  position: relative;
+  width: min(100vw, 1672px);
+  min-width: 1100px;
+  margin: 0 auto;
+  aspect-ratio: 1672 / 941;
+  background: #f6f8f8;
+}
+
+.home-reference-stage img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  pointer-events: none;
+}
+
+.home-hotspot {
+  position: absolute;
+  z-index: 2;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  outline-offset: -4px;
+}
+
+.home-hotspot:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.home-hotspot:focus-visible {
+  outline: 3px solid rgba(14, 165, 233, 0.85);
+}
+
+.home-hotspot-sales {
+  left: 68.0%;
+  top: 14.2%;
+  width: 13.7%;
+  height: 36.3%;
+}
+
+.home-hotspot-purchase {
+  left: 53.2%;
+  top: 14.2%;
+  width: 13.7%;
+  height: 36.3%;
+}
+
+.home-hotspot-inventory {
+  left: 38.1%;
+  top: 14.2%;
+  width: 13.7%;
+  height: 36.3%;
+}
+
+.home-hotspot-customers {
+  left: 22.7%;
+  top: 14.2%;
+  width: 14.0%;
+  height: 36.3%;
+}
+
+.home-hotspot-cheques {
+  left: 68.0%;
+  top: 53.1%;
+  width: 13.7%;
+  height: 29.7%;
+}
+
+.home-hotspot-reports {
+  left: 53.2%;
+  top: 53.1%;
+  width: 13.7%;
+  height: 29.7%;
+}
+
+.home-hotspot-online {
+  left: 38.1%;
+  top: 53.1%;
+  width: 13.7%;
+  height: 29.7%;
+}
+
+.home-hotspot-settings {
+  left: 22.7%;
+  top: 53.1%;
+  width: 14.0%;
+  height: 29.7%;
+}
+
+.home-hotspot-sidebar-dashboard {
+  left: 86.2%;
+  top: 13.2%;
+  width: 12.2%;
+  height: 6.8%;
+}
+
+.home-hotspot-sidebar-sales {
+  left: 86.2%;
+  top: 21.5%;
+  width: 12.2%;
+  height: 5.4%;
+}
+
+.home-hotspot-sidebar-purchase {
+  left: 86.2%;
+  top: 28.8%;
+  width: 12.2%;
+  height: 5.4%;
+}
+
+.home-hotspot-sidebar-inventory {
+  left: 86.2%;
+  top: 36.3%;
+  width: 12.2%;
+  height: 5.4%;
+}
+
+.home-hotspot-sidebar-customers {
+  left: 86.2%;
+  top: 43.7%;
+  width: 12.2%;
+  height: 5.4%;
+}
+
+.home-hotspot-sidebar-cheques {
+  left: 86.2%;
+  top: 51.4%;
+  width: 12.2%;
+  height: 5.4%;
+}
+
+.home-hotspot-sidebar-reports {
+  left: 86.2%;
+  top: 58.8%;
+  width: 12.2%;
+  height: 5.4%;
+}
+
+.home-hotspot-sidebar-online {
+  left: 86.2%;
+  top: 66.3%;
+  width: 12.2%;
+  height: 5.4%;
+}
+
+.home-hotspot-sidebar-settings {
+  left: 86.2%;
+  top: 73.8%;
+  width: 12.2%;
+  height: 5.4%;
+}
+
+@media (max-width: 1100px) {
+  .home-reference-stage {
+    width: 1100px;
+  }
+}
