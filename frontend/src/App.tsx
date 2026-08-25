@@ -418,6 +418,29 @@ function App() {
 
   return (
     <main className="app-layout">
+      <aside className="app-sidebar" aria-label="ناوبری اصلی">
+        <div className="sidebar-brand">
+          <span className="sidebar-logo" aria-hidden="true">ح</span>
+          <strong>حبوباتین</strong>
+        </div>
+        <nav className="sidebar-nav">
+          {moduleCards.map((card) => {
+            const target = card.key as AppView;
+            return (
+              <button
+                type="button"
+                className={`sidebar-link accent-${card.accent} ${view === target ? "active" : ""}`}
+                onClick={() => setView(target)}
+                key={card.key}
+              >
+                <span aria-hidden="true">{card.icon}</span>
+                {card.title}
+              </button>
+            );
+          })}
+        </nav>
+      </aside>
+      <div className="app-main">
       <header className="topbar">
         <div>
           <p className="eyebrow">داشبورد فروشگاه</p>
@@ -448,6 +471,7 @@ function App() {
           onOpenOnline={() => setView("online")}
         />
       ) : null}
+      </div>
     </main>
   );
 }
