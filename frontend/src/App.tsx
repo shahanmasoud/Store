@@ -1,14 +1,27 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   api,
   type DailyJournal,
+  type CashflowReport,
+  type Category,
+  type Cheque,
+  type CustomerDebtsReport,
   type InventoryItem,
+  type InventoryReport,
+  type LedgerEntry,
+  type OnlineChannel,
+  type OnlineOrder,
   type PaymentCreate,
   type PaymentMethod,
   type PaymentStatus,
+  type Person,
+  type Product,
   type ProductVariant,
+  type ProfitLossReport,
   type PurchaseInvoice,
   type SaleInvoice,
+  type SalesSummaryReport,
+  type Unit,
   type User,
 } from "./api";
 
@@ -16,7 +29,7 @@ const TOKEN_KEY = "store_auth_token";
 const DEFAULT_JALALI_DATE = "1405/06/02";
 
 type AuthStatus = "checking" | "guest" | "authenticated";
-type AppView = "dashboard" | "sales" | "purchase" | "inventory";
+type AppView = "dashboard" | "sales" | "purchase" | "inventory" | "products" | "ledger" | "cheques" | "reports" | "online";
 
 type InvoiceDraftItem = {
   id: string;
@@ -118,6 +131,16 @@ const moduleCards = [
     status: "به‌زودی",
   },
 ];
+
+moduleCards.push({
+  key: "online",
+  title: "اتصال آنلاین",
+  description: "کانال‌ها، سفارش‌های سایت و همگام‌سازی اولیه",
+  icon: "آ",
+  accent: "teal",
+  status: "فعال",
+  action: "مدیریت آنلاین",
+});
 
 const latinDigits = "0123456789";
 const persianDigits = "۰۱۲۳۴۵۶۷۸۹";
@@ -404,11 +427,21 @@ function App() {
       {view === "sales" ? <SalesView onBack={() => setView("dashboard")} /> : null}
       {view === "purchase" ? <PurchaseView onBack={() => setView("dashboard")} onOpenInventory={() => setView("inventory")} /> : null}
       {view === "inventory" ? <InventoryView onBack={() => setView("dashboard")} /> : null}
+      {view === "products" ? <ProductsView onBack={() => setView("dashboard")} /> : null}
+      {view === "ledger" ? <LedgerView onBack={() => setView("dashboard")} /> : null}
+      {view === "cheques" ? <ChequesView onBack={() => setView("dashboard")} /> : null}
+      {view === "reports" ? <ReportsView onBack={() => setView("dashboard")} /> : null}
+      {view === "online" ? <OnlineView onBack={() => setView("dashboard")} /> : null}
       {view === "dashboard" ? (
         <DashboardView
           onOpenSales={() => setView("sales")}
           onOpenPurchase={() => setView("purchase")}
           onOpenInventory={() => setView("inventory")}
+          onOpenProducts={() => setView("products")}
+          onOpenLedger={() => setView("ledger")}
+          onOpenCheques={() => setView("cheques")}
+          onOpenReports={() => setView("reports")}
+          onOpenOnline={() => setView("online")}
         />
       ) : null}
     </main>
@@ -419,10 +452,20 @@ function DashboardView({
   onOpenSales,
   onOpenPurchase,
   onOpenInventory,
+  onOpenProducts,
+  onOpenLedger,
+  onOpenCheques,
+  onOpenReports,
+  onOpenOnline,
 }: {
   onOpenSales: () => void;
   onOpenPurchase: () => void;
   onOpenInventory: () => void;
+  onOpenProducts: () => void;
+  onOpenLedger: () => void;
+  onOpenCheques: () => void;
+  onOpenReports: () => void;
+  onOpenOnline: () => void;
 }) {
   return (
     <>
@@ -486,7 +529,15 @@ function DashboardView({
       <section className="module-grid" aria-label="ماژول‌های سیستم">
         {moduleCards.map((card) => {
           const handler =
-            card.key === "sales" ? onOpenSales : card.key === "purchase" ? onOpenPurchase : card.key === "inventory" ? onOpenInventory : null;
+            card.key === "sales" ? onOpenSales :
+            card.key === "purchase" ? onOpenPurchase :
+            card.key === "inventory" ? onOpenInventory :
+            card.key === "products" ? onOpenProducts :
+            card.key === "ledger" ? onOpenLedger :
+            card.key === "cheques" ? onOpenCheques :
+            card.key === "reports" ? onOpenReports :
+            card.key === "online" ? onOpenOnline :
+            null;
           return (
             <article className={`module-card accent-${card.accent} ${handler ? "module-card-active" : ""}`} key={card.title}>
               <div className="module-icon">
@@ -498,7 +549,7 @@ function DashboardView({
               </div>
               {handler ? (
                 <button type="button" className="module-action" onClick={handler}>
-                  {card.action}
+                  {card.action ?? card.status}
                 </button>
               ) : (
                 <span className="coming-soon">{card.status}</span>
@@ -860,6 +911,408 @@ function InventoryView({ onBack }: { onBack: () => void }) {
         ) : null}
       </section>
     </section>
+  );
+}
+
+function ProductsView({ onBack }: { onBack: () => void }) {
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [variants, setVariants] = useState<ProductVariant[]>([]);
+  const [message, setMessage] = useState("");
+
+  const load = () => {
+    Promise.all([api.units(), api.categories(), api.products(), api.productVariants()])
+      .then(([nextUnits, nextCategories, nextProducts, nextVariants]) => {
+        setUnits(nextUnits);
+        setCategories(nextCategories);
+        setProducts(nextProducts);
+        setVariants(nextVariants);
+      })
+      .catch((error) => setMessage(error instanceof Error ? error.message : "دریافت اطلاعات کالا انجام نشد."));
+  };
+
+  useEffect(load, []);
+
+  async function submitUnit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await api.createUnit({ name: String(form.get("name") ?? ""), symbol: String(form.get("symbol") ?? "") });
+    event.currentTarget.reset();
+    setMessage("واحد با موفقیت ثبت شد.");
+    load();
+  }
+
+  async function submitCategory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await api.createCategory({ name: String(form.get("name") ?? "") });
+    event.currentTarget.reset();
+    setMessage("دسته کالا ثبت شد.");
+    load();
+  }
+
+  async function submitProduct(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const categoryId = Number(form.get("categoryId"));
+    await api.createProduct({
+      name: String(form.get("name") ?? ""),
+      description: String(form.get("description") ?? ""),
+      category_id: categoryId || null,
+    });
+    event.currentTarget.reset();
+    setMessage("کالا ثبت شد.");
+    load();
+  }
+
+  async function submitVariant(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await api.createProductVariant({
+      product_id: Number(form.get("productId")),
+      unit_id: Number(form.get("unitId")),
+      name: String(form.get("name") ?? ""),
+      sku: String(form.get("sku") ?? ""),
+      retail_price_rial: normalizeMoney(form.get("retail")),
+      wholesale_price_rial: normalizeMoney(form.get("wholesale")) || null,
+      min_wholesale_quantity: normalizeDecimal(form.get("minWholesale")) || null,
+    });
+    event.currentTarget.reset();
+    setMessage("گونه و قیمت کالا ثبت شد.");
+    load();
+  }
+
+  async function submitPrice(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await api.createPrice({
+      variant_id: Number(form.get("variantId")),
+      price_type: String(form.get("priceType")) as "retail" | "wholesale" | "online",
+      amount_rial: normalizeMoney(form.get("amount")),
+      jalali_date: String(form.get("date") ?? DEFAULT_JALALI_DATE),
+      local_time: currentLocalTime(),
+    });
+    event.currentTarget.reset();
+    setMessage("قیمت جدید ثبت شد.");
+    load();
+  }
+
+  return (
+    <CrudWorkspace title="کالاها و قیمت‌ها" eyebrow="مدیریت کاتالوگ" onBack={onBack}>
+      {message ? <p className="success-message">{message}</p> : null}
+      <div className="management-grid">
+        <form className="sale-panel compact-panel" onSubmit={submitUnit}>
+          <h3>واحد</h3>
+          <input name="name" placeholder="نام واحد، مثلا کیلوگرم" required />
+          <input name="symbol" placeholder="نماد، مثلا kg" required />
+          <button className="soft-button">ثبت واحد</button>
+        </form>
+        <form className="sale-panel compact-panel" onSubmit={submitCategory}>
+          <h3>دسته</h3>
+          <input name="name" placeholder="مثلا حبوبات، برنج، ادویه" required />
+          <button className="soft-button">ثبت دسته</button>
+        </form>
+        <form className="sale-panel compact-panel" onSubmit={submitProduct}>
+          <h3>کالا</h3>
+          <input name="name" placeholder="نام کالا" required />
+          <select name="categoryId">
+            <option value="">بدون دسته</option>
+            {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+          </select>
+          <input name="description" placeholder="توضیح کوتاه" />
+          <button className="soft-button">ثبت کالا</button>
+        </form>
+        <form className="sale-panel compact-panel" onSubmit={submitVariant}>
+          <h3>گونه و قیمت پایه</h3>
+          <select name="productId" required>
+            <option value="">انتخاب کالا</option>
+            {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
+          </select>
+          <select name="unitId" required>
+            <option value="">انتخاب واحد</option>
+            {units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+          </select>
+          <input name="name" placeholder="مثلا عدس درجه یک کیلویی" required />
+          <input name="sku" placeholder="کد کالا" />
+          <input name="retail" inputMode="numeric" placeholder="قیمت خرده‌فروشی تومان" required />
+          <input name="wholesale" inputMode="numeric" placeholder="قیمت عمده تومان" />
+          <input name="minWholesale" inputMode="decimal" placeholder="حداقل عمده" />
+          <button className="soft-button">ثبت گونه</button>
+        </form>
+        <form className="sale-panel compact-panel" onSubmit={submitPrice}>
+          <h3>به‌روزرسانی قیمت</h3>
+          <select name="variantId" required>
+            <option value="">انتخاب گونه</option>
+            {variants.map((variant) => <option key={variant.id} value={variant.id}>{variant.name}</option>)}
+          </select>
+          <select name="priceType">
+            <option value="retail">خرده</option>
+            <option value="wholesale">عمده</option>
+            <option value="online">آنلاین</option>
+          </select>
+          <input name="amount" inputMode="numeric" placeholder="مبلغ تومان" required />
+          <input name="date" defaultValue={DEFAULT_JALALI_DATE} />
+          <button className="soft-button">ثبت قیمت</button>
+        </form>
+      </div>
+      <SimpleTable headers={["کالا", "کد", "قیمت خرده", "قیمت عمده"]} rows={variants.map((v) => [v.name, v.sku || "-", formatRial(v.retail_price_rial), v.wholesale_price_rial ? formatRial(v.wholesale_price_rial) : "-"])} />
+    </CrudWorkspace>
+  );
+}
+
+function LedgerView({ onBack }: { onBack: () => void }) {
+  const [people, setPeople] = useState<Person[]>([]);
+  const [selectedId, setSelectedId] = useState(0);
+  const [entries, setEntries] = useState<LedgerEntry[]>([]);
+  const [message, setMessage] = useState("");
+  const selected = people.find((person) => person.id === selectedId);
+  const balance = entries.reduce((sum, entry) => sum + (entry.entry_type === "debit" ? entry.remaining_rial : -entry.remaining_rial), 0);
+
+  const loadPeople = () => api.persons().then(setPeople).catch((error) => setMessage(error instanceof Error ? error.message : "اشخاص دریافت نشدند."));
+  useEffect(() => {
+    loadPeople();
+  }, []);
+  useEffect(() => {
+    if (selectedId) api.personLedger(selectedId).then(setEntries).catch((error) => setMessage(error instanceof Error ? error.message : "دفتر حساب دریافت نشد."));
+  }, [selectedId]);
+
+  async function submitPerson(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await api.createPerson({ name: String(form.get("name") ?? ""), phone: String(form.get("phone") ?? ""), person_type: String(form.get("type")) as Person["person_type"] });
+    event.currentTarget.reset();
+    setMessage("شخص ثبت شد.");
+    loadPeople();
+  }
+
+  async function submitEntry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await api.createManualEntry({
+      person_id: selectedId,
+      entry_type: String(form.get("entryType")) as "debit" | "credit",
+      amount_rial: normalizeMoney(form.get("amount")),
+      jalali_date: String(form.get("date") ?? DEFAULT_JALALI_DATE),
+      local_time: currentLocalTime(),
+      description: String(form.get("description") ?? ""),
+    });
+    event.currentTarget.reset();
+    setMessage("سند دستی ثبت شد.");
+    api.personLedger(selectedId).then(setEntries);
+  }
+
+  async function submitSettlement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await api.createSettlement({ person_id: selectedId, amount_rial: normalizeMoney(form.get("amount")), jalali_date: String(form.get("date") ?? DEFAULT_JALALI_DATE), local_time: currentLocalTime(), note: String(form.get("note") ?? "") });
+    event.currentTarget.reset();
+    setMessage("تسویه ثبت شد.");
+    api.personLedger(selectedId).then(setEntries);
+  }
+
+  return (
+    <CrudWorkspace title="دفتر حساب اشخاص" eyebrow="مشتری و تامین‌کننده" onBack={onBack}>
+      {message ? <p className="success-message">{message}</p> : null}
+      <div className="management-grid">
+        <form className="sale-panel compact-panel" onSubmit={submitPerson}>
+          <h3>شخص جدید</h3>
+          <input name="name" placeholder="نام شخص" required />
+          <input name="phone" placeholder="تلفن" />
+          <select name="type"><option value="customer">مشتری</option><option value="supplier">تامین‌کننده</option><option value="both">هر دو</option></select>
+          <button className="soft-button">ثبت شخص</button>
+        </form>
+        <section className="sale-panel compact-panel">
+          <h3>انتخاب حساب</h3>
+          <select value={selectedId} onChange={(event) => setSelectedId(Number(event.target.value))}>
+            <option value={0}>انتخاب شخص</option>
+            {people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
+          </select>
+          <strong>{selected ? `مانده: ${formatRial(Math.abs(balance))}` : "حسابی انتخاب نشده"}</strong>
+        </section>
+        <form className="sale-panel compact-panel" onSubmit={submitEntry}>
+          <h3>سند دستی</h3>
+          <select name="entryType"><option value="debit">بدهکار</option><option value="credit">بستانکار</option></select>
+          <input name="amount" inputMode="numeric" placeholder="مبلغ تومان" required />
+          <input name="date" defaultValue={DEFAULT_JALALI_DATE} />
+          <input name="description" placeholder="شرح" />
+          <button className="soft-button" disabled={!selectedId}>ثبت سند</button>
+        </form>
+        <form className="sale-panel compact-panel" onSubmit={submitSettlement}>
+          <h3>تسویه</h3>
+          <input name="amount" inputMode="numeric" placeholder="مبلغ تومان" required />
+          <input name="date" defaultValue={DEFAULT_JALALI_DATE} />
+          <input name="note" placeholder="یادداشت" />
+          <button className="soft-button" disabled={!selectedId}>ثبت تسویه</button>
+        </form>
+      </div>
+      <SimpleTable headers={["تاریخ", "نوع", "مبلغ", "مانده", "شرح"]} rows={entries.map((entry) => [entry.jalali_date, entry.entry_type === "debit" ? "بدهکار" : "بستانکار", formatRial(entry.amount_rial), formatRial(entry.remaining_rial), entry.description || entry.source_type])} />
+    </CrudWorkspace>
+  );
+}
+
+function ChequesView({ onBack }: { onBack: () => void }) {
+  const [people, setPeople] = useState<Person[]>([]);
+  const [cheques, setCheques] = useState<Cheque[]>([]);
+  const [message, setMessage] = useState("");
+  const load = () => Promise.all([api.persons(), api.cheques()]).then(([nextPeople, nextCheques]) => { setPeople(nextPeople); setCheques(nextCheques); });
+  useEffect(() => { load().catch((error) => setMessage(error instanceof Error ? error.message : "چک‌ها دریافت نشدند.")); }, []);
+
+  async function submitCheque(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const personId = Number(form.get("personId"));
+    await api.createCheque({
+      cheque_type: String(form.get("chequeType")) as "received" | "paid",
+      person_id: personId || null,
+      bank_name: String(form.get("bank") ?? ""),
+      cheque_number: String(form.get("number") ?? ""),
+      amount_rial: normalizeMoney(form.get("amount")),
+      issue_jalali_date: String(form.get("issueDate") ?? DEFAULT_JALALI_DATE),
+      due_jalali_date: String(form.get("dueDate") ?? DEFAULT_JALALI_DATE),
+      local_time: currentLocalTime(),
+      note: String(form.get("note") ?? ""),
+    });
+    event.currentTarget.reset();
+    setMessage("چک ثبت شد.");
+    load();
+  }
+
+  async function markCheque(id: number, eventType: "cleared" | "bounced" | "canceled") {
+    await api.createChequeEvent(id, { event_type: eventType, jalali_date: DEFAULT_JALALI_DATE, local_time: currentLocalTime() });
+    setMessage("وضعیت چک ثبت شد.");
+    load();
+  }
+
+  return (
+    <CrudWorkspace title="دفتر چک‌ها و سررسیدها" eyebrow="دریافتی و پرداختی" onBack={onBack}>
+      {message ? <p className="success-message">{message}</p> : null}
+      <form className="sale-panel cheque-form" onSubmit={submitCheque}>
+        <select name="chequeType"><option value="received">دریافتی</option><option value="paid">پرداختی</option></select>
+        <select name="personId"><option value="">بدون شخص</option>{people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select>
+        <input name="bank" placeholder="بانک" required />
+        <input name="number" placeholder="شماره چک" required />
+        <input name="amount" inputMode="numeric" placeholder="مبلغ تومان" required />
+        <input name="issueDate" defaultValue={DEFAULT_JALALI_DATE} />
+        <input name="dueDate" defaultValue={DEFAULT_JALALI_DATE} />
+        <input name="note" placeholder="یادداشت" />
+        <button className="soft-button">ثبت چک</button>
+      </form>
+      <div className="table-list">
+        {cheques.map((cheque) => (
+          <article className="table-card" key={cheque.id}>
+            <div><strong>{cheque.bank_name} - {cheque.cheque_number}</strong><span>{cheque.cheque_type === "received" ? "دریافتی" : "پرداختی"} | سررسید {cheque.due_jalali_date}</span></div>
+            <strong>{formatRial(cheque.amount_rial)}</strong>
+            <span className="badge">{cheque.status}</span>
+            <button className="link-button" onClick={() => markCheque(cheque.id, "cleared")}>وصول/پاس</button>
+            <button className="link-button" onClick={() => markCheque(cheque.id, "bounced")}>برگشت</button>
+          </article>
+        ))}
+      </div>
+    </CrudWorkspace>
+  );
+}
+
+function ReportsView({ onBack }: { onBack: () => void }) {
+  const [from, setFrom] = useState(DEFAULT_JALALI_DATE);
+  const [to, setTo] = useState(DEFAULT_JALALI_DATE);
+  const [sales, setSales] = useState<SalesSummaryReport | null>(null);
+  const [profit, setProfit] = useState<ProfitLossReport | null>(null);
+  const [inventory, setInventory] = useState<InventoryReport | null>(null);
+  const [cashflow, setCashflow] = useState<CashflowReport | null>(null);
+  const [debts, setDebts] = useState<CustomerDebtsReport | null>(null);
+  const [message, setMessage] = useState("");
+
+  async function loadReports(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    try {
+      const [nextSales, nextProfit, nextInventory, nextCashflow, nextDebts] = await Promise.all([api.salesSummary(from, to), api.profitLoss(from, to), api.inventoryReport(), api.cashflow(to), api.customerDebts()]);
+      setSales(nextSales); setProfit(nextProfit); setInventory(nextInventory); setCashflow(nextCashflow); setDebts(nextDebts);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "گزارش‌ها دریافت نشدند.");
+    }
+  }
+  useEffect(() => { loadReports(); }, []);
+
+  return (
+    <CrudWorkspace title="گزارش‌ها" eyebrow="فروش، سود، انبار و جریان نقد" onBack={onBack}>
+      <form className="journal-form sale-panel" onSubmit={loadReports}>
+        <JalaliDateField label="از تاریخ" value={from} onChange={setFrom} required />
+        <JalaliDateField label="تا تاریخ" value={to} onChange={setTo} required />
+        <button className="ghost-button">به‌روزرسانی</button>
+      </form>
+      {message ? <p className="error-message">{message}</p> : null}
+      <div className="metric-grid">
+        <Metric label="تعداد فاکتور" value={sales?.invoice_count.toLocaleString("fa-IR") ?? "-"} />
+        <Metric label="فروش ثبت‌شده" value={sales ? formatRial(sales.registered_sales_rial) : "-"} />
+        <Metric label="دریافت‌شده" value={sales ? formatRial(sales.received_rial) : "-"} />
+        <Metric label="مانده فروش" value={sales ? formatRial(sales.pending_rial) : "-"} />
+        <Metric label="سود ناخالص" value={profit ? formatRial(profit.gross_profit_rial) : "-"} />
+        <Metric label="حاشیه سود" value={profit ? `${profit.gross_margin_percent.toLocaleString("fa-IR")}٪` : "-"} />
+        <Metric label="ارزش انبار" value={inventory ? formatRial(inventory.total_value_rial) : "-"} />
+        <Metric label="جریان نقد مورد انتظار" value={cashflow ? formatRial(cashflow.net_expected_rial) : "-"} />
+        <Metric label="بدهی مشتریان" value={debts ? formatRial(debts.total_remaining_rial) : "-"} />
+      </div>
+    </CrudWorkspace>
+  );
+}
+
+function OnlineView({ onBack }: { onBack: () => void }) {
+  const [channels, setChannels] = useState<OnlineChannel[]>([]);
+  const [orders, setOrders] = useState<OnlineOrder[]>([]);
+  const [message, setMessage] = useState("");
+  const load = () => Promise.all([api.onlineChannels(), api.onlineOrders()]).then(([nextChannels, nextOrders]) => { setChannels(nextChannels); setOrders(nextOrders); });
+  useEffect(() => { load().catch((error) => setMessage(error instanceof Error ? error.message : "اطلاعات آنلاین دریافت نشد.")); }, []);
+
+  async function submitChannel(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await api.createOnlineChannel({ name: String(form.get("name") ?? ""), token: String(form.get("token") ?? ""), note: String(form.get("note") ?? "") });
+    event.currentTarget.reset();
+    setMessage("کانال آنلاین ثبت شد.");
+    load();
+  }
+
+  return (
+    <CrudWorkspace title="اتصال آنلاین" eyebrow="کانال‌ها و سفارش‌های سایت" onBack={onBack}>
+      {message ? <p className="success-message">{message}</p> : null}
+      <form className="sale-panel cheque-form" onSubmit={submitChannel}>
+        <input name="name" placeholder="نام کانال، مثلا سایت فروشگاه" required />
+        <input name="token" placeholder="توکن اتصال" required />
+        <input name="note" placeholder="یادداشت" />
+        <button className="soft-button">ثبت کانال</button>
+      </form>
+      <div className="management-grid">
+        <section className="sale-panel compact-panel"><h3>کانال‌ها</h3>{channels.map((channel) => <p key={channel.id}>{channel.name} <span className="badge">{channel.is_active ? "فعال" : "غیرفعال"}</span></p>)}</section>
+        <section className="sale-panel compact-panel"><h3>سفارش‌های آنلاین</h3>{orders.length ? orders.map((order) => <p key={order.id}>{order.customer_name} - {formatRial(order.total_rial)} - {order.status}</p>) : <p className="state-message">هنوز سفارشی ثبت نشده است.</p>}</section>
+      </div>
+    </CrudWorkspace>
+  );
+}
+
+function CrudWorkspace({ title, eyebrow, onBack, children }: { title: string; eyebrow: string; onBack: () => void; children: ReactNode }) {
+  return (
+    <section className="sales-workspace">
+      <div className="sales-header">
+        <div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div>
+        <button type="button" className="ghost-button" onClick={onBack}>بازگشت به داشبورد</button>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return <div className="metric-card"><span>{label}</span><strong>{value}</strong></div>;
+}
+
+function SimpleTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
+  if (!rows.length) return <p className="state-message">هنوز رکوردی برای نمایش وجود ندارد.</p>;
+  return (
+    <div className="inventory-table simple-table" role="table">
+      <div className="inventory-row inventory-row-head" role="row">{headers.map((header) => <span key={header}>{header}</span>)}</div>
+      {rows.map((row, index) => <div className="inventory-row" role="row" key={index}>{row.map((cell, cellIndex) => <span key={cellIndex}>{cell}</span>)}</div>)}
+    </div>
   );
 }
 
