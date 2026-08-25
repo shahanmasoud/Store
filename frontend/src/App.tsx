@@ -441,6 +441,7 @@ function App() {
         </nav>
       </aside>
       <div className="app-main">
+      {view !== "dashboard" ? (
       <header className="topbar">
         <div>
           <p className="eyebrow">داشبورد فروشگاه</p>
@@ -450,6 +451,7 @@ function App() {
           خروج
         </button>
       </header>
+      ) : null}
 
       {view === "sales" ? <SalesView onBack={() => setView("dashboard")} /> : null}
       {view === "purchase" ? <PurchaseView onBack={() => setView("dashboard")} onOpenInventory={() => setView("inventory")} /> : null}
@@ -496,7 +498,7 @@ function DashboardView({
   onOpenOnline: () => void;
 }) {
   return (
-    <>
+    <div className="home-dashboard-reference">
       <section className="command-hero" aria-label="مرکز عملیات فروشگاه">
         <div className="command-copy">
           <p className="eyebrow">مرکز فرمان فروشگاه حبوبات</p>
@@ -596,7 +598,7 @@ function DashboardView({
           );
         })}
       </section>
-    </>
+    </div>
   );
 }
 
