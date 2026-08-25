@@ -86,7 +86,8 @@ const moduleCards = [
     description: "تعریف کالا، واحدها و قیمت‌های پایه",
     icon: "ک",
     accent: "blue",
-    status: "آماده پایه",
+    status: "فعال",
+    action: "مدیریت کالا",
   },
   {
     key: "purchase",
@@ -112,7 +113,8 @@ const moduleCards = [
     description: "حساب مشتریان، تأمین‌کنندگان و تسویه‌ها",
     icon: "د",
     accent: "violet",
-    status: "به‌زودی",
+    status: "فعال",
+    action: "دفتر حساب",
   },
   {
     key: "cheques",
@@ -120,7 +122,8 @@ const moduleCards = [
     description: "چک‌های دریافتی، پرداختی و سررسیدها",
     icon: "چ",
     accent: "rose",
-    status: "به‌زودی",
+    status: "فعال",
+    action: "مدیریت چک",
   },
   {
     key: "reports",
@@ -128,7 +131,8 @@ const moduleCards = [
     description: "گزارش فروش، سود، بدهکاران و عملکرد روز",
     icon: "گ",
     accent: "slate",
-    status: "به‌زودی",
+    status: "فعال",
+    action: "گزارش‌ها",
   },
 ];
 
@@ -471,9 +475,9 @@ function DashboardView({
     <>
       <section className="command-hero" aria-label="مرکز عملیات فروشگاه">
         <div className="command-copy">
-          <p className="eyebrow">مرکز عملیات حبوبات</p>
-          <h2>فروش، خرید و موجودی را از یک میز کار زنده کنترل کن.</h2>
-          <p>ورودی‌ها فارسی و تومانی هستند، تاریخ‌ها با تقویم شمسی انتخاب می‌شوند و هر فاکتور مستقیم به انبار و دفتر روزانه وصل می‌شود.</p>
+          <p className="eyebrow">مرکز فرمان فروشگاه حبوبات</p>
+          <h2>همه عملیات روز را از یک داشبورد آماده اجرا کنترل کن.</h2>
+          <p>فروش، خرید، موجودی، حساب اشخاص، چک‌ها، گزارش‌ها و سفارش‌های آنلاین حالا از همین صفحه وارد جریان واقعی سیستم می‌شوند.</p>
           <div className="hero-actions">
             <button type="button" className="primary-button" onClick={onOpenSales}>
               ثبت فروش
@@ -481,9 +485,14 @@ function DashboardView({
             <button type="button" className="ghost-button" onClick={onOpenPurchase}>
               ثبت خرید
             </button>
+            <button type="button" className="ghost-button" onClick={onOpenReports}>
+              گزارش امروز
+            </button>
           </div>
         </div>
         <div className="grain-visual" aria-hidden="true">
+          <div className="visual-rail visual-rail-one" />
+          <div className="visual-rail visual-rail-two" />
           <div className="grain-bowl">
             <span />
             <span />
@@ -500,30 +509,34 @@ function DashboardView({
             <i />
             <i />
           </div>
+          <div className="visual-ledger">
+            <span>حساب‌ها</span>
+            <strong>همگام</strong>
+          </div>
         </div>
       </section>
 
       <section className="overview-band" aria-label="وضعیت امروز">
         <div>
-          <span>امروز</span>
-          <strong>آماده ثبت فروش و خرید</strong>
+          <span>وضعیت اجرا</span>
+          <strong>همه ماژول‌های اصلی فعال</strong>
         </div>
         <div>
-          <span>مرحله پروژه</span>
-          <strong>فاز ۴ فعال</strong>
+          <span>اولویت امروز</span>
+          <strong>ثبت دقیق، کنترل مانده‌ها، پیگیری سررسید</strong>
         </div>
         <div>
-          <span>تمرکز فعلی</span>
-          <strong>خرید، انبار و بهای تمام‌شده</strong>
+          <span>واحد پول و تاریخ</span>
+          <strong>ورودی تومان، تقویم شمسی</strong>
         </div>
       </section>
 
       <section className="section-header">
         <div>
           <h2>بخش‌های اصلی سیستم</h2>
-          <p>فروش روزانه فعال است و خرید و انبار برای کنترل موجودی و میانگین موزون اضافه شده‌اند.</p>
+          <p>هر کارت یک مسیر کاری کامل را باز می‌کند و مستقیم وارد بخش عملیاتی خودش می‌شود.</p>
         </div>
-        <span className="badge">نسخه عملیاتی اولیه</span>
+        <span className="badge">نسخه یکپارچه قابل تست</span>
       </section>
 
       <section className="module-grid" aria-label="ماژول‌های سیستم">
@@ -544,6 +557,7 @@ function DashboardView({
                 <span aria-hidden="true">{card.icon}</span>
               </div>
               <div>
+                <span className="module-status">{card.status}</span>
                 <h3>{card.title}</h3>
                 <p>{card.description}</p>
               </div>
