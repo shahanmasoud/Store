@@ -13,7 +13,18 @@ class Settings(BaseSettings):
     )
     secret_key: str = "change-this-secret-before-deployment"
     access_token_expire_minutes: int = 60 * 8
-    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    cors_origins: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:5175",
+        "http://127.0.0.1:5175",
+        "http://localhost:5176",
+        "http://127.0.0.1:5176",
+        "http://localhost:5177",
+        "http://127.0.0.1:5177",
+    ]
     default_admin_username: str = "admin"
     default_admin_password: str = "admin123"
     default_admin_full_name: str = "مدیر سیستم"
