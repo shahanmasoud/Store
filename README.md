@@ -61,6 +61,13 @@ Health checks:
 - `GET /health`
 - `GET /ready`
 
+Local smoke check after the backend is running:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m app.scripts.smoke_local
+```
+
 ## معماری
 
 - Backend: FastAPI, SQLAlchemy, Alembic, SQLite
