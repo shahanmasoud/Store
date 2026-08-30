@@ -1,4 +1,20 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { Box, Button, Card, CardActionArea, CardContent, Chip, LinearProgress, Stack, Typography } from "@mui/material";
+import AccountBalanceWalletRounded from "@mui/icons-material/AccountBalanceWalletRounded";
+import AdminPanelSettingsRounded from "@mui/icons-material/AdminPanelSettingsRounded";
+import AnalyticsRounded from "@mui/icons-material/AnalyticsRounded";
+import ArrowBackRounded from "@mui/icons-material/ArrowBackRounded";
+import DashboardRounded from "@mui/icons-material/DashboardRounded";
+import FactCheckRounded from "@mui/icons-material/FactCheckRounded";
+import HelpOutlineRounded from "@mui/icons-material/HelpOutlineRounded";
+import Inventory2Rounded from "@mui/icons-material/Inventory2Rounded";
+import PaymentsRounded from "@mui/icons-material/PaymentsRounded";
+import PointOfSaleRounded from "@mui/icons-material/PointOfSaleRounded";
+import ReceiptLongRounded from "@mui/icons-material/ReceiptLongRounded";
+import ShoppingCartCheckoutRounded from "@mui/icons-material/ShoppingCartCheckoutRounded";
+import StorefrontRounded from "@mui/icons-material/StorefrontRounded";
+import SyncRounded from "@mui/icons-material/SyncRounded";
+import Storefront from "./Storefront";
 import {
   api,
   type DailyJournal,
@@ -24,13 +40,24 @@ import {
   type Unit,
   type User,
 } from "./api";
-import homeDashboardReference from "./assets/home-dashboard-reference.png";
 
 const TOKEN_KEY = "store_auth_token";
 const DEFAULT_JALALI_DATE = "1405/06/02";
 
 type AuthStatus = "checking" | "guest" | "authenticated";
 type AppView = "dashboard" | "sales" | "purchase" | "inventory" | "products" | "ledger" | "cheques" | "reports" | "online";
+
+const viewMeta: Record<AppView, { title: string; eyebrow: string; help: string }> = {
+  dashboard: { title: "خانه مدیریت", eyebrow: "نمای کلی فروشگاه", help: "از کارهای سریع شروع کن یا وضعیت امروز را مرور کن." },
+  sales: { title: "ثبت فروش", eyebrow: "فروش روزانه", help: "ابتدا کالاها را اضافه کن، سپس روش پرداخت را مشخص و فاکتور را ثبت کن." },
+  purchase: { title: "ثبت خرید", eyebrow: "خرید و تامین", help: "تامین‌کننده و کالاها را وارد کن؛ موجودی بعد از ثبت به‌روز می‌شود." },
+  inventory: { title: "مدیریت انبار", eyebrow: "موجودی و ارزش کالا", help: "کالاهای کم‌موجود را بررسی کن و برای خرید بعدی تصمیم بگیر." },
+  products: { title: "کالاها و قیمت‌ها", eyebrow: "اطلاعات پایه", help: "تعریف کالا، واحد و تنوع محصول، پیش‌نیاز ثبت خرید و فروش است." },
+  ledger: { title: "دفتر حساب", eyebrow: "حساب اشخاص", help: "مشتری یا تامین‌کننده را انتخاب کن و مانده و تراکنش‌هایش را ببین." },
+  cheques: { title: "مدیریت چک‌ها", eyebrow: "سررسید و پیگیری", help: "چک‌های نزدیک به سررسید را اول بررسی و وضعیتشان را به‌روز کن." },
+  reports: { title: "گزارش‌ها", eyebrow: "تحلیل عملکرد", help: "بازه زمانی را انتخاب کن تا فروش، سود و جریان نقدی را مقایسه کنی." },
+  online: { title: "سفارش‌های آنلاین", eyebrow: "اتصال فروشگاه", help: "کانال فروش را متصل کن و سفارش‌های جدید را قبل از تایید بررسی کن." },
+};
 
 type InvoiceDraftItem = {
   id: string;
@@ -304,6 +331,26 @@ function JalaliDateField({
 }
 
 function App() {
+  const [surface, setSurface] = useState<"storefront" | "admin">(() =>
+    window.location.pathname.startsWith("/admin") ? "admin" : "storefront",
+  );
+
+  useEffect(() => {
+    const handlePopState = () => setSurface(window.location.pathname.startsWith("/admin") ? "admin" : "storefront");
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  function navigate(path: "/" | "/admin") {
+    window.history.pushState({}, "", path);
+    setSurface(path === "/admin" ? "admin" : "storefront");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  return surface === "admin" ? <AdminApp onOpenStore={() => navigate("/")} /> : <Storefront onOpenAdmin={() => navigate("/admin")} />;
+}
+
+function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
   const [status, setStatus] = useState<AuthStatus>("checking");
   const [view, setView] = useState<AppView>("dashboard");
   const [user, setUser] = useState<User | null>(null);
@@ -380,17 +427,16 @@ function App() {
             <span aria-hidden="true">ح</span>
           </div>
           <p className="eyebrow">اتوماسیون فروشگاه حبوبات</p>
-          <h1 id="login-title">ورود به محیط مدیریت فروشگاه</h1>
+          <h1 id="login-title">مدیریت فروشگاه، ساده و سریع</h1>
           <p className="intro">
-            مسیر کار از فروش و خرید روزانه شروع می‌شود: ورود مدیر، ثبت فاکتور، کنترل پرداخت و دیدن موجودی همان لحظه.
+            برای ورود به داشبورد و مدیریت فروش، خرید و موجودی حساب مدیر را وارد کنید.
           </p>
-          <div className="status-strip" aria-label="وضعیت پروژه">
-            <span>فاز ۴</span>
-            <strong>خرید و انبار فعال</strong>
-          </div>
         </section>
 
         <section className="login-panel" aria-label="فرم ورود">
+          <Button className="back-to-store" variant="text" startIcon={<StorefrontRounded />} onClick={onOpenStore}>
+            بازگشت به فروشگاه
+          </Button>
           <div className="panel-header">
             <h2>ورود مدیر</h2>
             <p>نام کاربری و رمز عبور حساب مدیر را وارد کنید.</p>
@@ -422,11 +468,23 @@ function App() {
       <aside className="app-sidebar" aria-label="ناوبری اصلی">
         <div className="sidebar-brand">
           <span className="sidebar-logo" aria-hidden="true">ح</span>
-          <strong>حبوباتین</strong>
+          <div><strong>حبوباتین</strong><small>پنل مدیریت</small></div>
         </div>
         <nav className="sidebar-nav">
+          <span className="sidebar-section-label">مدیریت روزانه</span>
+          <button type="button" className={`sidebar-link ${view === "dashboard" ? "active" : ""}`} onClick={() => setView("dashboard")}>
+            <DashboardRounded />
+            خانه مدیریت
+          </button>
           {moduleCards.map((card) => {
             const target = card.key as AppView;
+            const Icon = card.key === "sales" ? PointOfSaleRounded :
+              card.key === "products" ? Inventory2Rounded :
+              card.key === "purchase" ? ShoppingCartCheckoutRounded :
+              card.key === "inventory" ? FactCheckRounded :
+              card.key === "ledger" ? AccountBalanceWalletRounded :
+              card.key === "cheques" ? PaymentsRounded :
+              card.key === "reports" ? AnalyticsRounded : SyncRounded;
             return (
               <button
                 type="button"
@@ -434,7 +492,7 @@ function App() {
                 onClick={() => setView(target)}
                 key={card.key}
               >
-                <span aria-hidden="true">{card.icon}</span>
+                <Icon aria-hidden="true" />
                 {card.title}
               </button>
             );
@@ -442,16 +500,23 @@ function App() {
         </nav>
       </aside>
       <div className="app-main">
-      {view !== "dashboard" ? (
       <header className="topbar">
         <div>
-          <p className="eyebrow">داشبورد فروشگاه</p>
-          <h1>سلام، {displayName}</h1>
+          <p className="eyebrow">{viewMeta[view].eyebrow}</p>
+          <h1>{viewMeta[view].title}</h1>
+          <span className="topbar-user">سلام {displayName}</span>
         </div>
-        <button className="ghost-button" type="button" onClick={handleLogout}>
-          خروج
-        </button>
+        <div className="topbar-actions">
+          <Button variant="outlined" startIcon={<StorefrontRounded />} onClick={onOpenStore}>مشاهده فروشگاه</Button>
+          <button className="ghost-button" type="button" onClick={handleLogout}>خروج</button>
+        </div>
       </header>
+
+      {view !== "dashboard" ? (
+        <aside className="admin-guide" aria-label="راهنمای این بخش">
+          <HelpOutlineRounded />
+          <div><strong>از کجا شروع کنم؟</strong><span>{viewMeta[view].help}</span></div>
+        </aside>
       ) : null}
 
       {view === "sales" ? <SalesView onBack={() => setView("dashboard")} /> : null}
@@ -498,29 +563,65 @@ function DashboardView({
   onOpenReports: () => void;
   onOpenOnline: () => void;
 }) {
+  const actions: Array<{ key: AppView; title: string; description: string; icon: ReactNode; color: string; action: () => void }> = [
+    { key: "sales", title: "ثبت فروش", description: "فاکتور و پرداخت مشتری", icon: <PointOfSaleRounded />, color: "#087f5b", action: onOpenSales },
+    { key: "purchase", title: "ثبت خرید", description: "خرید از تامین‌کننده", icon: <ShoppingCartCheckoutRounded />, color: "#ef8b24", action: onOpenPurchase },
+    { key: "inventory", title: "کنترل انبار", description: "موجودی و نقطه سفارش", icon: <FactCheckRounded />, color: "#3f8f4f", action: onOpenInventory },
+    { key: "products", title: "کالاها", description: "تعریف محصول و قیمت", icon: <Inventory2Rounded />, color: "#2f80ed", action: onOpenProducts },
+    { key: "ledger", title: "دفتر حساب", description: "مانده حساب اشخاص", icon: <AccountBalanceWalletRounded />, color: "#7e57c2", action: onOpenLedger },
+    { key: "cheques", title: "چک‌ها", description: "سررسید و وضعیت چک", icon: <PaymentsRounded />, color: "#e35d6a", action: onOpenCheques },
+    { key: "reports", title: "گزارش‌ها", description: "فروش، سود و نقدینگی", icon: <AnalyticsRounded />, color: "#40637a", action: onOpenReports },
+    { key: "online", title: "سفارش آنلاین", description: "بررسی سفارش‌های سایت", icon: <SyncRounded />, color: "#00a2a5", action: onOpenOnline },
+  ];
+
   return (
-    <div className="home-dashboard-reference">
-      <div className="home-reference-stage" aria-label="داشبورد فروشگاه حبوبات">
-        <img src={homeDashboardReference} alt="داشبورد فروشگاه حبوبات" draggable={false} />
-        <button type="button" className="home-hotspot home-hotspot-sales" onClick={onOpenSales} aria-label="فروش" />
-        <button type="button" className="home-hotspot home-hotspot-purchase" onClick={onOpenPurchase} aria-label="خرید" />
-        <button type="button" className="home-hotspot home-hotspot-inventory" onClick={onOpenInventory} aria-label="موجودی" />
-        <button type="button" className="home-hotspot home-hotspot-customers" onClick={onOpenLedger} aria-label="مشتریان" />
-        <button type="button" className="home-hotspot home-hotspot-cheques" onClick={onOpenCheques} aria-label="چک‌ها" />
-        <button type="button" className="home-hotspot home-hotspot-reports" onClick={onOpenReports} aria-label="گزارش‌ها" />
-        <button type="button" className="home-hotspot home-hotspot-online" onClick={onOpenOnline} aria-label="سفارش آنلاین" />
-        <button type="button" className="home-hotspot home-hotspot-settings" onClick={onOpenProducts} aria-label="تنظیمات" />
-        <button type="button" className="home-hotspot home-hotspot-sidebar-dashboard" aria-label="داشبورد" />
-        <button type="button" className="home-hotspot home-hotspot-sidebar-sales" onClick={onOpenSales} aria-label="فروش" />
-        <button type="button" className="home-hotspot home-hotspot-sidebar-purchase" onClick={onOpenPurchase} aria-label="خرید" />
-        <button type="button" className="home-hotspot home-hotspot-sidebar-inventory" onClick={onOpenInventory} aria-label="موجودی" />
-        <button type="button" className="home-hotspot home-hotspot-sidebar-customers" onClick={onOpenLedger} aria-label="مشتریان" />
-        <button type="button" className="home-hotspot home-hotspot-sidebar-cheques" onClick={onOpenCheques} aria-label="چک‌ها" />
-        <button type="button" className="home-hotspot home-hotspot-sidebar-reports" onClick={onOpenReports} aria-label="گزارش‌ها" />
-        <button type="button" className="home-hotspot home-hotspot-sidebar-online" onClick={onOpenOnline} aria-label="سفارش آنلاین" />
-        <button type="button" className="home-hotspot home-hotspot-sidebar-settings" onClick={onOpenProducts} aria-label="تنظیمات" />
-      </div>
-    </div>
+    <Box className="material-dashboard">
+      <Box component="section" className="dashboard-welcome">
+        <Box>
+          <Chip icon={<AdminPanelSettingsRounded />} label="همه بخش‌ها آماده‌اند" color="primary" variant="outlined" />
+          <Typography variant="h4" component="h2">امروز چه کاری انجام می‌دهی؟</Typography>
+          <Typography color="text.secondary">کارهای پرتکرار را مستقیم شروع کن؛ وضعیت فروشگاه هم در همین صفحه خلاصه شده است.</Typography>
+        </Box>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+          <Button variant="contained" size="large" startIcon={<PointOfSaleRounded />} onClick={onOpenSales}>فروش جدید</Button>
+          <Button variant="outlined" size="large" startIcon={<ShoppingCartCheckoutRounded />} onClick={onOpenPurchase}>خرید جدید</Button>
+        </Stack>
+      </Box>
+
+      <Box component="section" className="quick-start" aria-label="شروع سریع">
+        <Box className="quick-start-title"><HelpOutlineRounded /><Box><Typography sx={{ fontWeight: 900 }}>شروع سریع برای کاربر تازه‌کار</Typography><Typography variant="body2" color="text.secondary">برای یک چرخه کامل روزانه، این سه مرحله را به‌ترتیب انجام بده.</Typography></Box></Box>
+        <Box className="quick-start-steps">
+          <button type="button" onClick={onOpenProducts}><span>۱</span><div><strong>کالا را تعریف کن</strong><small>نام، واحد و قیمت پایه</small></div><ArrowBackRounded /></button>
+          <button type="button" onClick={onOpenPurchase}><span>۲</span><div><strong>موجودی وارد کن</strong><small>ثبت خرید از تامین‌کننده</small></div><ArrowBackRounded /></button>
+          <button type="button" onClick={onOpenSales}><span>۳</span><div><strong>فروش را ثبت کن</strong><small>فاکتور و روش پرداخت</small></div><ArrowBackRounded /></button>
+        </Box>
+      </Box>
+
+      <Box component="section" className="dashboard-kpis" aria-label="وضعیت امروز">
+        <Card><CardContent><Stack direction="row" sx={{ justifyContent: "space-between" }}><Typography color="text.secondary">فروش امروز</Typography><PointOfSaleRounded color="primary" /></Stack><Typography variant="h5">۱۲٬۴۵۰٬۰۰۰ تومان</Typography><Chip size="small" label="۱۲ فاکتور" color="primary" variant="outlined" /></CardContent></Card>
+        <Card><CardContent><Stack direction="row" sx={{ justifyContent: "space-between" }}><Typography color="text.secondary">دریافت واقعی</Typography><ReceiptLongRounded color="info" /></Stack><Typography variant="h5">۱۰٬۸۲۰٬۰۰۰ تومان</Typography><LinearProgress variant="determinate" value={87} sx={{ mt: 1.5 }} /></CardContent></Card>
+        <Card><CardContent><Stack direction="row" sx={{ justifyContent: "space-between" }}><Typography color="text.secondary">هشدار موجودی</Typography><Inventory2Rounded color="warning" /></Stack><Typography variant="h5">۳ کالا</Typography><Button size="small" onClick={onOpenInventory}>بررسی موجودی</Button></CardContent></Card>
+        <Card><CardContent><Stack direction="row" sx={{ justifyContent: "space-between" }}><Typography color="text.secondary">سررسید نزدیک</Typography><PaymentsRounded color="secondary" /></Stack><Typography variant="h5">۲ چک</Typography><Button size="small" onClick={onOpenCheques}>مشاهده چک‌ها</Button></CardContent></Card>
+      </Box>
+
+      <Box component="section" className="dashboard-modules">
+        <Box className="dashboard-section-heading"><Box><Typography variant="h5">بخش‌های مدیریت</Typography><Typography color="text.secondary">هر کارت تو را مستقیم به کار موردنظر می‌برد.</Typography></Box><Chip label="۸ بخش فعال" /></Box>
+        <Box className="material-module-grid">
+          {actions.map((item) => (
+            <Card key={item.key} className="material-module-card" style={{ "--module-color": item.color } as CSSProperties}>
+              <CardActionArea onClick={item.action}>
+                <CardContent>
+                  <Box className="material-module-icon">{item.icon}</Box>
+                  <Typography variant="h6">{item.title}</Typography>
+                  <Typography variant="body2" color="text.secondary">{item.description}</Typography>
+                  <Box className="material-module-link">ورود به بخش <ArrowBackRounded /></Box>
+                </CardContent>
+              </CardActionArea>
+            </Card>
+          ))}
+        </Box>
+      </Box>
+    </Box>
   );
 }
 
