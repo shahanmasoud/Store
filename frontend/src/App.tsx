@@ -24,6 +24,7 @@ import {
   type Unit,
   type User,
 } from "./api";
+import homeDashboardReference from "./assets/home-dashboard-reference.png";
 
 const TOKEN_KEY = "store_auth_token";
 const DEFAULT_JALALI_DATE = "1405/06/02";
@@ -418,6 +419,30 @@ function App() {
 
   return (
     <main className="app-layout">
+      <aside className="app-sidebar" aria-label="ناوبری اصلی">
+        <div className="sidebar-brand">
+          <span className="sidebar-logo" aria-hidden="true">ح</span>
+          <strong>حبوباتین</strong>
+        </div>
+        <nav className="sidebar-nav">
+          {moduleCards.map((card) => {
+            const target = card.key as AppView;
+            return (
+              <button
+                type="button"
+                className={`sidebar-link accent-${card.accent} ${view === target ? "active" : ""}`}
+                onClick={() => setView(target)}
+                key={card.key}
+              >
+                <span aria-hidden="true">{card.icon}</span>
+                {card.title}
+              </button>
+            );
+          })}
+        </nav>
+      </aside>
+      <div className="app-main">
+      {view !== "dashboard" ? (
       <header className="topbar">
         <div>
           <p className="eyebrow">داشبورد فروشگاه</p>
@@ -427,6 +452,7 @@ function App() {
           خروج
         </button>
       </header>
+      ) : null}
 
       {view === "sales" ? <SalesView onBack={() => setView("dashboard")} /> : null}
       {view === "purchase" ? <PurchaseView onBack={() => setView("dashboard")} onOpenInventory={() => setView("inventory")} /> : null}
@@ -448,6 +474,7 @@ function App() {
           onOpenOnline={() => setView("online")}
         />
       ) : null}
+      </div>
     </main>
   );
 }
@@ -472,107 +499,28 @@ function DashboardView({
   onOpenOnline: () => void;
 }) {
   return (
-    <>
-      <section className="command-hero" aria-label="مرکز عملیات فروشگاه">
-        <div className="command-copy">
-          <p className="eyebrow">مرکز فرمان فروشگاه حبوبات</p>
-          <h2>همه عملیات روز را از یک داشبورد آماده اجرا کنترل کن.</h2>
-          <p>فروش، خرید، موجودی، حساب اشخاص، چک‌ها، گزارش‌ها و سفارش‌های آنلاین حالا از همین صفحه وارد جریان واقعی سیستم می‌شوند.</p>
-          <div className="hero-actions">
-            <button type="button" className="primary-button" onClick={onOpenSales}>
-              ثبت فروش
-            </button>
-            <button type="button" className="ghost-button" onClick={onOpenPurchase}>
-              ثبت خرید
-            </button>
-            <button type="button" className="ghost-button" onClick={onOpenReports}>
-              گزارش امروز
-            </button>
-          </div>
-        </div>
-        <div className="grain-visual" aria-hidden="true">
-          <div className="visual-rail visual-rail-one" />
-          <div className="visual-rail visual-rail-two" />
-          <div className="grain-bowl">
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-          </div>
-          <div className="grain-ticket">
-            <strong>{formatRial(24500000)}</strong>
-            <span>گردش نمونه امروز</span>
-          </div>
-          <div className="grain-stack">
-            <i />
-            <i />
-            <i />
-          </div>
-          <div className="visual-ledger">
-            <span>حساب‌ها</span>
-            <strong>همگام</strong>
-          </div>
-        </div>
-      </section>
-
-      <section className="overview-band" aria-label="وضعیت امروز">
-        <div>
-          <span>وضعیت اجرا</span>
-          <strong>همه ماژول‌های اصلی فعال</strong>
-        </div>
-        <div>
-          <span>اولویت امروز</span>
-          <strong>ثبت دقیق، کنترل مانده‌ها، پیگیری سررسید</strong>
-        </div>
-        <div>
-          <span>واحد پول و تاریخ</span>
-          <strong>ورودی تومان، تقویم شمسی</strong>
-        </div>
-      </section>
-
-      <section className="section-header">
-        <div>
-          <h2>بخش‌های اصلی سیستم</h2>
-          <p>هر کارت یک مسیر کاری کامل را باز می‌کند و مستقیم وارد بخش عملیاتی خودش می‌شود.</p>
-        </div>
-        <span className="badge">نسخه یکپارچه قابل تست</span>
-      </section>
-
-      <section className="module-grid" aria-label="ماژول‌های سیستم">
-        {moduleCards.map((card) => {
-          const handler =
-            card.key === "sales" ? onOpenSales :
-            card.key === "purchase" ? onOpenPurchase :
-            card.key === "inventory" ? onOpenInventory :
-            card.key === "products" ? onOpenProducts :
-            card.key === "ledger" ? onOpenLedger :
-            card.key === "cheques" ? onOpenCheques :
-            card.key === "reports" ? onOpenReports :
-            card.key === "online" ? onOpenOnline :
-            null;
-          return (
-            <article className={`module-card accent-${card.accent} ${handler ? "module-card-active" : ""}`} key={card.title}>
-              <div className="module-icon">
-                <span aria-hidden="true">{card.icon}</span>
-              </div>
-              <div>
-                <span className="module-status">{card.status}</span>
-                <h3>{card.title}</h3>
-                <p>{card.description}</p>
-              </div>
-              {handler ? (
-                <button type="button" className="module-action" onClick={handler}>
-                  {card.action ?? card.status}
-                </button>
-              ) : (
-                <span className="coming-soon">{card.status}</span>
-              )}
-            </article>
-          );
-        })}
-      </section>
-    </>
+    <div className="home-dashboard-reference">
+      <div className="home-reference-stage" aria-label="داشبورد فروشگاه حبوبات">
+        <img src={homeDashboardReference} alt="داشبورد فروشگاه حبوبات" draggable={false} />
+        <button type="button" className="home-hotspot home-hotspot-sales" onClick={onOpenSales} aria-label="فروش" />
+        <button type="button" className="home-hotspot home-hotspot-purchase" onClick={onOpenPurchase} aria-label="خرید" />
+        <button type="button" className="home-hotspot home-hotspot-inventory" onClick={onOpenInventory} aria-label="موجودی" />
+        <button type="button" className="home-hotspot home-hotspot-customers" onClick={onOpenLedger} aria-label="مشتریان" />
+        <button type="button" className="home-hotspot home-hotspot-cheques" onClick={onOpenCheques} aria-label="چک‌ها" />
+        <button type="button" className="home-hotspot home-hotspot-reports" onClick={onOpenReports} aria-label="گزارش‌ها" />
+        <button type="button" className="home-hotspot home-hotspot-online" onClick={onOpenOnline} aria-label="سفارش آنلاین" />
+        <button type="button" className="home-hotspot home-hotspot-settings" onClick={onOpenProducts} aria-label="تنظیمات" />
+        <button type="button" className="home-hotspot home-hotspot-sidebar-dashboard" aria-label="داشبورد" />
+        <button type="button" className="home-hotspot home-hotspot-sidebar-sales" onClick={onOpenSales} aria-label="فروش" />
+        <button type="button" className="home-hotspot home-hotspot-sidebar-purchase" onClick={onOpenPurchase} aria-label="خرید" />
+        <button type="button" className="home-hotspot home-hotspot-sidebar-inventory" onClick={onOpenInventory} aria-label="موجودی" />
+        <button type="button" className="home-hotspot home-hotspot-sidebar-customers" onClick={onOpenLedger} aria-label="مشتریان" />
+        <button type="button" className="home-hotspot home-hotspot-sidebar-cheques" onClick={onOpenCheques} aria-label="چک‌ها" />
+        <button type="button" className="home-hotspot home-hotspot-sidebar-reports" onClick={onOpenReports} aria-label="گزارش‌ها" />
+        <button type="button" className="home-hotspot home-hotspot-sidebar-online" onClick={onOpenOnline} aria-label="سفارش آنلاین" />
+        <button type="button" className="home-hotspot home-hotspot-sidebar-settings" onClick={onOpenProducts} aria-label="تنظیمات" />
+      </div>
+    </div>
   );
 }
 
