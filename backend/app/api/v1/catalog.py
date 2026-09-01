@@ -13,10 +13,12 @@ from app.schemas.catalog import (
     PriceRuleRead,
     ProductCreate,
     ProductRead,
+    ProductUpdate,
     ProductVariantCreate,
     ProductVariantRead,
     UnitCreate,
     UnitRead,
+    UnitUpdate,
 )
 from app.services import catalog as catalog_service
 
@@ -31,6 +33,16 @@ def units(db: Session = Depends(get_db)) -> list[UnitRead]:
 @router.post("/units", response_model=UnitRead, status_code=status.HTTP_201_CREATED)
 def create_unit(payload: UnitCreate, db: Session = Depends(get_db)) -> UnitRead:
     return catalog_service.create_unit(db, payload)
+
+
+@router.patch("/units/{unit_id}", response_model=UnitRead)
+def update_unit(unit_id: int, payload: UnitUpdate, db: Session = Depends(get_db)) -> UnitRead:
+    return catalog_service.update_unit(db, unit_id, payload)
+
+
+@router.delete("/units/{unit_id}", response_model=UnitRead)
+def deactivate_unit(unit_id: int, db: Session = Depends(get_db)) -> UnitRead:
+    return catalog_service.deactivate_unit(db, unit_id)
 
 
 @router.get("/categories", response_model=list[CategoryRead])
@@ -61,6 +73,16 @@ def products(db: Session = Depends(get_db)) -> list[ProductRead]:
 @router.post("/products", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
 def create_product(payload: ProductCreate, db: Session = Depends(get_db)) -> ProductRead:
     return catalog_service.create_product(db, payload)
+
+
+@router.patch("/products/{product_id}", response_model=ProductRead)
+def update_product(product_id: int, payload: ProductUpdate, db: Session = Depends(get_db)) -> ProductRead:
+    return catalog_service.update_product(db, product_id, payload)
+
+
+@router.delete("/products/{product_id}", response_model=ProductRead)
+def deactivate_product(product_id: int, db: Session = Depends(get_db)) -> ProductRead:
+    return catalog_service.deactivate_product(db, product_id)
 
 
 @router.get("/product-variants", response_model=list[ProductVariantRead])

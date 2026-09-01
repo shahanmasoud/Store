@@ -10,8 +10,10 @@ from app.schemas.catalog import (
     PriceListCreate,
     PriceRuleCreate,
     ProductCreate,
+    ProductUpdate,
     ProductVariantCreate,
     UnitCreate,
+    UnitUpdate,
 )
 
 
@@ -19,12 +21,69 @@ def list_units(db: Session) -> list[Unit]:
     return list(db.scalars(select(Unit).where(Unit.is_active.is_(True)).order_by(Unit.name)))
 
 
+def _get_unit(db: Session, unit_id: int) -> Unit:
+    unit = db.get(Unit, unit_id)
+    if unit is None or not unit.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="واحد فعال پیدا نشد.")
+    return unit
+
+
+def _ensure_unique_unit(db: Session, name: str, symbol: str, *, exclude_id: int | None = None) -> None:
+    active_units = db.scalars(select(Unit).where(Unit.is_active.is_(True)))
+    for unit in active_units:
+        if unit.id == exclude_id:
+            continue
+        if unit.name.strip().casefold() == name.casefold():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="واحدی با این نام وجود دارد.")
+        if unit.symbol.strip().casefold() == symbol.casefold():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="واحدی با این نماد وجود دارد.")
+
+
+def _commit_catalog_record(db: Session, record: Unit | Category | Product, entity_name: str):
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"ثبت {entity_name} به‌دلیل تداخل با اطلاعات موجود انجام نشد.",
+        ) from exc
+    db.refresh(record)
+    return record
+
+
 def create_unit(db: Session, payload: UnitCreate) -> Unit:
+    _ensure_unique_unit(db, payload.name, payload.symbol)
     unit = Unit(**payload.model_dump())
     db.add(unit)
-    db.commit()
-    db.refresh(unit)
-    return unit
+    return _commit_catalog_record(db, unit, "واحد")
+
+
+def update_unit(db: Session, unit_id: int, payload: UnitUpdate) -> Unit:
+    unit = _get_unit(db, unit_id)
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="حداقل یک تغییر وارد کنید.")
+    name = changes.get("name", unit.name)
+    symbol = changes.get("symbol", unit.symbol)
+    _ensure_unique_unit(db, name, symbol, exclude_id=unit.id)
+    unit.name = name
+    unit.symbol = symbol
+    return _commit_catalog_record(db, unit, "واحد")
+
+
+def deactivate_unit(db: Session, unit_id: int) -> Unit:
+    unit = _get_unit(db, unit_id)
+    has_active_variant = db.scalar(
+        select(ProductVariant.id).where(ProductVariant.unit_id == unit.id, ProductVariant.is_active.is_(True)).limit(1)
+    )
+    if has_active_variant is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="این واحد در گونه کالای فعال استفاده شده است؛ ابتدا گونه‌های مرتبط را تغییر دهید یا غیرفعال کنید.",
+        )
+    unit.is_active = False
+    return _commit_catalog_record(db, unit, "واحد")
 
 
 def list_categories(db: Session) -> list[Category]:
@@ -71,16 +130,7 @@ def _ensure_unique_sibling_name(
 
 
 def _commit_category(db: Session, category: Category) -> Category:
-    try:
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="ثبت دسته به‌دلیل تداخل با اطلاعات موجود انجام نشد.",
-        ) from exc
-    db.refresh(category)
-    return category
+    return _commit_catalog_record(db, category, "دسته")
 
 
 def create_category(db: Session, payload: CategoryCreate) -> Category:
@@ -132,12 +182,70 @@ def list_products(db: Session) -> list[Product]:
     return list(db.scalars(select(Product).where(Product.is_active.is_(True)).order_by(Product.name)))
 
 
+def _get_product(db: Session, product_id: int) -> Product:
+    product = db.get(Product, product_id)
+    if product is None or not product.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="کالای فعال پیدا نشد.")
+    return product
+
+
+def _validate_product_category(db: Session, category_id: int | None) -> None:
+    if category_id is not None:
+        _get_category(db, category_id)
+
+
+def _ensure_unique_product_name(
+    db: Session,
+    name: str,
+    category_id: int | None,
+    *,
+    exclude_id: int | None = None,
+) -> None:
+    products = db.scalars(select(Product).where(Product.category_id == category_id, Product.is_active.is_(True)))
+    if any(product.id != exclude_id and product.name.strip().casefold() == name.casefold() for product in products):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="کالایی با این نام در همین دسته وجود دارد.",
+        )
+
+
 def create_product(db: Session, payload: ProductCreate) -> Product:
+    _validate_product_category(db, payload.category_id)
+    _ensure_unique_product_name(db, payload.name, payload.category_id)
     product = Product(**payload.model_dump())
     db.add(product)
-    db.commit()
-    db.refresh(product)
-    return product
+    return _commit_catalog_record(db, product, "کالا")
+
+
+def update_product(db: Session, product_id: int, payload: ProductUpdate) -> Product:
+    product = _get_product(db, product_id)
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="حداقل یک تغییر وارد کنید.")
+    name = changes.get("name", product.name)
+    category_id = changes.get("category_id", product.category_id)
+    _validate_product_category(db, category_id)
+    _ensure_unique_product_name(db, name, category_id, exclude_id=product.id)
+    for field, value in changes.items():
+        setattr(product, field, value)
+    return _commit_catalog_record(db, product, "کالا")
+
+
+def deactivate_product(db: Session, product_id: int) -> Product:
+    product = _get_product(db, product_id)
+    has_active_variant = db.scalar(
+        select(ProductVariant.id).where(
+            ProductVariant.product_id == product.id,
+            ProductVariant.is_active.is_(True),
+        ).limit(1)
+    )
+    if has_active_variant is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="این کالا گونه فعال دارد؛ ابتدا گونه‌های مرتبط را غیرفعال کنید.",
+        )
+    product.is_active = False
+    return _commit_catalog_record(db, product, "کالا")
 
 
 def list_variants(db: Session) -> list[ProductVariant]:

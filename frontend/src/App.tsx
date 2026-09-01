@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
-import { Alert, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, MenuItem, Stack, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, InputAdornment, LinearProgress, MenuItem, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
 import AccountBalanceWalletRounded from "@mui/icons-material/AccountBalanceWalletRounded";
 import AdminPanelSettingsRounded from "@mui/icons-material/AdminPanelSettingsRounded";
 import AnalyticsRounded from "@mui/icons-material/AnalyticsRounded";
@@ -20,6 +20,9 @@ import DeleteOutlineRounded from "@mui/icons-material/DeleteOutlineRounded";
 import EditRounded from "@mui/icons-material/EditRounded";
 import FolderOutlined from "@mui/icons-material/FolderOutlined";
 import RefreshRounded from "@mui/icons-material/RefreshRounded";
+import CategoryRounded from "@mui/icons-material/CategoryRounded";
+import SearchRounded from "@mui/icons-material/SearchRounded";
+import StraightenRounded from "@mui/icons-material/StraightenRounded";
 import Storefront from "./Storefront";
 import {
   api,
@@ -984,11 +987,13 @@ function InventoryView({ onBack }: { onBack: () => void }) {
 }
 
 function ProductsView({ onBack }: { onBack: () => void }) {
+  const [catalogTab, setCatalogTab] = useState(0);
   const [units, setUnits] = useState<Unit[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [message, setMessage] = useState("");
+  const [catalogLoadError, setCatalogLoadError] = useState("");
   const [categoryStatus, setCategoryStatus] = useState<"loading" | "ready" | "error">("loading");
   const [categoryNotice, setCategoryNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [categoryName, setCategoryName] = useState("");
@@ -997,9 +1002,28 @@ function ProductsView({ onBack }: { onBack: () => void }) {
   const [categorySaving, setCategorySaving] = useState(false);
   const [deactivatingCategoryId, setDeactivatingCategoryId] = useState<number | null>(null);
   const [pendingDeactivateCategory, setPendingDeactivateCategory] = useState<Category | null>(null);
+  const [unitProductStatus, setUnitProductStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [unitNotice, setUnitNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [productNotice, setProductNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [unitName, setUnitName] = useState("");
+  const [unitSymbol, setUnitSymbol] = useState("");
+  const [editingUnitId, setEditingUnitId] = useState<number | null>(null);
+  const [unitSaving, setUnitSaving] = useState(false);
+  const [pendingDeactivateUnit, setPendingDeactivateUnit] = useState<Unit | null>(null);
+  const [unitSearch, setUnitSearch] = useState("");
+  const [productName, setProductName] = useState("");
+  const [productDescription, setProductDescription] = useState("");
+  const [productCategoryId, setProductCategoryId] = useState("");
+  const [editingProductId, setEditingProductId] = useState<number | null>(null);
+  const [productSaving, setProductSaving] = useState(false);
+  const [pendingDeactivateProduct, setPendingDeactivateProduct] = useState<Product | null>(null);
+  const [productSearch, setProductSearch] = useState("");
+  const [deactivatingRecord, setDeactivatingRecord] = useState(false);
 
   const load = () => {
     setCategoryStatus("loading");
+    setUnitProductStatus("loading");
+    setCatalogLoadError("");
     setCategoryNotice(null);
     return Promise.all([api.units(), api.categories(), api.products(), api.productVariants()])
       .then(([nextUnits, nextCategories, nextProducts, nextVariants]) => {
@@ -1008,11 +1032,13 @@ function ProductsView({ onBack }: { onBack: () => void }) {
         setProducts(nextProducts);
         setVariants(nextVariants);
         setCategoryStatus("ready");
+        setUnitProductStatus("ready");
       })
       .catch((error) => {
         const text = error instanceof Error ? error.message : "دریافت اطلاعات کالا انجام نشد.";
-        setCategoryNotice({ type: "error", text });
+        setCatalogLoadError(text);
         setCategoryStatus("error");
+        setUnitProductStatus("error");
       });
   };
 
@@ -1020,13 +1046,41 @@ function ProductsView({ onBack }: { onBack: () => void }) {
     void load();
   }, []);
 
+  function resetUnitForm() {
+    setEditingUnitId(null);
+    setUnitName("");
+    setUnitSymbol("");
+  }
+
+  function startUnitEdit(unit: Unit) {
+    setEditingUnitId(unit.id);
+    setUnitName(unit.name);
+    setUnitSymbol(unit.symbol);
+    setUnitNotice(null);
+  }
+
   async function submitUnit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await api.createUnit({ name: String(form.get("name") ?? ""), symbol: String(form.get("symbol") ?? "") });
-    event.currentTarget.reset();
-    setMessage("واحد با موفقیت ثبت شد.");
-    load();
+    const normalizedName = unitName.trim();
+    const normalizedSymbol = unitSymbol.trim();
+    if (!normalizedName || !normalizedSymbol) {
+      setUnitNotice({ type: "error", text: "نام و نماد واحد را کامل وارد کنید." });
+      return;
+    }
+    setUnitSaving(true);
+    setUnitNotice(null);
+    const wasEditing = editingUnitId !== null;
+    try {
+      if (editingUnitId === null) await api.createUnit({ name: normalizedName, symbol: normalizedSymbol });
+      else await api.updateUnit(editingUnitId, { name: normalizedName, symbol: normalizedSymbol });
+      resetUnitForm();
+      await load();
+      setUnitNotice({ type: "success", text: wasEditing ? "تغییرات واحد ذخیره شد." : "واحد جدید ثبت شد." });
+    } catch (error) {
+      setUnitNotice({ type: "error", text: error instanceof Error ? error.message : "ذخیره واحد انجام نشد." });
+    } finally {
+      setUnitSaving(false);
+    }
   }
 
   const orderedCategories = useMemo(() => {
@@ -1127,18 +1181,96 @@ function ProductsView({ onBack }: { onBack: () => void }) {
     }
   }
 
+  const filteredUnits = useMemo(() => {
+    const query = unitSearch.trim().toLocaleLowerCase("fa");
+    return query ? units.filter((unit) => `${unit.name} ${unit.symbol}`.toLocaleLowerCase("fa").includes(query)) : units;
+  }, [unitSearch, units]);
+
+  const filteredProducts = useMemo(() => {
+    const query = productSearch.trim().toLocaleLowerCase("fa");
+    return query ? products.filter((product) => {
+      const categoryName = categories.find((category) => category.id === product.category_id)?.name ?? "بدون دسته";
+      return `${product.name} ${product.description ?? ""} ${categoryName}`.toLocaleLowerCase("fa").includes(query);
+    }) : products;
+  }, [categories, productSearch, products]);
+
+  function resetProductForm() {
+    setEditingProductId(null);
+    setProductName("");
+    setProductDescription("");
+    setProductCategoryId("");
+  }
+
+  function startProductEdit(product: Product) {
+    setEditingProductId(product.id);
+    setProductName(product.name);
+    setProductDescription(product.description ?? "");
+    setProductCategoryId(product.category_id == null ? "" : String(product.category_id));
+    setProductNotice(null);
+  }
+
   async function submitProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const categoryId = Number(form.get("categoryId"));
-    await api.createProduct({
-      name: String(form.get("name") ?? ""),
-      description: String(form.get("description") ?? ""),
-      category_id: categoryId || null,
-    });
-    event.currentTarget.reset();
-    setMessage("کالا ثبت شد.");
-    load();
+    const normalizedName = productName.trim();
+    if (!normalizedName) {
+      setProductNotice({ type: "error", text: "نام کالا را وارد کنید." });
+      return;
+    }
+    setProductSaving(true);
+    setProductNotice(null);
+    const wasEditing = editingProductId !== null;
+    const payload = {
+      name: normalizedName,
+      description: productDescription.trim() || null,
+      category_id: productCategoryId ? Number(productCategoryId) : null,
+    };
+    try {
+      if (editingProductId === null) await api.createProduct(payload);
+      else await api.updateProduct(editingProductId, payload);
+      resetProductForm();
+      await load();
+      setProductNotice({ type: "success", text: wasEditing ? "تغییرات کالا ذخیره شد." : "کالای جدید ثبت شد." });
+    } catch (error) {
+      setProductNotice({ type: "error", text: error instanceof Error ? error.message : "ذخیره کالا انجام نشد." });
+    } finally {
+      setProductSaving(false);
+    }
+  }
+
+  async function deactivateUnit() {
+    if (pendingDeactivateUnit === null) return;
+    setDeactivatingRecord(true);
+    setUnitNotice(null);
+    try {
+      await api.deactivateUnit(pendingDeactivateUnit.id);
+      if (editingUnitId === pendingDeactivateUnit.id) resetUnitForm();
+      setPendingDeactivateUnit(null);
+      await load();
+      setUnitNotice({ type: "success", text: "واحد با موفقیت غیرفعال شد." });
+    } catch (error) {
+      setPendingDeactivateUnit(null);
+      setUnitNotice({ type: "error", text: error instanceof Error ? error.message : "غیرفعال‌سازی واحد انجام نشد." });
+    } finally {
+      setDeactivatingRecord(false);
+    }
+  }
+
+  async function deactivateProduct() {
+    if (pendingDeactivateProduct === null) return;
+    setDeactivatingRecord(true);
+    setProductNotice(null);
+    try {
+      await api.deactivateProduct(pendingDeactivateProduct.id);
+      if (editingProductId === pendingDeactivateProduct.id) resetProductForm();
+      setPendingDeactivateProduct(null);
+      await load();
+      setProductNotice({ type: "success", text: "کالا با موفقیت غیرفعال شد." });
+    } catch (error) {
+      setPendingDeactivateProduct(null);
+      setProductNotice({ type: "error", text: error instanceof Error ? error.message : "غیرفعال‌سازی کالا انجام نشد." });
+    } finally {
+      setDeactivatingRecord(false);
+    }
   }
 
   async function submitVariant(event: FormEvent<HTMLFormElement>) {
@@ -1175,7 +1307,14 @@ function ProductsView({ onBack }: { onBack: () => void }) {
 
   return (
     <CrudWorkspace title="کالاها و قیمت‌ها" eyebrow="مدیریت کاتالوگ" onBack={onBack}>
-      {message ? <p className="success-message">{message}</p> : null}
+      <nav className="catalog-tabs" aria-label="بخش‌های مدیریت کالا">
+        <Tabs value={catalogTab} onChange={(_, value: number) => setCatalogTab(value)} variant="scrollable" scrollButtons="auto">
+          <Tab icon={<CategoryRounded />} iconPosition="start" label="دسته‌ها" />
+          <Tab icon={<StraightenRounded />} iconPosition="start" label="واحد و کالا" />
+          <Tab icon={<Inventory2Rounded />} iconPosition="start" label="گونه و قیمت" />
+        </Tabs>
+      </nav>
+      {catalogTab === 0 ? (
       <section className="category-manager" aria-labelledby="category-manager-title">
         <div className="category-manager-heading">
           <div>
@@ -1236,7 +1375,7 @@ function ProductsView({ onBack }: { onBack: () => void }) {
               <Button type="button" startIcon={<RefreshRounded />} onClick={() => load()} disabled={categoryStatus === "loading"}>تازه‌سازی</Button>
             </div>
             {categoryStatus === "loading" ? <div className="category-state"><CircularProgress size={28} /><span>در حال دریافت دسته‌ها…</span></div> : null}
-            {categoryStatus === "error" ? <div className="category-state category-state-error"><span>دریافت دسته‌ها انجام نشد.</span><Button variant="outlined" onClick={() => load()}>تلاش دوباره</Button></div> : null}
+            {categoryStatus === "error" ? <div className="category-state category-state-error"><span>{catalogLoadError || "دریافت دسته‌ها انجام نشد."}</span><Button variant="outlined" onClick={() => load()}>تلاش دوباره</Button></div> : null}
             {categoryStatus === "ready" && orderedCategories.length === 0 ? <div className="category-state"><FolderOutlined /><strong>هنوز دسته‌ای ندارید</strong><span>اولین دسته را از فرم روبه‌رو بسازید.</span></div> : null}
             {categoryStatus === "ready" && orderedCategories.length > 0 ? (
               <div className="category-list">
@@ -1279,23 +1418,77 @@ function ProductsView({ onBack }: { onBack: () => void }) {
           </DialogActions>
         </Dialog>
       </section>
+      ) : null}
+      {catalogTab === 1 ? (
+        <section className="unit-product-workspace" aria-label="مدیریت واحدها و کالاهای پایه">
+          <section className="record-manager" aria-labelledby="unit-manager-title">
+            <header className="record-manager-heading">
+              <div><span className="record-manager-icon"><StraightenRounded /></span><div><h3 id="unit-manager-title">واحدهای اندازه‌گیری</h3><p>واحدهایی مثل کیلوگرم، بسته یا عدد را مدیریت کنید.</p></div></div>
+              <Chip label={`${units.length.toLocaleString("fa-IR")} واحد فعال`} variant="outlined" color="primary" />
+            </header>
+            {unitNotice ? <Alert severity={unitNotice.type} onClose={() => setUnitNotice(null)}>{unitNotice.text}</Alert> : null}
+            <form className="record-form record-form-unit" onSubmit={submitUnit} noValidate>
+              <TextField label="نام واحد" value={unitName} onChange={(event) => setUnitName(event.target.value)} required disabled={unitSaving} helperText="مثلاً کیلوگرم" slotProps={{ htmlInput: { maxLength: 60 } }} />
+              <TextField label="نماد" value={unitSymbol} onChange={(event) => setUnitSymbol(event.target.value)} required disabled={unitSaving} helperText="مثلاً kg" slotProps={{ htmlInput: { maxLength: 20, dir: "ltr" } }} />
+              <div className="record-form-actions">
+                <Button type="submit" variant="contained" size="large" disabled={unitSaving || !unitName.trim() || !unitSymbol.trim()} startIcon={unitSaving ? <CircularProgress size={18} color="inherit" /> : editingUnitId === null ? <AddRounded /> : <EditRounded />}>
+                  {unitSaving ? "در حال ذخیره…" : editingUnitId === null ? "ثبت واحد" : "ذخیره تغییرات"}
+                </Button>
+                {editingUnitId !== null ? <Button type="button" size="large" onClick={resetUnitForm} disabled={unitSaving} startIcon={<CloseRounded />}>انصراف</Button> : null}
+              </div>
+            </form>
+            <TextField className="record-search" size="small" label="جست‌وجوی واحد" value={unitSearch} onChange={(event) => setUnitSearch(event.target.value)} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} />
+            {unitProductStatus === "loading" ? <div className="record-state"><CircularProgress size={28} /><span>در حال دریافت واحدها…</span></div> : null}
+            {unitProductStatus === "error" ? <div className="record-state record-state-error"><span>{catalogLoadError || "دریافت واحدها انجام نشد."}</span><Button variant="outlined" onClick={() => load()}>تلاش دوباره</Button></div> : null}
+            {unitProductStatus === "ready" && units.length === 0 ? <div className="record-state"><StraightenRounded /><strong>هنوز واحدی ثبت نشده است</strong></div> : null}
+            {unitProductStatus === "ready" && units.length > 0 && filteredUnits.length === 0 ? <div className="record-state"><SearchRounded /><strong>واحدی با این عبارت پیدا نشد</strong></div> : null}
+            {unitProductStatus === "ready" && filteredUnits.length > 0 ? <div className="record-list">{filteredUnits.map((unit) => (
+              <article className="record-item" key={unit.id}>
+                <div><strong>{unit.name}</strong><Chip label={unit.symbol} size="small" /></div>
+                <div className="record-item-actions"><Button startIcon={<EditRounded />} onClick={() => startUnitEdit(unit)}>ویرایش</Button><Button color="error" startIcon={<DeleteOutlineRounded />} onClick={() => setPendingDeactivateUnit(unit)}>غیرفعال</Button></div>
+              </article>
+            ))}</div> : null}
+          </section>
+
+          <section className="record-manager" aria-labelledby="product-manager-title">
+            <header className="record-manager-heading">
+              <div><span className="record-manager-icon record-manager-icon-product"><Inventory2Rounded /></span><div><h3 id="product-manager-title">کالاهای پایه</h3><p>نام، توضیح و دسته هر کالا را مدیریت کنید.</p></div></div>
+              <Chip label={`${products.length.toLocaleString("fa-IR")} کالای فعال`} variant="outlined" color="secondary" />
+            </header>
+            {productNotice ? <Alert severity={productNotice.type} onClose={() => setProductNotice(null)}>{productNotice.text}</Alert> : null}
+            <form className="record-form" onSubmit={submitProduct} noValidate>
+              <TextField label="نام کالا" value={productName} onChange={(event) => setProductName(event.target.value)} required disabled={productSaving} helperText="مثلاً عدس سبز" slotProps={{ htmlInput: { maxLength: 160 } }} />
+              <TextField select label="دسته کالا" value={productCategoryId} onChange={(event) => setProductCategoryId(event.target.value)} disabled={productSaving || unitProductStatus !== "ready"} helperText="انتخاب دسته اختیاری است."><MenuItem value="">بدون دسته</MenuItem>{orderedCategories.map((category) => <MenuItem key={category.id} value={String(category.id)}>{`${"— ".repeat(category.depth)}${category.name}`}</MenuItem>)}</TextField>
+              <TextField className="record-form-wide" label="توضیح کوتاه" value={productDescription} onChange={(event) => setProductDescription(event.target.value)} disabled={productSaving} multiline minRows={2} />
+              <div className="record-form-actions record-form-wide">
+                <Button type="submit" variant="contained" size="large" disabled={productSaving || !productName.trim()} startIcon={productSaving ? <CircularProgress size={18} color="inherit" /> : editingProductId === null ? <AddRounded /> : <EditRounded />}>
+                  {productSaving ? "در حال ذخیره…" : editingProductId === null ? "ثبت کالا" : "ذخیره تغییرات"}
+                </Button>
+                {editingProductId !== null ? <Button type="button" size="large" onClick={resetProductForm} disabled={productSaving} startIcon={<CloseRounded />}>انصراف</Button> : null}
+              </div>
+            </form>
+            <TextField className="record-search" size="small" label="جست‌وجوی کالا یا دسته" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} />
+            {unitProductStatus === "loading" ? <div className="record-state"><CircularProgress size={28} /><span>در حال دریافت کالاها…</span></div> : null}
+            {unitProductStatus === "error" ? <div className="record-state record-state-error"><span>{catalogLoadError || "دریافت کالاها انجام نشد."}</span><Button variant="outlined" onClick={() => load()}>تلاش دوباره</Button></div> : null}
+            {unitProductStatus === "ready" && products.length === 0 ? <div className="record-state"><Inventory2Rounded /><strong>هنوز کالایی ثبت نشده است</strong></div> : null}
+            {unitProductStatus === "ready" && products.length > 0 && filteredProducts.length === 0 ? <div className="record-state"><SearchRounded /><strong>کالایی با این عبارت پیدا نشد</strong></div> : null}
+            {unitProductStatus === "ready" && filteredProducts.length > 0 ? <div className="record-list">{filteredProducts.map((product) => {
+              const categoryName = categories.find((category) => category.id === product.category_id)?.name ?? "بدون دسته";
+              return <article className="record-item record-item-product" key={product.id}><div><strong>{product.name}</strong><small>{categoryName}{product.description ? ` • ${product.description}` : ""}</small></div><div className="record-item-actions"><Button startIcon={<EditRounded />} onClick={() => startProductEdit(product)}>ویرایش</Button><Button color="error" startIcon={<DeleteOutlineRounded />} onClick={() => setPendingDeactivateProduct(product)}>غیرفعال</Button></div></article>;
+            })}</div> : null}
+          </section>
+
+          <Dialog open={pendingDeactivateUnit !== null} onClose={() => { if (!deactivatingRecord) setPendingDeactivateUnit(null); }} fullWidth maxWidth="xs" slotProps={{ paper: { className: "category-confirm-dialog" } }}>
+            <DialogTitle>غیرفعال‌کردن واحد</DialogTitle><DialogContent><p>واحد «{pendingDeactivateUnit?.name}» از انتخاب‌های جدید پنهان می‌شود و سوابق آن باقی می‌ماند.</p><Alert severity="warning">اگر گونه فعال از این واحد استفاده کند، عملیات انجام نمی‌شود.</Alert></DialogContent><DialogActions><Button size="large" onClick={() => setPendingDeactivateUnit(null)} disabled={deactivatingRecord}>انصراف</Button><Button size="large" color="error" variant="contained" onClick={deactivateUnit} disabled={deactivatingRecord} startIcon={deactivatingRecord ? <CircularProgress size={18} color="inherit" /> : <DeleteOutlineRounded />}>غیرفعال شود</Button></DialogActions>
+          </Dialog>
+          <Dialog open={pendingDeactivateProduct !== null} onClose={() => { if (!deactivatingRecord) setPendingDeactivateProduct(null); }} fullWidth maxWidth="xs" slotProps={{ paper: { className: "category-confirm-dialog" } }}>
+            <DialogTitle>غیرفعال‌کردن کالا</DialogTitle><DialogContent><p>کالای «{pendingDeactivateProduct?.name}» از انتخاب‌های جدید پنهان می‌شود و سوابق آن باقی می‌ماند.</p><Alert severity="warning">اگر این کالا گونه فعال داشته باشد، عملیات انجام نمی‌شود.</Alert></DialogContent><DialogActions><Button size="large" onClick={() => setPendingDeactivateProduct(null)} disabled={deactivatingRecord}>انصراف</Button><Button size="large" color="error" variant="contained" onClick={deactivateProduct} disabled={deactivatingRecord} startIcon={deactivatingRecord ? <CircularProgress size={18} color="inherit" /> : <DeleteOutlineRounded />}>غیرفعال شود</Button></DialogActions>
+          </Dialog>
+        </section>
+      ) : null}
+      {catalogTab === 2 ? <>
+        {message ? <p className="success-message">{message}</p> : null}
       <div className="management-grid">
-        <form className="sale-panel compact-panel" onSubmit={submitUnit}>
-          <h3>واحد</h3>
-          <input name="name" placeholder="نام واحد، مثلا کیلوگرم" required />
-          <input name="symbol" placeholder="نماد، مثلا kg" required />
-          <button className="soft-button">ثبت واحد</button>
-        </form>
-        <form className="sale-panel compact-panel" onSubmit={submitProduct}>
-          <h3>کالا</h3>
-          <input name="name" placeholder="نام کالا" required />
-          <select name="categoryId">
-            <option value="">بدون دسته</option>
-            {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-          </select>
-          <input name="description" placeholder="توضیح کوتاه" />
-          <button className="soft-button">ثبت کالا</button>
-        </form>
         <form className="sale-panel compact-panel" onSubmit={submitVariant}>
           <h3>گونه و قیمت پایه</h3>
           <select name="productId" required>
@@ -1330,6 +1523,7 @@ function ProductsView({ onBack }: { onBack: () => void }) {
         </form>
       </div>
       <SimpleTable headers={["کالا", "کد", "قیمت خرده", "قیمت عمده"]} rows={variants.map((v) => [v.name, v.sku || "-", formatRial(v.retail_price_rial), v.wholesale_price_rial ? formatRial(v.wholesale_price_rial) : "-"])} />
+      </> : null}
     </CrudWorkspace>
   );
 }

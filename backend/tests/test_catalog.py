@@ -10,7 +10,7 @@ from app.core.security import get_password_hash
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.catalog import Category, Product
+from app.models.catalog import Category, Product, ProductVariant, Unit
 from app.models.user import User
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -266,3 +266,202 @@ def test_category_deactivation_is_blocked_by_active_product(
 
     assert response.status_code == 409
     assert "کالای فعال" in response.json()["detail"]
+
+
+def create_unit(client: TestClient, auth_headers: dict[str, str], name: str, symbol: str) -> dict:
+    response = client.post("/api/v1/units", json={"name": name, "symbol": symbol}, headers=auth_headers)
+    assert response.status_code == 201
+    return response.json()
+
+
+def create_product(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    name: str,
+    category_id: int | None = None,
+) -> dict:
+    response = client.post(
+        "/api/v1/products",
+        json={"name": name, "description": "توضیح", "category_id": category_id},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+def test_unit_create_trims_and_update_changes_fields(client: TestClient, auth_headers: dict[str, str]) -> None:
+    unit = create_unit(client, auth_headers, "  کیلوگرم  ", " kg ")
+
+    response = client.patch(
+        f"/api/v1/units/{unit['id']}",
+        json={"name": "گرم", "symbol": "g"},
+        headers=auth_headers,
+    )
+
+    assert unit["name"] == "کیلوگرم"
+    assert unit["symbol"] == "kg"
+    assert response.status_code == 200
+    assert response.json()["name"] == "گرم"
+    assert response.json()["symbol"] == "g"
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({"name": "کیلوگرم", "symbol": "KG2"}, "نام"),
+        ({"name": "واحد دیگر", "symbol": "KG"}, "نماد"),
+    ],
+)
+def test_unit_rejects_case_insensitive_duplicates(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    payload: dict,
+    expected: str,
+) -> None:
+    create_unit(client, auth_headers, "کیلوگرم", "kg")
+
+    response = client.post("/api/v1/units", json=payload, headers=auth_headers)
+
+    assert response.status_code == 409
+    assert expected in response.json()["detail"]
+
+
+def test_unit_soft_delete_and_missing_record_return_404(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    db_session: Session,
+) -> None:
+    unit = create_unit(client, auth_headers, "بسته", "pack")
+
+    deleted = client.delete(f"/api/v1/units/{unit['id']}", headers=auth_headers)
+    repeated = client.patch(f"/api/v1/units/{unit['id']}", json={"name": "کارتن"}, headers=auth_headers)
+
+    assert deleted.status_code == 200
+    assert deleted.json()["is_active"] is False
+    assert repeated.status_code == 404
+    assert db_session.get(Unit, unit["id"]) is not None
+
+
+def test_unit_deactivation_is_blocked_by_active_variant(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    unit = create_unit(client, auth_headers, "کیلوگرم", "kg")
+    product = create_product(client, auth_headers, "برنج")
+    variant = client.post(
+        "/api/v1/product-variants",
+        json={"product_id": product["id"], "unit_id": unit["id"], "name": "برنج کیلویی", "retail_price_rial": 1},
+        headers=auth_headers,
+    )
+    assert variant.status_code == 201
+
+    response = client.delete(f"/api/v1/units/{unit['id']}", headers=auth_headers)
+
+    assert response.status_code == 409
+    assert "گونه کالای فعال" in response.json()["detail"]
+
+
+def test_product_create_update_and_category_validation(client: TestClient, auth_headers: dict[str, str]) -> None:
+    first_category = create_category(client, auth_headers, "حبوبات")
+    second_category = create_category(client, auth_headers, "غلات")
+    product = create_product(client, auth_headers, "  عدس  ", first_category["id"])
+
+    updated = client.patch(
+        f"/api/v1/products/{product['id']}",
+        json={"name": "عدس سبز", "description": "محصول تازه", "category_id": second_category["id"]},
+        headers=auth_headers,
+    )
+    invalid = client.post(
+        "/api/v1/products",
+        json={"name": "نامعتبر", "category_id": 9999},
+        headers=auth_headers,
+    )
+
+    assert product["name"] == "عدس"
+    assert updated.status_code == 200
+    assert updated.json()["category_id"] == second_category["id"]
+    assert invalid.status_code == 404
+
+
+def test_product_rejects_duplicate_name_in_same_category(client: TestClient, auth_headers: dict[str, str]) -> None:
+    first_category = create_category(client, auth_headers, "حبوبات")
+    second_category = create_category(client, auth_headers, "غلات")
+    create_product(client, auth_headers, "Rice", first_category["id"])
+
+    duplicate = client.post(
+        "/api/v1/products",
+        json={"name": "  rice  ", "category_id": first_category["id"]},
+        headers=auth_headers,
+    )
+    other_category = client.post(
+        "/api/v1/products",
+        json={"name": "RICE", "category_id": second_category["id"]},
+        headers=auth_headers,
+    )
+
+    assert duplicate.status_code == 409
+    assert "همین دسته" in duplicate.json()["detail"]
+    assert other_category.status_code == 201
+
+
+def test_unit_and_product_updates_reject_duplicate_values(client: TestClient, auth_headers: dict[str, str]) -> None:
+    first_unit = create_unit(client, auth_headers, "کیلوگرم", "kg")
+    second_unit = create_unit(client, auth_headers, "بسته", "pack")
+    category = create_category(client, auth_headers, "غلات")
+    first_product = create_product(client, auth_headers, "Rice", category["id"])
+    second_product = create_product(client, auth_headers, "Wheat", category["id"])
+
+    unit_response = client.patch(
+        f"/api/v1/units/{second_unit['id']}",
+        json={"name": first_unit["name"].upper()},
+        headers=auth_headers,
+    )
+    product_response = client.patch(
+        f"/api/v1/products/{second_product['id']}",
+        json={"name": first_product["name"].lower()},
+        headers=auth_headers,
+    )
+
+    assert unit_response.status_code == 409
+    assert product_response.status_code == 409
+
+
+def test_product_soft_delete_and_blocked_delete(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    db_session: Session,
+) -> None:
+    unit = create_unit(client, auth_headers, "عدد", "qty")
+    blocked = create_product(client, auth_headers, "محصول دارای گونه")
+    free = create_product(client, auth_headers, "محصول بدون گونه")
+    db_session.add(ProductVariant(product_id=blocked["id"], unit_id=unit["id"], name="گونه فعال"))
+    db_session.commit()
+
+    blocked_response = client.delete(f"/api/v1/products/{blocked['id']}", headers=auth_headers)
+    deleted = client.delete(f"/api/v1/products/{free['id']}", headers=auth_headers)
+
+    assert blocked_response.status_code == 409
+    assert "گونه فعال" in blocked_response.json()["detail"]
+    assert deleted.status_code == 200
+    assert deleted.json()["is_active"] is False
+    assert db_session.get(Product, free["id"]) is not None
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("patch", "/api/v1/units/1", {"name": "واحد"}),
+        ("delete", "/api/v1/units/1", None),
+        ("patch", "/api/v1/products/1", {"name": "کالا"}),
+        ("delete", "/api/v1/products/1", None),
+    ],
+)
+def test_catalog_mutations_require_authentication(
+    client: TestClient,
+    method: str,
+    path: str,
+    payload: dict | None,
+) -> None:
+    response = client.request(method, path, json=payload)
+
+    assert response.status_code == 401

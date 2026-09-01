@@ -9,6 +9,26 @@ class UnitCreate(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     symbol: str = Field(min_length=1, max_length=20)
 
+    @field_validator("name", "symbol")
+    @classmethod
+    def normalize_unit_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("نام و نماد واحد نمی‌توانند خالی باشند.")
+        return normalized
+
+
+class UnitUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=60)
+    symbol: str | None = Field(default=None, min_length=1, max_length=20)
+
+    @field_validator("name", "symbol")
+    @classmethod
+    def normalize_optional_unit_text(cls, value: str | None) -> str:
+        if value is None or not value.strip():
+            raise ValueError("نام و نماد واحد نمی‌توانند خالی باشند.")
+        return value.strip()
+
 
 class UnitRead(UnitCreate):
     model_config = ConfigDict(from_attributes=True)
@@ -56,6 +76,27 @@ class ProductCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     description: str | None = None
     category_id: int | None = None
+
+    @field_validator("name")
+    @classmethod
+    def normalize_product_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("نام کالا نمی‌تواند خالی باشد.")
+        return normalized
+
+
+class ProductUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = None
+    category_id: int | None = None
+
+    @field_validator("name")
+    @classmethod
+    def normalize_optional_product_name(cls, value: str | None) -> str:
+        if value is None or not value.strip():
+            raise ValueError("نام کالا نمی‌تواند خالی باشد.")
+        return value.strip()
 
 
 class ProductRead(ProductCreate):

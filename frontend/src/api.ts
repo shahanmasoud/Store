@@ -308,6 +308,12 @@ export const api = {
   createUnit(payload: { name: string; symbol: string }) {
     return request<Unit>("/units", { method: "POST", body: JSON.stringify(payload) });
   },
+  updateUnit(id: number, payload: { name?: string; symbol?: string }) {
+    return request<Unit>(`/units/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+  },
+  deactivateUnit(id: number) {
+    return request<Unit>(`/units/${id}`, { method: "DELETE" });
+  },
   categories() {
     return request<Category[]>("/categories");
   },
@@ -323,8 +329,14 @@ export const api = {
   products() {
     return request<Product[]>("/products");
   },
-  createProduct(payload: { name: string; description?: string; category_id?: number | null }) {
+  createProduct(payload: { name: string; description?: string | null; category_id?: number | null }) {
     return request<Product>("/products", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updateProduct(id: number, payload: { name?: string; description?: string | null; category_id?: number | null }) {
+    return request<Product>(`/products/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+  },
+  deactivateProduct(id: number) {
+    return request<Product>(`/products/${id}`, { method: "DELETE" });
   },
   createProductVariant(payload: {
     product_id: number;
