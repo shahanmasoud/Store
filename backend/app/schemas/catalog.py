@@ -21,6 +21,29 @@ class CategoryCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     parent_id: int | None = None
 
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("نام دسته نمی‌تواند خالی باشد.")
+        return normalized
+
+
+class CategoryUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    parent_id: int | None = None
+
+    @field_validator("name")
+    @classmethod
+    def normalize_optional_name(cls, value: str | None) -> str | None:
+        if value is None:
+            raise ValueError("نام دسته نمی‌تواند خالی باشد.")
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("نام دسته نمی‌تواند خالی باشد.")
+        return normalized
+
 
 class CategoryRead(CategoryCreate):
     model_config = ConfigDict(from_attributes=True)

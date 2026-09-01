@@ -314,6 +314,12 @@ export const api = {
   createCategory(payload: { name: string; parent_id?: number | null }) {
     return request<Category>("/categories", { method: "POST", body: JSON.stringify(payload) });
   },
+  updateCategory(id: number, payload: { name?: string; parent_id?: number | null }) {
+    return request<Category>(`/categories/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+  },
+  deactivateCategory(id: number) {
+    return request<Category>(`/categories/${id}`, { method: "DELETE" });
+  },
   products() {
     return request<Product[]>("/products");
   },

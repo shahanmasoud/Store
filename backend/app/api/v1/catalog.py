@@ -6,6 +6,7 @@ from app.db.session import get_db
 from app.schemas.catalog import (
     CategoryCreate,
     CategoryRead,
+    CategoryUpdate,
     PriceListCreate,
     PriceListRead,
     PriceRuleCreate,
@@ -40,6 +41,16 @@ def categories(db: Session = Depends(get_db)) -> list[CategoryRead]:
 @router.post("/categories", response_model=CategoryRead, status_code=status.HTTP_201_CREATED)
 def create_category(payload: CategoryCreate, db: Session = Depends(get_db)) -> CategoryRead:
     return catalog_service.create_category(db, payload)
+
+
+@router.patch("/categories/{category_id}", response_model=CategoryRead)
+def update_category(category_id: int, payload: CategoryUpdate, db: Session = Depends(get_db)) -> CategoryRead:
+    return catalog_service.update_category(db, category_id, payload)
+
+
+@router.delete("/categories/{category_id}", response_model=CategoryRead)
+def deactivate_category(category_id: int, db: Session = Depends(get_db)) -> CategoryRead:
+    return catalog_service.deactivate_category(db, category_id)
 
 
 @router.get("/products", response_model=list[ProductRead])

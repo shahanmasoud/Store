@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
-import { Box, Button, Card, CardActionArea, CardContent, Chip, LinearProgress, Stack, Typography } from "@mui/material";
+import { Alert, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import AccountBalanceWalletRounded from "@mui/icons-material/AccountBalanceWalletRounded";
 import AdminPanelSettingsRounded from "@mui/icons-material/AdminPanelSettingsRounded";
 import AnalyticsRounded from "@mui/icons-material/AnalyticsRounded";
@@ -14,6 +14,12 @@ import ReceiptLongRounded from "@mui/icons-material/ReceiptLongRounded";
 import ShoppingCartCheckoutRounded from "@mui/icons-material/ShoppingCartCheckoutRounded";
 import StorefrontRounded from "@mui/icons-material/StorefrontRounded";
 import SyncRounded from "@mui/icons-material/SyncRounded";
+import AddRounded from "@mui/icons-material/AddRounded";
+import CloseRounded from "@mui/icons-material/CloseRounded";
+import DeleteOutlineRounded from "@mui/icons-material/DeleteOutlineRounded";
+import EditRounded from "@mui/icons-material/EditRounded";
+import FolderOutlined from "@mui/icons-material/FolderOutlined";
+import RefreshRounded from "@mui/icons-material/RefreshRounded";
 import Storefront from "./Storefront";
 import {
   api,
@@ -983,19 +989,36 @@ function ProductsView({ onBack }: { onBack: () => void }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [message, setMessage] = useState("");
+  const [categoryStatus, setCategoryStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [categoryNotice, setCategoryNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [categoryName, setCategoryName] = useState("");
+  const [categoryParentId, setCategoryParentId] = useState("");
+  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
+  const [categorySaving, setCategorySaving] = useState(false);
+  const [deactivatingCategoryId, setDeactivatingCategoryId] = useState<number | null>(null);
+  const [pendingDeactivateCategory, setPendingDeactivateCategory] = useState<Category | null>(null);
 
   const load = () => {
-    Promise.all([api.units(), api.categories(), api.products(), api.productVariants()])
+    setCategoryStatus("loading");
+    setCategoryNotice(null);
+    return Promise.all([api.units(), api.categories(), api.products(), api.productVariants()])
       .then(([nextUnits, nextCategories, nextProducts, nextVariants]) => {
         setUnits(nextUnits);
         setCategories(nextCategories);
         setProducts(nextProducts);
         setVariants(nextVariants);
+        setCategoryStatus("ready");
       })
-      .catch((error) => setMessage(error instanceof Error ? error.message : "دریافت اطلاعات کالا انجام نشد."));
+      .catch((error) => {
+        const text = error instanceof Error ? error.message : "دریافت اطلاعات کالا انجام نشد.";
+        setCategoryNotice({ type: "error", text });
+        setCategoryStatus("error");
+      });
   };
 
-  useEffect(load, []);
+  useEffect(() => {
+    void load();
+  }, []);
 
   async function submitUnit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1006,13 +1029,102 @@ function ProductsView({ onBack }: { onBack: () => void }) {
     load();
   }
 
+  const orderedCategories = useMemo(() => {
+    const children = new Map<number | null, Category[]>();
+    categories.forEach((category) => {
+      const key = category.parent_id ?? null;
+      children.set(key, [...(children.get(key) ?? []), category]);
+    });
+    children.forEach((items) => items.sort((a, b) => a.name.localeCompare(b.name, "fa")));
+    const result: Array<Category & { depth: number }> = [];
+    const seen = new Set<number>();
+    const visit = (parentId: number | null, depth: number) => {
+      (children.get(parentId) ?? []).forEach((category) => {
+        if (seen.has(category.id)) return;
+        seen.add(category.id);
+        result.push({ ...category, depth });
+        visit(category.id, depth + 1);
+      });
+    };
+    visit(null, 0);
+    categories.forEach((category) => {
+      if (!seen.has(category.id)) result.push({ ...category, depth: 0 });
+    });
+    return result;
+  }, [categories]);
+
+  const unavailableParentIds = useMemo(() => {
+    if (editingCategoryId === null) return new Set<number>();
+    const ids = new Set<number>([editingCategoryId]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      categories.forEach((category) => {
+        if (category.parent_id != null && ids.has(category.parent_id) && !ids.has(category.id)) {
+          ids.add(category.id);
+          changed = true;
+        }
+      });
+    }
+    return ids;
+  }, [categories, editingCategoryId]);
+
+  function resetCategoryForm() {
+    setEditingCategoryId(null);
+    setCategoryName("");
+    setCategoryParentId("");
+  }
+
+  function startCategoryEdit(category: Category) {
+    setEditingCategoryId(category.id);
+    setCategoryName(category.name);
+    setCategoryParentId(category.parent_id == null ? "" : String(category.parent_id));
+    setCategoryNotice(null);
+  }
+
   async function submitCategory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await api.createCategory({ name: String(form.get("name") ?? "") });
-    event.currentTarget.reset();
-    setMessage("دسته کالا ثبت شد.");
-    load();
+    const normalizedName = categoryName.trim();
+    if (!normalizedName) {
+      setCategoryNotice({ type: "error", text: "نام دسته را وارد کنید." });
+      return;
+    }
+    setCategorySaving(true);
+    setCategoryNotice(null);
+    try {
+      const payload = { name: normalizedName, parent_id: categoryParentId ? Number(categoryParentId) : null };
+      if (editingCategoryId === null) {
+        await api.createCategory(payload);
+      } else {
+        await api.updateCategory(editingCategoryId, payload);
+      }
+      resetCategoryForm();
+      await load();
+      setCategoryNotice({ type: "success", text: editingCategoryId === null ? "دسته جدید ثبت شد." : "تغییرات دسته ذخیره شد." });
+    } catch (error) {
+      setCategoryNotice({ type: "error", text: error instanceof Error ? error.message : "ذخیره دسته انجام نشد." });
+    } finally {
+      setCategorySaving(false);
+    }
+  }
+
+  async function deactivateCategory() {
+    const category = pendingDeactivateCategory;
+    if (category === null) return;
+    setDeactivatingCategoryId(category.id);
+    setCategoryNotice(null);
+    try {
+      await api.deactivateCategory(category.id);
+      setPendingDeactivateCategory(null);
+      if (editingCategoryId === category.id) resetCategoryForm();
+      await load();
+      setCategoryNotice({ type: "success", text: "دسته با موفقیت غیرفعال شد." });
+    } catch (error) {
+      setPendingDeactivateCategory(null);
+      setCategoryNotice({ type: "error", text: error instanceof Error ? error.message : "غیرفعال‌سازی دسته انجام نشد." });
+    } finally {
+      setDeactivatingCategoryId(null);
+    }
   }
 
   async function submitProduct(event: FormEvent<HTMLFormElement>) {
@@ -1064,17 +1176,115 @@ function ProductsView({ onBack }: { onBack: () => void }) {
   return (
     <CrudWorkspace title="کالاها و قیمت‌ها" eyebrow="مدیریت کاتالوگ" onBack={onBack}>
       {message ? <p className="success-message">{message}</p> : null}
+      <section className="category-manager" aria-labelledby="category-manager-title">
+        <div className="category-manager-heading">
+          <div>
+            <p className="eyebrow">ساختار فروشگاه</p>
+            <h3 id="category-manager-title">مدیریت دسته‌بندی‌ها</h3>
+            <p>دسته‌های اصلی و زیرمجموعه‌ها را بسازید، ویرایش کنید یا با حفظ سوابق غیرفعال کنید.</p>
+          </div>
+          <Chip label={`${categories.length.toLocaleString("fa-IR")} دسته فعال`} color="primary" variant="outlined" />
+        </div>
+
+        {categoryNotice ? <Alert severity={categoryNotice.type} onClose={() => setCategoryNotice(null)}>{categoryNotice.text}</Alert> : null}
+
+        <div className="category-manager-grid">
+          <form className="category-form" onSubmit={submitCategory} noValidate>
+            <div className="category-form-title">
+              <span className="category-icon"><FolderOutlined /></span>
+              <div>
+                <strong>{editingCategoryId === null ? "دسته جدید" : "ویرایش دسته"}</strong>
+                <small>{editingCategoryId === null ? "نام و جایگاه دسته را مشخص کنید." : "نام یا والد دسته را تغییر دهید."}</small>
+              </div>
+            </div>
+            <TextField
+              label="نام دسته"
+              value={categoryName}
+              onChange={(event) => setCategoryName(event.target.value)}
+              slotProps={{ htmlInput: { maxLength: 120 } }}
+              required
+              fullWidth
+              disabled={categorySaving}
+              error={categoryName.length > 0 && !categoryName.trim()}
+              helperText={categoryName.length > 0 && !categoryName.trim() ? "نام فقط نمی‌تواند فاصله باشد." : "مثلاً برنج ایرانی"}
+            />
+            <TextField
+              select
+              label="دسته والد"
+              value={categoryParentId}
+              onChange={(event) => setCategoryParentId(event.target.value)}
+              fullWidth
+              disabled={categorySaving || categoryStatus !== "ready"}
+              helperText="برای دسته اصلی، گزینه بدون والد را نگه دارید."
+            >
+              <MenuItem value="">بدون والد (دسته اصلی)</MenuItem>
+              {orderedCategories.filter((category) => !unavailableParentIds.has(category.id)).map((category) => (
+                <MenuItem key={category.id} value={String(category.id)}>{`${"— ".repeat(category.depth)}${category.name}`}</MenuItem>
+              ))}
+            </TextField>
+            <div className="category-form-actions">
+              <Button type="submit" variant="contained" size="large" startIcon={categorySaving ? <CircularProgress size={18} color="inherit" /> : editingCategoryId === null ? <AddRounded /> : <EditRounded />} disabled={categorySaving || !categoryName.trim()}>
+                {categorySaving ? "در حال ذخیره…" : editingCategoryId === null ? "ثبت دسته" : "ذخیره تغییرات"}
+              </Button>
+              {editingCategoryId !== null ? <Button type="button" variant="text" size="large" startIcon={<CloseRounded />} onClick={resetCategoryForm} disabled={categorySaving}>انصراف</Button> : null}
+            </div>
+          </form>
+
+          <div className="category-list-panel" aria-live="polite">
+            <div className="category-list-heading">
+              <div><strong>دسته‌های فعال</strong><small>ساختار فعلی فروشگاه</small></div>
+              <Button type="button" startIcon={<RefreshRounded />} onClick={() => load()} disabled={categoryStatus === "loading"}>تازه‌سازی</Button>
+            </div>
+            {categoryStatus === "loading" ? <div className="category-state"><CircularProgress size={28} /><span>در حال دریافت دسته‌ها…</span></div> : null}
+            {categoryStatus === "error" ? <div className="category-state category-state-error"><span>دریافت دسته‌ها انجام نشد.</span><Button variant="outlined" onClick={() => load()}>تلاش دوباره</Button></div> : null}
+            {categoryStatus === "ready" && orderedCategories.length === 0 ? <div className="category-state"><FolderOutlined /><strong>هنوز دسته‌ای ندارید</strong><span>اولین دسته را از فرم روبه‌رو بسازید.</span></div> : null}
+            {categoryStatus === "ready" && orderedCategories.length > 0 ? (
+              <div className="category-list">
+                {orderedCategories.map((category) => (
+                  <article className="category-item" key={category.id} style={{ "--category-depth": Math.min(category.depth, 4) } as CSSProperties}>
+                    <div className="category-item-name"><FolderOutlined /><div><strong>{category.name}</strong><small>{category.parent_id == null ? "دسته اصلی" : "زیرمجموعه"}</small></div></div>
+                    <div className="category-item-actions">
+                      <Button type="button" variant="text" startIcon={<EditRounded />} onClick={() => startCategoryEdit(category)} disabled={deactivatingCategoryId !== null}>ویرایش</Button>
+                      <Button type="button" color="error" variant="text" startIcon={deactivatingCategoryId === category.id ? <CircularProgress size={17} color="inherit" /> : <DeleteOutlineRounded />} onClick={() => setPendingDeactivateCategory(category)} disabled={deactivatingCategoryId !== null}>غیرفعال</Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <Dialog
+          open={pendingDeactivateCategory !== null}
+          onClose={() => {
+            if (deactivatingCategoryId === null) setPendingDeactivateCategory(null);
+          }}
+          fullWidth
+          maxWidth="xs"
+          aria-labelledby="deactivate-category-title"
+          aria-describedby="deactivate-category-description"
+          slotProps={{ paper: { className: "category-confirm-dialog" } }}
+        >
+          <DialogTitle id="deactivate-category-title">غیرفعال‌کردن دسته</DialogTitle>
+          <DialogContent>
+            <p id="deactivate-category-description">
+              دسته «{pendingDeactivateCategory?.name}» از فهرست انتخاب‌ها پنهان می‌شود، اما سوابق آن حذف نخواهد شد.
+            </p>
+            <Alert severity="warning">اگر این دسته فرزند یا کالای فعال داشته باشد، سیستم برای محافظت از اطلاعات اجازه غیرفعال‌سازی نمی‌دهد.</Alert>
+          </DialogContent>
+          <DialogActions>
+            <Button size="large" onClick={() => setPendingDeactivateCategory(null)} disabled={deactivatingCategoryId !== null}>انصراف</Button>
+            <Button size="large" color="error" variant="contained" onClick={deactivateCategory} disabled={deactivatingCategoryId !== null} startIcon={deactivatingCategoryId !== null ? <CircularProgress size={18} color="inherit" /> : <DeleteOutlineRounded />}>
+              {deactivatingCategoryId !== null ? "در حال غیرفعال‌سازی…" : "غیرفعال شود"}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </section>
       <div className="management-grid">
         <form className="sale-panel compact-panel" onSubmit={submitUnit}>
           <h3>واحد</h3>
           <input name="name" placeholder="نام واحد، مثلا کیلوگرم" required />
           <input name="symbol" placeholder="نماد، مثلا kg" required />
           <button className="soft-button">ثبت واحد</button>
-        </form>
-        <form className="sale-panel compact-panel" onSubmit={submitCategory}>
-          <h3>دسته</h3>
-          <input name="name" placeholder="مثلا حبوبات، برنج، ادویه" required />
-          <button className="soft-button">ثبت دسته</button>
         </form>
         <form className="sale-panel compact-panel" onSubmit={submitProduct}>
           <h3>کالا</h3>
