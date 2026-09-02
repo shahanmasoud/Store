@@ -97,6 +97,26 @@ export type SaleInvoice = {
   jalali_date: string;
   local_time: string;
   timezone: string;
+  note?: string | null;
+  items: Array<{
+    id: number;
+    variant_id: number;
+    quantity: number | string;
+    unit_price_rial: number;
+    discount_amount_rial: number;
+    line_total_rial: number;
+    estimated_cost_rial?: number | null;
+    estimated_profit_rial?: number | null;
+    product_snapshot: string;
+  }>;
+  payments: Array<{
+    id: number;
+    method: PaymentMethod;
+    amount_rial: number;
+    status: PaymentStatus;
+    reference_number?: string | null;
+    due_jalali_date?: string | null;
+  }>;
 };
 
 export type DailyJournalPayment = {
@@ -111,6 +131,7 @@ export type DailyJournal = {
   sales_total_rial: number;
   received_total_rial: number;
   pending_total_rial: number;
+  estimated_profit_rial: number;
   payments: DailyJournalPayment[];
 };
 
@@ -177,6 +198,8 @@ export type InventoryTransaction = {
   variant_name: string;
   purchase_invoice_id?: number | null;
   purchase_invoice_item_id?: number | null;
+  sale_invoice_id?: number | null;
+  sale_invoice_item_id?: number | null;
   transaction_type: string;
   quantity_delta: number | string;
   balance_after: number | string;

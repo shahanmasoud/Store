@@ -118,7 +118,13 @@ def create_person(
     return response.json()
 
 
-def test_sales_summary_and_profit_loss_reports(client: TestClient, auth_headers: dict[str, str]) -> None:
+def seed_sale_inventory(db_session: Session) -> None:
+    db_session.add(InventoryItem(variant_id=1, quantity_on_hand=Decimal("100"), weighted_average_cost_rial=1_000_000))
+    db_session.commit()
+
+
+def test_sales_summary_and_profit_loss_reports(client: TestClient, db_session: Session, auth_headers: dict[str, str]) -> None:
+    seed_sale_inventory(db_session)
     created = client.post("/api/v1/sales", json=sale_payload(), headers=auth_headers)
     assert created.status_code == 201
 
@@ -167,7 +173,8 @@ def test_inventory_report_flags_reorder_and_values_stock(
     assert data["items"][0]["needs_reorder"] is True
 
 
-def test_cashflow_and_customer_debt_reports(client: TestClient, auth_headers: dict[str, str]) -> None:
+def test_cashflow_and_customer_debt_reports(client: TestClient, db_session: Session, auth_headers: dict[str, str]) -> None:
+    seed_sale_inventory(db_session)
     customer = create_person(client, auth_headers, "Customer One")
     supplier = create_person(client, auth_headers, "Supplier One", "supplier")
     client.post("/api/v1/sales", json=sale_payload(), headers=auth_headers)

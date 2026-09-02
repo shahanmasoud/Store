@@ -112,6 +112,8 @@ class InventoryTransactionRead(BaseModel):
     variant_name: str
     purchase_invoice_id: int | None
     purchase_invoice_item_id: int | None
+    sale_invoice_id: int | None
+    sale_invoice_item_id: int | None
     transaction_type: str
     quantity_delta: Decimal
     balance_after: Decimal

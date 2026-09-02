@@ -1255,6 +1255,390 @@ button {
   }
 }
 
+/* Sales desk and daily journal */
+.sales-workspace {
+  display: grid;
+  gap: 18px;
+  max-width: 1220px;
+  min-width: 0;
+  margin: 24px auto 0;
+}
+
+.sales-hero {
+  align-items: flex-start;
+  margin: 0;
+  padding: 22px;
+  border: 1px solid #dce7e2;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #fff 42%, #eaf8f2);
+  box-shadow: 0 12px 34px rgba(22, 56, 45, 0.06);
+}
+
+.sales-hero h2,
+.sales-hero p,
+.sales-section-heading h3,
+.sales-section-heading p {
+  margin: 0;
+}
+
+.sales-guide {
+  max-width: 680px;
+  margin-top: 8px !important;
+  color: #61766d;
+  line-height: 1.75;
+}
+
+.sales-hero .MuiButton-root {
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.sales-grid {
+  grid-template-columns: minmax(0, 1.18fr) minmax(340px, 0.82fr);
+  gap: 18px;
+  align-items: start;
+  min-width: 0;
+}
+
+.sale-panel,
+.journal-panel {
+  min-width: 0;
+  padding: 22px;
+  border-color: #dce7e2;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(22, 56, 45, 0.065);
+}
+
+.sale-panel-main,
+.sale-items-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.sales-section-heading,
+.sales-section-heading > div,
+.sale-items-panel .mini-section-header,
+.sale-items-panel .mini-section-header > div,
+.payment-list .mini-section-header,
+.payment-list .mini-section-header > div {
+  display: flex;
+  align-items: center;
+}
+
+.sales-section-heading,
+.sale-items-panel .mini-section-header,
+.payment-list .mini-section-header {
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.sales-section-heading > div {
+  gap: 10px;
+}
+
+.sales-section-heading > div > div,
+.sale-items-panel .mini-section-header > div,
+.payment-list .mini-section-header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.sales-section-heading svg {
+  box-sizing: content-box;
+  padding: 10px;
+  color: #087f5b;
+  border-radius: 13px;
+  background: #e7f7f0;
+}
+
+.sales-section-heading p,
+.sale-items-panel .mini-section-header span,
+.payment-list .mini-section-header span {
+  color: #687c73;
+  font-size: 0.84rem;
+}
+
+.sale-meta-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.sale-meta-grid .date-field {
+  min-width: 0;
+}
+
+.sale-note,
+.invoice-summary,
+.payment-list,
+.sale-message,
+.submit-sale-button {
+  grid-column: 1 / -1;
+}
+
+.invoice-summary {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border-color: #dce7e2;
+  border-radius: 16px;
+  background: #dce7e2;
+}
+
+.invoice-summary div {
+  min-width: 0;
+  background: #f8fbf9;
+}
+
+.invoice-summary strong {
+  overflow-wrap: anywhere;
+}
+
+.payment-list {
+  gap: 12px;
+}
+
+.payment-list .mini-section-header .MuiButton-root {
+  min-height: 44px;
+}
+
+.payment-row {
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #deebe5;
+  border-inline-start: 4px solid #93a9a0;
+  border-radius: 17px;
+  background: #f8fbf9;
+}
+
+.payment-row.payment-received {
+  border-inline-start-color: #16a36f;
+}
+
+.payment-row.payment-pending {
+  border-inline-start-color: #d99a21;
+  background: #fffbf1;
+}
+
+.payment-row .date-field,
+.payment-status {
+  min-width: 0;
+}
+
+.payment-status {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+}
+
+.payment-row > .MuiButton-root {
+  justify-self: end;
+  min-height: 44px;
+}
+
+.submit-sale-button.MuiButton-root {
+  min-height: 52px;
+}
+
+.add-item-form {
+  padding: 16px;
+  border: 1px solid #deebe5;
+  border-radius: 18px;
+  background: #f8fbf9;
+}
+
+.sale-item-form-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sale-item-form-actions .MuiButton-root {
+  min-height: 46px;
+}
+
+.sale-item-form-actions .MuiButton-root:only-child {
+  grid-column: 1 / -1;
+}
+
+.sale-empty {
+  min-height: 130px;
+}
+
+.sale-empty > svg,
+.journal-empty > svg {
+  width: 34px;
+  height: 34px;
+  color: #709087;
+}
+
+.sale-items-panel .invoice-items {
+  margin-top: 2px;
+}
+
+.invoice-item {
+  align-items: flex-start;
+  padding: 14px;
+  border-color: #e0ebe5;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.invoice-item-main {
+  min-width: 0;
+}
+
+.invoice-item-end {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.invoice-item-end > div {
+  display: flex;
+  gap: 2px;
+}
+
+.invoice-item-end .MuiButton-root {
+  min-height: 40px;
+}
+
+.journal-panel {
+  display: grid;
+  gap: 16px;
+  margin-top: 0;
+}
+
+.journal-form {
+  align-items: flex-end;
+}
+
+.journal-filter {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.journal-filter .date-field {
+  min-width: 190px;
+}
+
+.journal-filter .MuiButton-root {
+  min-height: 50px;
+}
+
+.journal-summary {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: 0;
+  border-radius: 16px;
+  border-color: #dce7e2;
+  background: #dce7e2;
+}
+
+.journal-summary div {
+  min-width: 0;
+  background: #f8fbf9;
+}
+
+.journal-breakdown {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  margin-top: 0;
+}
+
+.journal-breakdown div {
+  min-width: 0;
+  padding: 14px;
+  border-color: #e0ebe5;
+  border-radius: 16px;
+  background: #f8fbf9;
+}
+
+.journal-empty {
+  min-height: 160px;
+}
+
+@media (max-width: 960px) {
+  .sales-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sale-items-panel {
+    grid-row: 1;
+  }
+
+  .invoice-summary,
+  .journal-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .sales-workspace {
+    gap: 14px;
+    margin-top: 16px;
+  }
+
+  .sales-hero,
+  .sale-panel,
+  .journal-panel {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .sales-hero,
+  .sales-section-heading,
+  .sale-items-panel .mini-section-header,
+  .payment-list .mini-section-header,
+  .journal-form,
+  .journal-filter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sales-hero .MuiButton-root,
+  .journal-filter,
+  .journal-filter .date-field,
+  .journal-filter .MuiButton-root {
+    width: 100%;
+  }
+
+  .sale-meta-grid,
+  .compact-fields,
+  .payment-row,
+  .invoice-summary,
+  .journal-summary,
+  .sale-item-form-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .invoice-summary div,
+  .journal-summary div {
+    min-height: 74px;
+  }
+
+  .payment-row > .MuiButton-root {
+    justify-self: stretch;
+  }
+
+  .invoice-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .invoice-item-end {
+    justify-items: stretch;
+  }
+
+  .invoice-item-end > div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .invoice-item-end .MuiButton-root {
+    min-width: 0;
+    min-height: 44px;
+  }
+}
+
 /* Inventory control center */
 .purchase-workspace {
   display: grid;
@@ -5045,5 +5429,54 @@ textarea:focus {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+}
+
+/* Keep the redesigned sales surface above legacy compatibility rules. */
+.sales-workspace .sales-grid {
+  grid-template-columns: minmax(0, 1.18fr) minmax(340px, 0.82fr);
+  gap: 18px;
+}
+
+.sales-workspace .sale-panel,
+.sales-workspace .journal-panel {
+  border-color: #dce7e2;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(22, 56, 45, 0.065);
+}
+
+.sales-workspace .sale-meta-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.sales-workspace .payment-row {
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+}
+
+.sales-workspace .journal-breakdown {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+@media (max-width: 960px) {
+  .sales-workspace .sales-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-workspace .sale-items-panel {
+    order: -1;
+  }
+}
+
+@media (max-width: 560px) {
+  .sales-workspace .sale-panel,
+  .sales-workspace .journal-panel {
+    border-radius: 18px;
+  }
+
+  .sales-workspace .sale-meta-grid,
+  .sales-workspace .payment-row,
+  .sales-workspace .journal-breakdown {
+    grid-template-columns: 1fr;
   }
 }

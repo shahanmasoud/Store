@@ -82,6 +82,7 @@ type InvoiceDraftItem = {
   quantity: number;
   unitPriceRial: number;
   discountAmountRial: number;
+  estimatedCostRial: number;
 };
 
 type PurchaseDraftItem = {
@@ -1032,7 +1033,7 @@ function InventoryView({ onBack }: { onBack: () => void }) {
                 return (
                   <article className="inventory-transaction" key={transaction.id}>
                     <div className={`inventory-transaction-sign ${isIncoming ? "is-in" : "is-out"}`}>{isIncoming ? "+" : "−"}</div>
-                    <div className="inventory-transaction-main"><strong>{transaction.variant_name}</strong><span>{transaction.transaction_type === "purchase_in" ? "ورود خرید" : transaction.transaction_type === "cancel_purchase" ? "لغو خرید" : transaction.transaction_type}</span><small>{transaction.note ?? (transaction.purchase_invoice_id ? `فاکتور خرید ${transaction.purchase_invoice_id}` : "گردش انبار")}</small></div>
+                    <div className="inventory-transaction-main"><strong>{transaction.variant_name}</strong><span>{transaction.transaction_type === "purchase_in" ? "ورود خرید" : transaction.transaction_type === "cancel_purchase" ? "لغو خرید" : transaction.transaction_type === "sale_out" ? "خروج فروش" : transaction.transaction_type === "cancel_sale" ? "لغو فروش" : transaction.transaction_type}</span><small>{transaction.note ?? (transaction.purchase_invoice_id ? `فاکتور خرید ${transaction.purchase_invoice_id}` : "گردش انبار")}</small></div>
                     <div className="inventory-transaction-numbers"><strong className={isIncoming ? "is-in" : "is-out"}>{isIncoming ? "+" : ""}{formatDecimal(transaction.quantity_delta)}</strong><span>مانده: {formatDecimal(transaction.balance_after)}</span><small>{toPersianDigits(transaction.jalali_date)} · {toPersianDigits(transaction.local_time)}</small></div>
                   </article>
                 );
@@ -2103,12 +2104,20 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: string[][] })
 
 function SalesView({ onBack }: { onBack: () => void }) {
   const [variants, setVariants] = useState<ProductVariant[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [variantsStatus, setVariantsStatus] = useState<"loading" | "ready" | "error">("loading");
   const [variantsError, setVariantsError] = useState("");
   const [items, setItems] = useState<InvoiceDraftItem[]>([]);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [itemVariantId, setItemVariantId] = useState("");
+  const [itemQuantity, setItemQuantity] = useState("1");
+  const [itemUnitPrice, setItemUnitPrice] = useState("");
+  const [itemDiscount, setItemDiscount] = useState("");
+  const [itemError, setItemError] = useState("");
   const [payments, setPayments] = useState<PaymentDraft[]>([makeDraftPayment("cash")]);
   const [invoiceDiscount, setInvoiceDiscount] = useState(0);
   const [customerName, setCustomerName] = useState("");
+  const [saleNote, setSaleNote] = useState("");
   const [saleDate, setSaleDate] = useState(DEFAULT_JALALI_DATE);
   const [saleTime, setSaleTime] = useState(currentLocalTime());
   const [submitStatus, setSubmitStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
@@ -2116,23 +2125,63 @@ function SalesView({ onBack }: { onBack: () => void }) {
   const [lastSale, setLastSale] = useState<SaleInvoice | null>(null);
   const [journalDate, setJournalDate] = useState(DEFAULT_JALALI_DATE);
   const [journal, setJournal] = useState<DailyJournal | null>(null);
-  const [journalStatus, setJournalStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [journalStatus, setJournalStatus] = useState<"idle" | "loading" | "error">("loading");
   const [journalError, setJournalError] = useState("");
+
+  function loadSellableProducts() {
+    setVariantsError("");
+    setVariantsStatus("loading");
+    return Promise.all([api.productVariants(), api.inventory()])
+      .then(([nextVariants, nextInventory]) => {
+        setVariants(nextVariants.filter((variant) => variant.is_active));
+        setInventory(nextInventory);
+        setVariantsStatus("ready" as const);
+      })
+      .catch((error) => {
+        setVariantsError(error instanceof Error ? error.message : "کالاها و موجودی دریافت نشدند.");
+        setVariantsStatus("error" as const);
+      });
+  }
+
+  function loadJournal(date: string) {
+    setJournalStatus("loading");
+    setJournalError("");
+    return api.dailyJournal(date)
+      .then((result) => {
+        setJournal(result);
+        setJournalStatus("idle" as const);
+      })
+      .catch((error) => {
+        setJournal(null);
+        setJournalStatus("error" as const);
+        setJournalError(error instanceof Error ? error.message : "دفتر روزانه دریافت نشد.");
+      });
+  }
 
   useEffect(() => {
     let isMounted = true;
-    setVariantsStatus("loading");
-    api
-      .productVariants()
-      .then((result) => {
+    Promise.all([api.productVariants(), api.inventory()])
+      .then(([nextVariants, nextInventory]) => {
         if (!isMounted) return;
-        setVariants(result);
+        setVariants(nextVariants.filter((variant) => variant.is_active));
+        setInventory(nextInventory);
         setVariantsStatus("ready");
       })
       .catch((error) => {
         if (!isMounted) return;
         setVariantsError(error instanceof Error ? error.message : "کالاها دریافت نشدند.");
         setVariantsStatus("error");
+      });
+    api.dailyJournal(DEFAULT_JALALI_DATE)
+      .then((nextJournal) => {
+        if (!isMounted) return;
+        setJournal(nextJournal);
+        setJournalStatus("idle");
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setJournalStatus("error");
+        setJournalError("اطلاعات دفتر روزانه دریافت نشد؛ دوباره تلاش کنید.");
       });
 
     return () => {
@@ -2147,38 +2196,78 @@ function SalesView({ onBack }: { onBack: () => void }) {
   }, [items]);
 
   const total = Math.max(0, subtotal - invoiceDiscount);
-  const paymentTotal = payments.reduce((sum, payment) => sum + payment.amountRial, 0);
-  const remaining = Math.max(0, total - paymentTotal);
+  const receivedTotal = payments.reduce((sum, payment) => sum + (payment.status === "received" ? payment.amountRial : 0), 0);
+  const pendingTotal = payments.reduce((sum, payment) => sum + (payment.status === "pending" ? payment.amountRial : 0), 0);
+  const assignedTotal = receivedTotal + pendingTotal;
+  const remaining = Math.max(0, total - receivedTotal);
+  const estimatedProfit = total - items.reduce((sum, item) => sum + item.estimatedCostRial, 0);
+
+  function resetItemForm() {
+    setEditingItemId(null);
+    setItemVariantId("");
+    setItemQuantity("1");
+    setItemUnitPrice("");
+    setItemDiscount("");
+    setItemError("");
+  }
+
+  function selectItemVariant(value: string) {
+    setItemVariantId(value);
+    const variant = variants.find((item) => item.id === Number(value));
+    setItemUnitPrice(variant ? moneyInputValue(variant.retail_price_rial) : "");
+    setItemError("");
+  }
 
   function handleAddItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const variantId = Number(form.get("variantId"));
+    const variantId = Number(itemVariantId);
     const variant = variants.find((item) => item.id === variantId);
-    const quantity = normalizeDecimal(form.get("quantity"));
-    const unitPriceRial = normalizeMoney(form.get("unitPriceRial"));
-    const discountAmountRial = normalizeMoney(form.get("itemDiscount"));
+    const quantity = normalizeDecimal(itemQuantity);
+    const unitPriceRial = normalizeMoney(itemUnitPrice);
+    const discountAmountRial = normalizeMoney(itemDiscount);
+    const inventoryItem = inventory.find((row) => row.variant_id === variantId);
+    const reservedQuantity = items
+      .filter((item) => item.variantId === variantId && item.id !== editingItemId)
+      .reduce((sum, item) => sum + item.quantity, 0);
+    const availableQuantity = Number(inventoryItem?.quantity_on_hand ?? 0) - reservedQuantity;
 
     if (!variant || quantity <= 0 || unitPriceRial <= 0) {
-      setSubmitStatus("error");
-      setSubmitMessage("برای افزودن کالا، نام کالا، مقدار و قیمت واحد را کامل کنید.");
+      setItemError("کالا، مقدار مثبت و قیمت واحد را کامل کنید.");
+      return;
+    }
+    if (discountAmountRial > Math.round(quantity * unitPriceRial)) {
+      setItemError("تخفیف ردیف نمی‌تواند از مبلغ همان ردیف بیشتر باشد.");
+      return;
+    }
+    if (quantity > availableQuantity) {
+      setItemError(`موجودی کافی نیست؛ حداکثر ${Math.max(0, availableQuantity).toLocaleString("fa-IR")} واحد قابل فروش است.`);
       return;
     }
 
-    setItems((current) => [
-      ...current,
-      {
+    const nextItem: InvoiceDraftItem = {
         id: crypto.randomUUID(),
         variantId,
         variantName: variant.name,
         quantity,
         unitPriceRial,
         discountAmountRial,
-      },
-    ]);
+        estimatedCostRial: Math.round(quantity * Number(inventoryItem?.weighted_average_cost_rial ?? 0)),
+      };
+    setItems((current) => editingItemId
+      ? current.map((item) => (item.id === editingItemId ? { ...nextItem, id: editingItemId } : item))
+      : [...current, nextItem]);
     setSubmitStatus("idle");
     setSubmitMessage("");
-    event.currentTarget.reset();
+    resetItemForm();
+  }
+
+  function startItemEdit(item: InvoiceDraftItem) {
+    setEditingItemId(item.id);
+    setItemVariantId(String(item.variantId));
+    setItemQuantity(String(item.quantity));
+    setItemUnitPrice(moneyInputValue(item.unitPriceRial));
+    setItemDiscount(moneyInputValue(item.discountAmountRial));
+    setItemError("");
   }
 
   function updatePayment(id: string, patch: Partial<PaymentDraft>) {
@@ -2196,10 +2285,27 @@ function SalesView({ onBack }: { onBack: () => void }) {
       return;
     }
 
+    if (!/^\d{4}\/\d{2}\/\d{2}$/.test(toEnglishDigits(saleDate)) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(toEnglishDigits(saleTime))) {
+      setSubmitStatus("error");
+      setSubmitMessage("تاریخ و ساعت فروش را با قالب درست وارد کنید.");
+      return;
+    }
+
+    if (invoiceDiscount > subtotal) {
+      setSubmitStatus("error");
+      setSubmitMessage("تخفیف فاکتور نمی‌تواند از جمع کالاها بیشتر باشد.");
+      return;
+    }
+
     const validPayments = payments.filter((payment) => payment.amountRial > 0);
     if (!validPayments.length) {
       setSubmitStatus("error");
       setSubmitMessage("حداقل یک ردیف پرداخت با مبلغ معتبر وارد کنید.");
+      return;
+    }
+    if (assignedTotal > total) {
+      setSubmitStatus("error");
+      setSubmitMessage("جمع پرداخت‌ها نمی‌تواند از مبلغ فاکتور بیشتر باشد.");
       return;
     }
 
@@ -2210,7 +2316,7 @@ function SalesView({ onBack }: { onBack: () => void }) {
       reference_number: payment.referenceNumber.trim() || undefined,
       jalali_date: saleDate,
       local_time: saleTime,
-      due_jalali_date: payment.dueJalaliDate.trim() || undefined,
+      due_jalali_date: payment.status === "pending" ? payment.dueJalaliDate.trim() || saleDate : undefined,
       note: payment.note.trim() || undefined,
     }));
 
@@ -2220,11 +2326,13 @@ function SalesView({ onBack }: { onBack: () => void }) {
         jalali_date: saleDate,
         local_time: saleTime,
         discount_amount_rial: invoiceDiscount,
+        note: saleNote.trim() || undefined,
         items: items.map((item) => ({
           variant_id: item.variantId,
           quantity: item.quantity,
           unit_price_rial: item.unitPriceRial,
           discount_amount_rial: item.discountAmountRial,
+          estimated_cost_rial: item.estimatedCostRial,
         })),
         payments: payloadPayments,
       });
@@ -2236,6 +2344,11 @@ function SalesView({ onBack }: { onBack: () => void }) {
       setInvoiceDiscount(0);
       setPayments([makeDraftPayment("cash")]);
       setCustomerName("");
+      setSaleNote("");
+      resetItemForm();
+      await loadSellableProducts();
+      setJournalDate(saleDate);
+      await loadJournal(saleDate);
     } catch (error) {
       setSubmitStatus("error");
       setSubmitMessage(error instanceof Error ? error.message : "ثبت فروش انجام نشد.");
@@ -2244,46 +2357,29 @@ function SalesView({ onBack }: { onBack: () => void }) {
 
   async function handleLoadJournal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setJournalStatus("loading");
-    setJournalError("");
-    try {
-      const result = await api.dailyJournal(journalDate);
-      setJournal(result);
-      setJournalStatus("idle");
-    } catch (error) {
-      setJournalStatus("error");
-      setJournalError(error instanceof Error ? error.message : "دفتر روزانه دریافت نشد.");
-    }
+    await loadJournal(journalDate);
   }
 
   return (
     <section className="sales-workspace" aria-label="ثبت فروش روزانه">
-      <div className="sales-header">
+      <div className="sales-header sales-hero">
         <div>
           <p className="eyebrow">فروش روزانه</p>
-          <h2>ثبت فاکتور و پرداخت ترکیبی</h2>
+          <h2>فروش را سریع و مطمئن ثبت کنید</h2>
+          <p className="sales-guide">ابتدا کالاها را به فاکتور اضافه کنید، سپس پرداخت‌های نقدی یا مدت‌دار را مشخص کنید.</p>
         </div>
-        <button type="button" className="ghost-button" onClick={onBack}>
-          بازگشت به داشبورد
-        </button>
+        <Button variant="outlined" startIcon={<ArrowBackRounded />} onClick={onBack}>بازگشت به داشبورد</Button>
       </div>
 
       <div className="sales-grid">
-        <section className="sale-panel sale-panel-main">
+        <Card variant="outlined" className="sale-panel sale-panel-main">
+          <div className="sales-section-heading"><div><ReceiptLongRounded /><div><h3>مشخصات و پرداخت فاکتور</h3><p>اطلاعات مشتری اختیاری است.</p></div></div><Chip label={`${items.length.toLocaleString("fa-IR")} ردیف`} color={items.length ? "primary" : "default"} variant="outlined" /></div>
           <form className="sale-meta-grid" onSubmit={handleSubmitSale}>
-            <label>
-              نام مشتری
-              <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="اختیاری" />
-            </label>
+            <TextField label="نام مشتری (اختیاری)" value={customerName} onChange={(event) => setCustomerName(event.target.value)} disabled={submitStatus === "loading"} />
             <JalaliDateField label="تاریخ شمسی" value={saleDate} onChange={setSaleDate} required />
-            <label>
-              ساعت
-              <input value={saleTime} onChange={(event) => setSaleTime(event.target.value)} placeholder="14:30" required />
-            </label>
-            <label>
-              تخفیف فاکتور
-              <input inputMode="numeric" value={moneyInputValue(invoiceDiscount)} onChange={(event) => setInvoiceDiscount(normalizeMoney(event.target.value))} placeholder="۰ تومان" />
-            </label>
+            <TextField label="ساعت" value={saleTime} onChange={(event) => setSaleTime(toEnglishDigits(event.target.value))} placeholder="14:30" required disabled={submitStatus === "loading"} />
+            <TextField label="تخفیف فاکتور (تومان)" inputMode="numeric" value={moneyInputValue(invoiceDiscount)} onChange={(event) => setInvoiceDiscount(normalizeMoney(event.target.value))} disabled={submitStatus === "loading"} />
+            <TextField className="sale-note" label="یادداشت فاکتور (اختیاری)" value={saleNote} onChange={(event) => setSaleNote(event.target.value)} multiline minRows={2} disabled={submitStatus === "loading"} />
 
             <div className="invoice-summary" aria-label="جمع فاکتور">
               <div>
@@ -2295,98 +2391,75 @@ function SalesView({ onBack }: { onBack: () => void }) {
                 <strong>{formatRial(total)}</strong>
               </div>
               <div>
-                <span>مانده پرداخت</span>
+                <span>دریافت قطعی</span>
+                <strong className="text-ok">{formatRial(receivedTotal)}</strong>
+              </div>
+              <div>
+                <span>مانده مشتری</span>
                 <strong className={remaining > 0 ? "text-danger" : "text-ok"}>{formatRial(remaining)}</strong>
               </div>
+              <div><span>سود تخمینی</span><strong className={estimatedProfit < 0 ? "text-danger" : "text-ok"}>{formatRial(estimatedProfit)}</strong></div>
             </div>
 
             <div className="payment-list">
               <div className="mini-section-header">
-                <h3>پرداخت‌ها</h3>
-                <button type="button" className="soft-button" onClick={() => setPayments((current) => [...current, makeDraftPayment("cash", remaining)])}>
-                  افزودن پرداخت
-                </button>
+                <div><h3>روش‌های پرداخت</h3><span>{formatRial(assignedTotal)} ثبت‌شده</span></div>
+                <Button type="button" variant="outlined" startIcon={<AddRounded />} onClick={() => setPayments((current) => [...current, makeDraftPayment("cash", Math.max(0, total - assignedTotal))])}>افزودن پرداخت</Button>
               </div>
               {payments.map((payment) => (
-                <div className="payment-row" key={payment.id}>
-                  <select value={payment.method} onChange={(event) => updatePayment(payment.id, { method: event.target.value as PaymentMethod })}>
+                <div className={`payment-row payment-${payment.status}`} key={payment.id}>
+                  <TextField select label="روش" value={payment.method} onChange={(event) => { const method = event.target.value as PaymentMethod; updatePayment(payment.id, { method, status: method === "credit" || method === "cheque" || method === "voucher" ? "pending" : "received" }); }}>
                     {paymentMethods.map((method) => (
-                      <option value={method} key={method}>
-                        {paymentLabels[method]}
-                      </option>
+                      <MenuItem value={method} key={method}>{paymentLabels[method]}</MenuItem>
                     ))}
-                  </select>
-                  <input
+                  </TextField>
+                  <TextField label="مبلغ (تومان)"
                     inputMode="numeric"
                     value={moneyInputValue(payment.amountRial)}
                     onChange={(event) => updatePayment(payment.id, { amountRial: normalizeMoney(event.target.value) })}
-                    placeholder="مبلغ تومان"
                   />
-                  <select value={payment.status} onChange={(event) => updatePayment(payment.id, { status: event.target.value as PaymentStatus })}>
-                    <option value="received">دریافت‌شده</option>
-                    <option value="pending">در انتظار</option>
-                  </select>
-                  <input value={payment.referenceNumber} onChange={(event) => updatePayment(payment.id, { referenceNumber: event.target.value })} placeholder="شماره پیگیری/چک" />
-                  <JalaliDateField value={payment.dueJalaliDate || saleDate} onChange={(dueJalaliDate) => updatePayment(payment.id, { dueJalaliDate })} />
-                  <button type="button" className="icon-button" aria-label="حذف پرداخت" onClick={() => setPayments((current) => current.filter((item) => item.id !== payment.id))}>
-                    ×
-                  </button>
+                  <TextField select label="وضعیت" value={payment.status} onChange={(event) => updatePayment(payment.id, { status: event.target.value as PaymentStatus })}><MenuItem value="received">دریافت‌شده</MenuItem><MenuItem value="pending">در انتظار</MenuItem></TextField>
+                  <TextField label="شماره پیگیری (اختیاری)" value={payment.referenceNumber} onChange={(event) => updatePayment(payment.id, { referenceNumber: event.target.value })} />
+                  {payment.status === "pending" ? <JalaliDateField label="سررسید" value={payment.dueJalaliDate || saleDate} onChange={(dueJalaliDate) => updatePayment(payment.id, { dueJalaliDate })} /> : <div className="payment-status"><Chip color="success" label="به دریافتی‌ها افزوده می‌شود" size="small" /></div>}
+                  <Button type="button" color="error" startIcon={<DeleteOutlineRounded />} aria-label="حذف پرداخت" onClick={() => setPayments((current) => current.filter((item) => item.id !== payment.id))}>حذف</Button>
                 </div>
               ))}
+              {payments.length === 0 ? <Alert severity="warning">برای ثبت فاکتور، حداقل یک روش پرداخت اضافه کنید.</Alert> : null}
             </div>
 
             {submitMessage ? (
-              <p className={submitStatus === "success" ? "success-message" : "error-message"} role="status">
-                {submitMessage}
-              </p>
+              <Alert className="sale-message" severity={submitStatus === "success" ? "success" : "error"} role="status">{submitMessage}</Alert>
             ) : null}
 
-            <button type="submit" className="primary-button submit-sale-button" disabled={submitStatus === "loading"}>
-              {submitStatus === "loading" ? "در حال ثبت..." : "ثبت فروش"}
-            </button>
+            <Button type="submit" variant="contained" size="large" className="submit-sale-button" startIcon={submitStatus === "loading" ? <CircularProgress size={20} color="inherit" /> : <PointOfSaleRounded />} disabled={submitStatus === "loading" || variantsStatus !== "ready"}>{submitStatus === "loading" ? "در حال ثبت فروش…" : "ثبت نهایی فروش"}</Button>
           </form>
-        </section>
+        </Card>
 
-        <aside className="sale-panel">
+        <Card variant="outlined" component="aside" className="sale-panel sale-items-panel">
           <div className="mini-section-header">
-            <h3>افزودن کالا</h3>
-            <span>{variants.length.toLocaleString("fa-IR")} کالا</span>
+            <div><h3>{editingItemId ? "ویرایش ردیف" : "افزودن کالا"}</h3><span>{variants.length.toLocaleString("fa-IR")} کالای فعال</span></div>
+            {editingItemId ? <Chip label="حالت ویرایش" color="warning" size="small" /> : null}
           </div>
 
-          {variantsStatus === "loading" ? <p className="state-message">در حال دریافت کالاها...</p> : null}
-          {variantsStatus === "error" ? <p className="error-message">{variantsError}</p> : null}
-          {variantsStatus === "ready" && variants.length === 0 ? <p className="state-message">هنوز کالایی برای فروش ثبت نشده است.</p> : null}
+          {variantsStatus === "loading" ? <div className="record-state"><CircularProgress size={28} /><strong>در حال دریافت کالا و موجودی…</strong></div> : null}
+          {variantsStatus === "error" ? <Alert severity="error" action={<Button color="inherit" startIcon={<RefreshRounded />} onClick={() => void loadSellableProducts()}>تلاش دوباره</Button>}>{variantsError}</Alert> : null}
+          {variantsStatus === "ready" && variants.length === 0 ? <div className="record-state sale-empty"><Inventory2Rounded /><strong>کالای فعالی برای فروش ندارید</strong><span>ابتدا کالا و موجودی آن را ثبت کنید.</span></div> : null}
 
           {variantsStatus === "ready" && variants.length > 0 ? (
             <form className="add-item-form" onSubmit={handleAddItem}>
-              <label>
-                کالا
-                <select name="variantId" required>
-                  <option value="">انتخاب کالا</option>
+              <TextField select label="کالا" value={itemVariantId} onChange={(event) => selectItemVariant(event.target.value)} required>
+                  <MenuItem value="">انتخاب کالا</MenuItem>
                   {variants.map((variant) => (
-                    <option value={variant.id} key={variant.id}>
-                      {variant.name}
-                    </option>
+                    <MenuItem value={variant.id} key={variant.id}>{variant.name} — موجودی {Number(inventory.find((row) => row.variant_id === variant.id)?.quantity_on_hand ?? 0).toLocaleString("fa-IR")}</MenuItem>
                   ))}
-                </select>
-              </label>
+              </TextField>
               <div className="compact-fields">
-                <label>
-                  مقدار
-                  <input name="quantity" inputMode="decimal" placeholder="1" required />
-                </label>
-                <label>
-                  قیمت واحد
-                  <input name="unitPriceRial" inputMode="numeric" placeholder="تومان" required />
-                </label>
+                <TextField label="مقدار" value={itemQuantity} onChange={(event) => setItemQuantity(event.target.value)} inputMode="decimal" required />
+                <TextField label="قیمت واحد (تومان)" value={itemUnitPrice} onChange={(event) => setItemUnitPrice(event.target.value)} inputMode="numeric" required />
               </div>
-              <label>
-                تخفیف ردیف
-                <input name="itemDiscount" inputMode="numeric" placeholder="اختیاری" />
-              </label>
-              <button type="submit" className="soft-button">
-                افزودن به فاکتور
-              </button>
+              <TextField label="تخفیف ردیف (تومان)" value={itemDiscount} onChange={(event) => setItemDiscount(event.target.value)} inputMode="numeric" />
+              {itemError ? <Alert severity="error">{itemError}</Alert> : null}
+              <div className="sale-item-form-actions"><Button type="submit" variant="contained" startIcon={editingItemId ? <EditRounded /> : <AddRounded />}>{editingItemId ? "ذخیره تغییرات" : "افزودن به فاکتور"}</Button>{editingItemId ? <Button type="button" onClick={resetItemForm}>انصراف</Button> : null}</div>
             </form>
           ) : null}
 
@@ -2396,47 +2469,44 @@ function SalesView({ onBack }: { onBack: () => void }) {
               <span>{items.length.toLocaleString("fa-IR")} ردیف</span>
             </div>
             {items.length === 0 ? (
-              <p className="state-message">کالایی به فاکتور اضافه نشده است.</p>
+              <div className="record-state sale-empty"><ShoppingCartCheckoutRounded /><strong>فاکتور هنوز خالی است</strong><span>یک کالا را از فرم بالا اضافه کنید.</span></div>
             ) : (
               items.map((item) => {
                 const lineTotal = Math.max(0, Math.round(item.quantity * item.unitPriceRial) - item.discountAmountRial);
                 return (
                   <div className="invoice-item" key={item.id}>
-                    <div>
+                    <div className="invoice-item-main">
                       <strong>{item.variantName}</strong>
                       <span>
-                        {item.quantity.toLocaleString("fa-IR")} × {formatRial(item.unitPriceRial)}
+                        {item.quantity.toLocaleString("fa-IR")} × {formatRial(item.unitPriceRial)}{item.discountAmountRial ? ` • تخفیف ${formatRial(item.discountAmountRial)}` : ""}
                       </span>
                     </div>
-                    <div>
+                    <div className="invoice-item-end">
                       <strong>{formatRial(lineTotal)}</strong>
-                      <button type="button" className="link-button" onClick={() => setItems((current) => current.filter((draft) => draft.id !== item.id))}>
-                        حذف
-                      </button>
+                      <div><Button size="small" startIcon={<EditRounded />} onClick={() => startItemEdit(item)}>ویرایش</Button><Button size="small" color="error" startIcon={<DeleteOutlineRounded />} onClick={() => { setItems((current) => current.filter((draft) => draft.id !== item.id)); if (editingItemId === item.id) resetItemForm(); }}>حذف</Button></div>
                     </div>
                   </div>
                 );
               })
             )}
           </div>
-        </aside>
+        </Card>
       </div>
 
-      <section className="journal-panel">
+      <Card variant="outlined" component="section" className="journal-panel">
         <form className="journal-form" onSubmit={handleLoadJournal}>
           <div>
             <p className="eyebrow">دفتر روزانه</p>
-            <h2>خلاصه فروش یک روز</h2>
+            <h2>خلاصه فروش و وصول یک روز</h2>
           </div>
-          <JalaliDateField value={journalDate} onChange={setJournalDate} required />
-          <button type="submit" className="ghost-button" disabled={journalStatus === "loading"}>
-            {journalStatus === "loading" ? "در حال دریافت..." : "نمایش گزارش"}
-          </button>
+          <div className="journal-filter"><JalaliDateField label="تاریخ گزارش" value={journalDate} onChange={setJournalDate} required /><Button type="submit" variant="outlined" startIcon={journalStatus === "loading" ? <CircularProgress size={18} /> : <RefreshRounded />} disabled={journalStatus === "loading"}>{journalStatus === "loading" ? "در حال دریافت…" : "نمایش گزارش"}</Button></div>
         </form>
 
-        {journalStatus === "error" ? <p className="error-message">{journalError}</p> : null}
-        {lastSale ? <p className="success-message">آخرین فاکتور ثبت‌شده: {lastSale.invoice_number ?? lastSale.id}</p> : null}
-        {journal ? (
+        {journalStatus === "loading" ? <LinearProgress aria-label="در حال دریافت دفتر روزانه" /> : null}
+        {journalStatus === "error" ? <Alert severity="error" action={<Button color="inherit" onClick={() => void loadJournal(journalDate)}>تلاش دوباره</Button>}>{journalError}</Alert> : null}
+        {lastSale ? <Alert severity="success">آخرین فاکتور ثبت‌شده: {lastSale.invoice_number ?? lastSale.id} • سود تخمینی {formatRial(lastSale.items.reduce((sum, item) => sum + (item.estimated_profit_rial ?? 0), 0) - lastSale.discount_amount_rial)}</Alert> : null}
+        {journal && journalStatus !== "loading" && journal.invoice_count === 0 ? <div className="record-state journal-empty"><ReceiptLongRounded /><strong>برای این تاریخ فروشی ثبت نشده است</strong><span>تاریخ دیگری انتخاب کنید یا اولین فروش این روز را ثبت کنید.</span></div> : null}
+        {journal && journal.invoice_count > 0 ? (
           <div className="journal-summary">
             <div>
               <span>تعداد فاکتور</span>
@@ -2454,21 +2524,22 @@ function SalesView({ onBack }: { onBack: () => void }) {
               <span>در انتظار</span>
               <strong>{formatRial(journal.pending_total_rial)}</strong>
             </div>
+            <div><span>سود تخمینی</span><strong>{formatRial(journal.estimated_profit_rial)}</strong></div>
           </div>
         ) : null}
 
-        {journal?.payments.length ? (
+        {journal && journal.invoice_count > 0 && journal.payments.length ? (
           <div className="journal-breakdown">
             {journal.payments.map((payment) => (
               <div key={payment.method}>
                 <strong>{paymentLabels[payment.method]}</strong>
-                <span>دریافت: {formatRial(payment.received_rial)}</span>
-                <span>در انتظار: {formatRial(payment.pending_rial)}</span>
+                <span className="text-ok">دریافت‌شده: {formatRial(payment.received_rial)}</span>
+                <span className={payment.pending_rial ? "text-danger" : ""}>در انتظار: {formatRial(payment.pending_rial)}</span>
               </div>
             ))}
           </div>
         ) : null}
-      </section>
+      </Card>
     </section>
   );
 }

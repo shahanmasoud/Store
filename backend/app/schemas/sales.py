@@ -100,9 +100,9 @@ class SaleInvoiceCreate(BaseModel):
             for item in self.items
         )
         if subtotal < 0:
-            raise ValueError("Invoice subtotal cannot be negative.")
+            raise ValueError("جمع ردیف‌های فاکتور نمی‌تواند منفی باشد.")
         if subtotal - self.discount_amount_rial < 0:
-            raise ValueError("Invoice total cannot be negative.")
+            raise ValueError("تخفیف فاکتور نمی‌تواند از جمع ردیف‌ها بیشتر باشد.")
         return self
 
 
@@ -139,4 +139,5 @@ class DailyJournalRead(BaseModel):
     sales_total_rial: int
     received_total_rial: int
     pending_total_rial: int
+    estimated_profit_rial: int
     payments: list[DailyJournalPaymentBreakdown]

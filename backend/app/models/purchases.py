@@ -94,6 +94,8 @@ class InventoryTransaction(Base, TimestampMixin):
     variant_id: Mapped[int] = mapped_column(ForeignKey("product_variants.id"), nullable=False, index=True)
     purchase_invoice_id: Mapped[int | None] = mapped_column(ForeignKey("purchase_invoices.id"))
     purchase_invoice_item_id: Mapped[int | None] = mapped_column(ForeignKey("purchase_invoice_items.id"))
+    sale_invoice_id: Mapped[int | None] = mapped_column(ForeignKey("sale_invoices.id"), index=True)
+    sale_invoice_item_id: Mapped[int | None] = mapped_column(ForeignKey("sale_invoice_items.id"), index=True)
     transaction_type: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
     quantity_delta: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
     unit_cost_rial: Mapped[int | None] = mapped_column(Integer)

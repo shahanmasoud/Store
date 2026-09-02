@@ -273,6 +273,8 @@ def list_inventory_transactions(
                 variant_name=variant.name,
                 purchase_invoice_id=transaction.purchase_invoice_id,
                 purchase_invoice_item_id=transaction.purchase_invoice_item_id,
+                sale_invoice_id=transaction.sale_invoice_id,
+                sale_invoice_item_id=transaction.sale_invoice_item_id,
                 transaction_type=transaction.transaction_type,
                 quantity_delta=transaction.quantity_delta,
                 balance_after=balance,
