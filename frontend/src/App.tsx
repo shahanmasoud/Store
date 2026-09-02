@@ -656,26 +656,30 @@ function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenI
   const [submitStatus, setSubmitStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [submitMessage, setSubmitMessage] = useState("");
   const [lastPurchase, setLastPurchase] = useState<PurchaseInvoice | null>(null);
+  const [itemVariantId, setItemVariantId] = useState("");
+  const [itemQuantity, setItemQuantity] = useState("");
+  const [itemUnitCost, setItemUnitCost] = useState("");
+  const [itemExtraCost, setItemExtraCost] = useState("");
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [itemNotice, setItemNotice] = useState("");
 
-  useEffect(() => {
-    let isMounted = true;
+  const loadVariants = () => {
     setVariantsStatus("loading");
-    api
+    setVariantsError("");
+    return api
       .productVariants()
       .then((result) => {
-        if (!isMounted) return;
         setVariants(result);
         setVariantsStatus("ready");
       })
       .catch((error) => {
-        if (!isMounted) return;
         setVariantsError(error instanceof Error ? error.message : "کالاها دریافت نشدند.");
         setVariantsStatus("error");
       });
+  };
 
-    return () => {
-      isMounted = false;
-    };
+  useEffect(() => {
+    void loadVariants();
   }, []);
 
   const subtotal = useMemo(() => {
@@ -686,33 +690,45 @@ function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenI
 
   function handleAddPurchaseItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const variantId = Number(form.get("variantId"));
+    const variantId = Number(itemVariantId);
     const variant = variants.find((item) => item.id === variantId);
-    const quantity = normalizeDecimal(form.get("quantity"));
-    const unitCostRial = normalizeMoney(form.get("unitCostRial"));
-    const extraCostRial = normalizeMoney(form.get("itemExtraCost"));
+    const quantity = normalizeDecimal(itemQuantity);
+    const unitCostRial = normalizeMoney(itemUnitCost);
+    const extraCostRial = normalizeMoney(itemExtraCost);
 
     if (!variant || quantity <= 0 || unitCostRial <= 0) {
-      setSubmitStatus("error");
-      setSubmitMessage("برای افزودن ردیف خرید، کالا، مقدار و قیمت خرید را کامل کنید.");
+      setItemNotice("کالا، مقدار مثبت و قیمت خرید واحد را کامل و درست وارد کنید.");
       return;
     }
 
-    setItems((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        variantId,
-        variantName: variant.name,
-        quantity,
-        unitCostRial,
-        extraCostRial,
-      },
-    ]);
+    const nextItem = { id: editingItemId ?? crypto.randomUUID(), variantId, variantName: variant.name, quantity, unitCostRial, extraCostRial };
+    setItems((current) => editingItemId === null ? [...current, nextItem] : current.map((item) => item.id === editingItemId ? nextItem : item));
+    setEditingItemId(null);
+    setItemVariantId("");
+    setItemQuantity("");
+    setItemUnitCost("");
+    setItemExtraCost("");
+    setItemNotice("");
     setSubmitStatus("idle");
     setSubmitMessage("");
-    event.currentTarget.reset();
+  }
+
+  function editPurchaseItem(item: PurchaseDraftItem) {
+    setEditingItemId(item.id);
+    setItemVariantId(String(item.variantId));
+    setItemQuantity(String(item.quantity));
+    setItemUnitCost(moneyInputValue(item.unitCostRial));
+    setItemExtraCost(moneyInputValue(item.extraCostRial));
+    setItemNotice("");
+  }
+
+  function resetPurchaseItemForm() {
+    setEditingItemId(null);
+    setItemVariantId("");
+    setItemQuantity("");
+    setItemUnitCost("");
+    setItemExtraCost("");
+    setItemNotice("");
   }
 
   async function handleSubmitPurchase(event: FormEvent<HTMLFormElement>) {
@@ -729,6 +745,18 @@ function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenI
     if (!items.length) {
       setSubmitStatus("error");
       setSubmitMessage("حداقل یک کالا به فاکتور خرید اضافه کنید.");
+      return;
+    }
+
+    if (invoiceDiscount > subtotal + extraCost) {
+      setSubmitStatus("error");
+      setSubmitMessage("تخفیف فاکتور نمی‌تواند از جمع خرید و هزینه‌های جانبی بیشتر باشد.");
+      return;
+    }
+
+    if (paidAmount > total) {
+      setSubmitStatus("error");
+      setSubmitMessage("مبلغ پرداخت‌شده نمی‌تواند از مبلغ نهایی فاکتور بیشتر باشد.");
       return;
     }
 
@@ -757,6 +785,8 @@ function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenI
       setExtraCost(0);
       setPaidAmount(0);
       setNote("");
+      setSupplierName("");
+      resetPurchaseItemForm();
     } catch (error) {
       setSubmitStatus("error");
       setSubmitMessage(error instanceof Error ? error.message : "ثبت خرید انجام نشد.");
@@ -764,52 +794,32 @@ function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenI
   }
 
   return (
-    <section className="sales-workspace" aria-label="ثبت خرید">
-      <div className="sales-header">
+    <section className="sales-workspace purchase-workspace" aria-label="ثبت خرید">
+      <div className="sales-header purchase-header">
         <div>
           <p className="eyebrow">خرید و تأمین کالا</p>
           <h2>ثبت فاکتور خرید و به‌روزرسانی موجودی</h2>
+          <p className="purchase-guide">ابتدا اقلام را اضافه کنید، سپس اطلاعات فاکتور و مبلغ پرداختی را بررسی و ثبت کنید.</p>
         </div>
-        <div className="header-actions">
-          <button type="button" className="ghost-button" onClick={onOpenInventory}>
-            نمایش انبار
-          </button>
-          <button type="button" className="ghost-button" onClick={onBack}>
-            بازگشت به داشبورد
-          </button>
-        </div>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1} className="purchase-header-actions">
+          <Button variant="outlined" startIcon={<Inventory2Rounded />} onClick={onOpenInventory}>نمایش انبار</Button>
+          <Button variant="text" startIcon={<ArrowBackRounded />} onClick={onBack}>بازگشت به داشبورد</Button>
+        </Stack>
       </div>
 
-      <div className="sales-grid">
-        <section className="sale-panel sale-panel-main">
-          <form className="sale-meta-grid" onSubmit={handleSubmitPurchase}>
-            <label>
-              نام تأمین‌کننده
-              <input value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder="مثلا عمده‌فروش بازار" required />
-            </label>
+      <div className="purchase-layout">
+        <section className="sale-panel purchase-invoice-panel">
+          <div className="purchase-section-heading"><div><ReceiptLongRounded /><div><h3>اطلاعات فاکتور</h3><p>مبالغ را به تومان وارد کنید.</p></div></div><Chip label={`${items.length.toLocaleString("fa-IR")} ردیف`} color="primary" variant="outlined" /></div>
+          <form className="purchase-invoice-form" onSubmit={handleSubmitPurchase} noValidate>
+            <TextField label="نام تأمین‌کننده" value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder="مثلاً عمده‌فروش بازار" required disabled={submitStatus === "loading"} />
             <JalaliDateField label="تاریخ شمسی" value={purchaseDate} onChange={setPurchaseDate} required />
-            <label>
-              ساعت
-              <input value={purchaseTime} onChange={(event) => setPurchaseTime(event.target.value)} placeholder="14:30" required />
-            </label>
-            <label>
-              پرداخت‌شده
-              <input inputMode="numeric" value={moneyInputValue(paidAmount)} onChange={(event) => setPaidAmount(normalizeMoney(event.target.value))} placeholder="۰ تومان" />
-            </label>
-            <label>
-              تخفیف فاکتور
-              <input inputMode="numeric" value={moneyInputValue(invoiceDiscount)} onChange={(event) => setInvoiceDiscount(normalizeMoney(event.target.value))} placeholder="۰ تومان" />
-            </label>
-            <label>
-              هزینه اضافه فاکتور
-              <input inputMode="numeric" value={moneyInputValue(extraCost)} onChange={(event) => setExtraCost(normalizeMoney(event.target.value))} placeholder="۰ تومان" />
-            </label>
-            <label className="wide-field">
-              توضیح
-              <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="اختیاری" />
-            </label>
+            <TextField label="ساعت" value={purchaseTime} onChange={(event) => setPurchaseTime(event.target.value)} placeholder="14:30" required disabled={submitStatus === "loading"} slotProps={{ htmlInput: { dir: "ltr" } }} />
+            <TextField label="پرداخت‌شده (تومان)" value={moneyInputValue(paidAmount)} onChange={(event) => setPaidAmount(normalizeMoney(event.target.value))} inputMode="numeric" disabled={submitStatus === "loading"} />
+            <TextField label="تخفیف فاکتور (تومان)" value={moneyInputValue(invoiceDiscount)} onChange={(event) => setInvoiceDiscount(normalizeMoney(event.target.value))} inputMode="numeric" disabled={submitStatus === "loading"} />
+            <TextField label="هزینه جانبی فاکتور (تومان)" value={moneyInputValue(extraCost)} onChange={(event) => setExtraCost(normalizeMoney(event.target.value))} inputMode="numeric" disabled={submitStatus === "loading"} />
+            <TextField className="purchase-note" label="یادداشت (اختیاری)" value={note} onChange={(event) => setNote(event.target.value)} disabled={submitStatus === "loading"} multiline minRows={2} />
 
-            <div className="invoice-summary" aria-label="جمع فاکتور خرید">
+            <div className="invoice-summary purchase-summary" aria-label="جمع فاکتور خرید">
               <div>
                 <span>جمع ردیف‌ها</span>
                 <strong>{formatRial(subtotal)}</strong>
@@ -824,58 +834,32 @@ function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenI
               </div>
             </div>
 
-            {submitMessage ? (
-              <p className={submitStatus === "success" ? "success-message" : "error-message"} role="status">
-                {submitMessage}
-              </p>
-            ) : null}
+            {submitMessage ? <Alert className="purchase-message" severity={submitStatus === "success" ? "success" : "error"}>{submitMessage}</Alert> : null}
 
-            <button type="submit" className="primary-button submit-sale-button" disabled={submitStatus === "loading"}>
-              {submitStatus === "loading" ? "در حال ثبت..." : "ثبت خرید"}
-            </button>
+            <Button type="submit" className="purchase-submit" variant="contained" size="large" disabled={submitStatus === "loading" || items.length === 0} startIcon={submitStatus === "loading" ? <CircularProgress size={18} color="inherit" /> : <ReceiptLongRounded />}>{submitStatus === "loading" ? "در حال ثبت…" : "ثبت فاکتور خرید"}</Button>
           </form>
         </section>
 
-        <aside className="sale-panel">
+        <aside className="sale-panel purchase-items-panel">
           <div className="mini-section-header">
-            <h3>افزودن کالا</h3>
-            <span>{variants.length.toLocaleString("fa-IR")} کالا</span>
+            <div><h3>{editingItemId === null ? "افزودن کالا" : "ویرایش ردیف"}</h3><span>مقدار و بهای خرید این ردیف</span></div>
+            <Chip size="small" label={`${variants.length.toLocaleString("fa-IR")} گونه`} />
           </div>
 
-          {variantsStatus === "loading" ? <p className="state-message">در حال دریافت کالاها...</p> : null}
-          {variantsStatus === "error" ? <p className="error-message">{variantsError}</p> : null}
-          {variantsStatus === "ready" && variants.length === 0 ? <p className="state-message">هنوز کالایی برای خرید ثبت نشده است.</p> : null}
+          {variantsStatus === "loading" ? <div className="record-state"><CircularProgress size={26} /><span>در حال دریافت کالاها…</span></div> : null}
+          {variantsStatus === "error" ? <Alert severity="error" action={<Button color="inherit" onClick={() => void loadVariants()}>تلاش دوباره</Button>}>{variantsError}</Alert> : null}
+          {variantsStatus === "ready" && variants.length === 0 ? <div className="record-state"><Inventory2Rounded /><strong>هنوز گونه کالایی ثبت نشده است</strong><span>ابتدا از بخش کالاها یک گونه بسازید.</span></div> : null}
 
           {variantsStatus === "ready" && variants.length > 0 ? (
-            <form className="add-item-form" onSubmit={handleAddPurchaseItem}>
-              <label>
-                کالا
-                <select name="variantId" required>
-                  <option value="">انتخاب کالا</option>
-                  {variants.map((variant) => (
-                    <option value={variant.id} key={variant.id}>
-                      {variant.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="compact-fields">
-                <label>
-                  مقدار
-                  <input name="quantity" inputMode="decimal" placeholder="1" required />
-                </label>
-                <label>
-                  قیمت خرید واحد
-                  <input name="unitCostRial" inputMode="numeric" placeholder="تومان" required />
-                </label>
+            <form className="purchase-item-form" onSubmit={handleAddPurchaseItem} noValidate>
+              {itemNotice ? <Alert severity="error" onClose={() => setItemNotice("")}>{itemNotice}</Alert> : null}
+              <TextField select label="گونه کالا" value={itemVariantId} onChange={(event) => setItemVariantId(event.target.value)} required><MenuItem value="">انتخاب گونه</MenuItem>{variants.map((variant) => <MenuItem value={String(variant.id)} key={variant.id}>{variant.name}</MenuItem>)}</TextField>
+              <div className="purchase-item-fields">
+                <TextField label="مقدار" value={itemQuantity} onChange={(event) => setItemQuantity(event.target.value)} inputMode="decimal" required />
+                <TextField label="قیمت واحد (تومان)" value={itemUnitCost} onChange={(event) => setItemUnitCost(event.target.value)} inputMode="numeric" required />
               </div>
-              <label>
-                هزینه اضافه ردیف
-                <input name="itemExtraCost" inputMode="numeric" placeholder="باربری/کیسه/..." />
-              </label>
-              <button type="submit" className="soft-button">
-                افزودن به خرید
-              </button>
+              <TextField label="هزینه جانبی ردیف (تومان)" value={itemExtraCost} onChange={(event) => setItemExtraCost(event.target.value)} inputMode="numeric" helperText="اختیاری؛ مثل حمل یا بسته‌بندی" />
+              <div className="purchase-item-actions"><Button type="submit" variant="contained" size="large" startIcon={editingItemId === null ? <AddRounded /> : <EditRounded />} disabled={!itemVariantId || !itemQuantity.trim() || !itemUnitCost.trim()}>{editingItemId === null ? "افزودن به فاکتور" : "ذخیره ردیف"}</Button>{editingItemId !== null ? <Button type="button" size="large" onClick={resetPurchaseItemForm} startIcon={<CloseRounded />}>انصراف</Button> : null}</div>
             </form>
           ) : null}
 
@@ -885,30 +869,26 @@ function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenI
               <span>{items.length.toLocaleString("fa-IR")} ردیف</span>
             </div>
             {items.length === 0 ? (
-              <p className="state-message">کالایی به فاکتور خرید اضافه نشده است.</p>
+              <div className="record-state purchase-empty"><ShoppingCartCheckoutRounded /><strong>هنوز ردیفی اضافه نشده است</strong><span>از فرم بالا، نخستین کالای خرید را اضافه کنید.</span></div>
             ) : (
               items.map((item) => {
                 const lineTotal = Math.round(item.quantity * item.unitCostRial) + item.extraCostRial;
                 return (
-                  <div className="invoice-item" key={item.id}>
+                  <article className="invoice-item purchase-invoice-item" key={item.id}>
                     <div>
                       <strong>{item.variantName}</strong>
-                      <span>
-                        {item.quantity.toLocaleString("fa-IR")} × {formatRial(item.unitCostRial)}
-                      </span>
+                      <span>{item.quantity.toLocaleString("fa-IR")} × {formatRial(item.unitCostRial)}{item.extraCostRial ? ` + ${formatRial(item.extraCostRial)} هزینه` : ""}</span>
                     </div>
-                    <div>
+                    <div className="purchase-invoice-item-end">
                       <strong>{formatRial(lineTotal)}</strong>
-                      <button type="button" className="link-button" onClick={() => setItems((current) => current.filter((draft) => draft.id !== item.id))}>
-                        حذف
-                      </button>
+                      <div><Button size="small" startIcon={<EditRounded />} onClick={() => editPurchaseItem(item)}>ویرایش</Button><Button size="small" color="error" startIcon={<DeleteOutlineRounded />} onClick={() => { setItems((current) => current.filter((draft) => draft.id !== item.id)); if (editingItemId === item.id) resetPurchaseItemForm(); }}>حذف</Button></div>
                     </div>
-                  </div>
+                  </article>
                 );
               })
             )}
           </div>
-          {lastPurchase ? <p className="success-message">آخرین خرید ثبت‌شده: {lastPurchase.invoice_number ?? lastPurchase.id}</p> : null}
+          {lastPurchase ? <Alert severity="success">آخرین خرید ثبت‌شده: {lastPurchase.invoice_number ?? lastPurchase.id}</Alert> : null}
         </aside>
       </div>
     </section>

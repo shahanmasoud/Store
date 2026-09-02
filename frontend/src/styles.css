@@ -1256,6 +1256,242 @@ button {
 }
 
 /* Inventory control center */
+.purchase-workspace {
+  display: grid;
+  gap: 18px;
+}
+
+.purchase-header {
+  align-items: flex-start;
+  margin-bottom: 0;
+  padding: 22px;
+  border: 1px solid #dce7e2;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #fff 42%, #eef9f4);
+  box-shadow: 0 12px 34px rgba(22, 56, 45, 0.06);
+}
+
+.purchase-header h2,
+.purchase-section-heading h3,
+.purchase-section-heading p,
+.purchase-guide {
+  margin: 0;
+}
+
+.purchase-guide {
+  max-width: 680px;
+  margin-top: 8px;
+  color: #61766d;
+  line-height: 1.75;
+}
+
+.purchase-header-actions .MuiButton-root {
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.purchase-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(340px, 0.85fr);
+  gap: 18px;
+  align-items: start;
+  min-width: 0;
+}
+
+.purchase-invoice-panel,
+.purchase-items-panel {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+  padding: 22px;
+  border-radius: 22px;
+  border-color: #dce7e2;
+}
+
+.purchase-section-heading,
+.purchase-section-heading > div,
+.purchase-items-panel .mini-section-header,
+.purchase-items-panel .mini-section-header > div {
+  display: flex;
+  align-items: center;
+}
+
+.purchase-section-heading,
+.purchase-items-panel .mini-section-header {
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.purchase-section-heading > div {
+  gap: 10px;
+}
+
+.purchase-section-heading > div > div,
+.purchase-items-panel .mini-section-header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.purchase-section-heading svg {
+  box-sizing: content-box;
+  padding: 10px;
+  color: #087f5b;
+  border-radius: 13px;
+  background: #e7f7f0;
+}
+
+.purchase-section-heading p,
+.purchase-items-panel .mini-section-header span {
+  color: #687c73;
+  font-size: 0.84rem;
+}
+
+.purchase-invoice-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.purchase-invoice-form .date-field {
+  min-width: 0;
+}
+
+.purchase-note,
+.purchase-summary,
+.purchase-message,
+.purchase-submit {
+  grid-column: 1 / -1;
+}
+
+.purchase-summary {
+  border-color: #dce7e2;
+  border-radius: 16px;
+  background: #dce7e2;
+}
+
+.purchase-summary div {
+  background: #f8fbf9;
+}
+
+.purchase-submit.MuiButton-root {
+  min-height: 50px;
+}
+
+.purchase-item-form {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #e0ebe5;
+  border-radius: 18px;
+  background: #f8fbf9;
+}
+
+.purchase-item-fields,
+.purchase-item-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.purchase-item-actions .MuiButton-root {
+  min-height: 46px;
+}
+
+.purchase-items-panel .invoice-items {
+  margin-top: 0;
+}
+
+.purchase-empty {
+  min-height: 150px;
+}
+
+.purchase-invoice-item {
+  align-items: flex-start;
+  padding: 14px;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.purchase-invoice-item-end {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+}
+
+.purchase-invoice-item-end > div {
+  display: flex;
+  gap: 2px;
+}
+
+.purchase-invoice-item-end .MuiButton-root {
+  min-height: 40px;
+}
+
+@media (max-width: 960px) {
+  .purchase-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .purchase-items-panel {
+    grid-row: 1;
+  }
+}
+
+@media (max-width: 560px) {
+  .purchase-workspace {
+    gap: 14px;
+  }
+
+  .purchase-header,
+  .purchase-invoice-panel,
+  .purchase-items-panel {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .purchase-header,
+  .purchase-section-heading,
+  .purchase-items-panel .mini-section-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .purchase-header-actions,
+  .purchase-header-actions .MuiButton-root {
+    width: 100%;
+  }
+
+  .purchase-invoice-form,
+  .purchase-item-fields,
+  .purchase-item-actions,
+  .purchase-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .purchase-summary div {
+    min-height: 72px;
+  }
+
+  .purchase-invoice-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .purchase-invoice-item-end {
+    justify-items: stretch;
+  }
+
+  .purchase-invoice-item-end > div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .purchase-invoice-item-end .MuiButton-root {
+    min-width: 0;
+    min-height: 44px;
+  }
+}
+
 .inventory-workspace {
   display: grid;
   gap: 18px;
