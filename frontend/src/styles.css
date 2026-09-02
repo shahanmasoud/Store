@@ -1255,6 +1255,348 @@ button {
   }
 }
 
+/* Inventory control center */
+.inventory-workspace {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.inventory-guide {
+  max-width: 720px;
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  line-height: 1.8;
+}
+
+.inventory-header-actions {
+  flex: 0 0 auto;
+}
+
+.inventory-header-actions .MuiButton-root,
+.inventory-panel .MuiButton-root,
+.inventory-panel .MuiChip-root {
+  min-height: 44px;
+}
+
+.inventory-workspace .inventory-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+}
+
+.inventory-workspace .inventory-summary > div {
+  min-width: 0;
+  min-height: 104px;
+  padding: 18px;
+  border: 1px solid #dbe8e2;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #ffffff, #f3faf7);
+  box-shadow: 0 12px 30px rgba(24, 71, 55, 0.07);
+}
+
+.inventory-workspace .inventory-summary .inventory-kpi-alert {
+  border-color: #f4c98a;
+  background: linear-gradient(145deg, #fffdf8, #fff4df);
+}
+
+.inventory-workspace .inventory-summary strong {
+  overflow-wrap: anywhere;
+  color: #123c32;
+  font-size: clamp(1.15rem, 2vw, 1.45rem);
+}
+
+.inventory-state {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 108px;
+}
+
+.inventory-state strong,
+.inventory-state span {
+  display: block;
+}
+
+.inventory-state span {
+  margin-top: 4px;
+  color: var(--text-muted);
+}
+
+.inventory-sections {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
+  gap: 18px;
+  align-items: start;
+  min-width: 0;
+}
+
+.inventory-workspace .inventory-panel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  margin: 0;
+  padding: clamp(16px, 2vw, 22px);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.inventory-section-heading,
+.inventory-stock-title,
+.inventory-transaction {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.inventory-section-heading h3 {
+  margin: 0;
+  color: #173d33;
+  font-size: 1.12rem;
+}
+
+.inventory-section-heading p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.inventory-section-heading > svg {
+  flex: 0 0 auto;
+  color: #07835f;
+}
+
+.inventory-card-grid,
+.inventory-transaction-list {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.inventory-card-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.inventory-stock-card {
+  display: grid;
+  gap: 15px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #dce9e3;
+  border-radius: 12px;
+  background: linear-gradient(150deg, #fff, #f7fbf9);
+}
+
+.inventory-stock-card.is-low {
+  border-color: #efc376;
+  background: linear-gradient(150deg, #fff, #fff8ea);
+}
+
+.inventory-stock-title > div,
+.inventory-transaction-main,
+.inventory-transaction-numbers {
+  min-width: 0;
+}
+
+.inventory-stock-title strong,
+.inventory-stock-title span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.inventory-stock-title strong {
+  color: #15372f;
+}
+
+.inventory-stock-title span {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.inventory-stock-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.inventory-stock-metrics > div {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 9px;
+  background: #eef7f3;
+}
+
+.inventory-stock-metrics span,
+.inventory-stock-metrics strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.inventory-stock-metrics span {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.inventory-stock-metrics strong {
+  margin-top: 6px;
+  color: #153b31;
+  font-size: 0.86rem;
+}
+
+.inventory-transaction {
+  justify-content: flex-start;
+  padding: 14px;
+  border: 1px solid #e0eae6;
+  border-radius: 12px;
+  background: #fbfdfc;
+}
+
+.inventory-transaction-sign {
+  display: grid;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 11px;
+  font-size: 1.25rem;
+  font-weight: 900;
+}
+
+.inventory-transaction-sign.is-in {
+  color: #06734f;
+  background: #dff7ec;
+}
+
+.inventory-transaction-sign.is-out {
+  color: #a43a37;
+  background: #fde9e7;
+}
+
+.inventory-transaction-main {
+  flex: 1 1 auto;
+}
+
+.inventory-transaction-main strong,
+.inventory-transaction-main span,
+.inventory-transaction-main small,
+.inventory-transaction-numbers strong,
+.inventory-transaction-numbers span,
+.inventory-transaction-numbers small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.inventory-transaction-main span,
+.inventory-transaction-numbers span {
+  margin-top: 3px;
+  color: #43645b;
+  font-size: 0.85rem;
+}
+
+.inventory-transaction-main small,
+.inventory-transaction-numbers small {
+  margin-top: 4px;
+  color: var(--text-muted);
+}
+
+.inventory-transaction-numbers {
+  flex: 0 0 auto;
+  text-align: left;
+  direction: rtl;
+}
+
+.inventory-transaction-numbers strong.is-in {
+  color: #07835f;
+}
+
+.inventory-transaction-numbers strong.is-out {
+  color: #bd4740;
+}
+
+.inventory-empty {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  min-height: 150px;
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  border: 1px dashed #bfd2c9;
+  border-radius: 12px;
+  background: #f9fcfa;
+}
+
+.inventory-empty svg {
+  color: #6a9988;
+  font-size: 2rem;
+}
+
+.inventory-empty strong {
+  color: #294a41;
+}
+
+@media (max-width: 1080px) {
+  .inventory-sections {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .inventory-workspace .inventory-summary,
+  .inventory-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-header-actions,
+  .inventory-header-actions .MuiButton-root {
+    width: 100%;
+  }
+
+  .inventory-section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inventory-section-heading .MuiChip-root {
+    align-self: stretch;
+  }
+}
+
+@media (max-width: 430px) {
+  .inventory-workspace {
+    gap: 14px;
+  }
+
+  .inventory-workspace .inventory-panel,
+  .inventory-stock-card,
+  .inventory-transaction {
+    padding: 14px;
+  }
+
+  .inventory-stock-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-transaction {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .inventory-transaction-numbers {
+    grid-column: 1 / -1;
+    padding-top: 10px;
+    text-align: right;
+    border-top: 1px solid #e2ebe7;
+  }
+}
+
 /* Catalog navigation and base records */
 .catalog-tabs {
   position: sticky;

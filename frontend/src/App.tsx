@@ -34,6 +34,7 @@ import {
   type Cheque,
   type CustomerDebtsReport,
   type InventoryItem,
+  type InventoryTransaction,
   type InventoryReport,
   type LedgerEntry,
   type OnlineChannel,
@@ -916,78 +917,156 @@ function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenI
 
 function InventoryView({ onBack }: { onBack: () => void }) {
   const [items, setItems] = useState<InventoryItem[]>([]);
+  const [transactions, setTransactions] = useState<InventoryTransaction[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [transactionVariantId, setTransactionVariantId] = useState("");
+  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  const [reorderLevel, setReorderLevel] = useState("");
+  const [reorderError, setReorderError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  const load = async () => {
+    setStatus("loading");
+    setError("");
+    try {
+      const [nextItems, nextTransactions] = await Promise.all([api.inventory(), api.inventoryTransactions({ limit: 100 })]);
+      setItems(nextItems);
+      setTransactions(nextTransactions);
+      setStatus("ready");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "اطلاعات انبار دریافت نشد.");
+      setStatus("error");
+    }
+  };
 
   useEffect(() => {
-    let isMounted = true;
-    setStatus("loading");
-    api
-      .inventory()
-      .then((result) => {
-        if (!isMounted) return;
-        setItems(result);
-        setStatus("ready");
-      })
-      .catch((err) => {
-        if (!isMounted) return;
-        setError(err instanceof Error ? err.message : "موجودی دریافت نشد.");
-        setStatus("error");
-      });
-
-    return () => {
-      isMounted = false;
-    };
+    void load();
   }, []);
 
   const totalValue = items.reduce((sum, item) => sum + Number(item.quantity_on_hand) * item.weighted_average_cost_rial, 0);
+  const lowStockCount = items.filter((item) => item.reorder_level != null && Number(item.quantity_on_hand) <= Number(item.reorder_level)).length;
+  const filteredItems = items.filter((item) => {
+    const matchesSearch = item.variant_name.toLocaleLowerCase("fa").includes(search.trim().toLocaleLowerCase("fa"));
+    const isLow = item.reorder_level != null && Number(item.quantity_on_hand) <= Number(item.reorder_level);
+    return matchesSearch && (!lowStockOnly || isLow);
+  });
+  const filteredTransactions = transactions.filter((transaction) => !transactionVariantId || transaction.variant_id === Number(transactionVariantId));
+
+  function openReorderDialog(item: InventoryItem) {
+    setEditingItem(item);
+    setReorderLevel(item.reorder_level == null ? "" : String(item.reorder_level));
+    setReorderError("");
+    setNotice("");
+  }
+
+  async function saveReorderLevel() {
+    if (!editingItem) return;
+    const normalized = toEnglishDigits(reorderLevel).replace(/[٬،,\s]/g, "").replace("/", ".");
+    const value = normalized === "" ? null : Number(normalized);
+    if (value !== null && (!Number.isFinite(value) || value < 0)) {
+      setReorderError("یک عدد صفر یا بزرگ‌تر وارد کنید؛ برای حذف نقطه سفارش، کادر را خالی بگذارید.");
+      return;
+    }
+    setSaving(true);
+    setReorderError("");
+    try {
+      const updated = await api.updateInventory(editingItem.id, { reorder_level: value });
+      setItems((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setEditingItem(null);
+      setNotice("نقطه سفارش ذخیره شد.");
+    } catch (err) {
+      setReorderError(err instanceof Error ? err.message : "ذخیره نقطه سفارش انجام نشد.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
-    <section className="sales-workspace" aria-label="انبار">
+    <section className="sales-workspace inventory-workspace" aria-label="انبار">
       <div className="sales-header">
         <div>
-          <p className="eyebrow">انبار</p>
-          <h2>موجودی و میانگین موزون کالاها</h2>
+          <p className="eyebrow">کنترل انبار</p>
+          <h2>موجودی و گردش کالاها</h2>
+          <p className="inventory-guide">موجودی از ثبت و لغو خرید محاسبه می‌شود؛ فقط نقطه سفارش را برای هشدار کمبود تنظیم کنید.</p>
         </div>
-        <button type="button" className="ghost-button" onClick={onBack}>
-          بازگشت به داشبورد
-        </button>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1} className="inventory-header-actions">
+          <Button variant="outlined" startIcon={<RefreshRounded />} onClick={() => void load()} disabled={status === "loading"}>به‌روزرسانی</Button>
+          <Button variant="text" startIcon={<ArrowBackRounded />} onClick={onBack}>بازگشت به داشبورد</Button>
+        </Stack>
       </div>
 
       <section className="inventory-summary">
-        <div>
-          <span>تعداد ردیف موجودی</span>
-          <strong>{items.length.toLocaleString("fa-IR")}</strong>
-        </div>
-        <div>
-          <span>ارزش تقریبی موجودی</span>
-          <strong>{formatRial(totalValue)}</strong>
-        </div>
+        <div><span>گونه‌های انبار</span><strong>{items.length.toLocaleString("fa-IR")}</strong></div>
+        <div><span>ارزش تقریبی موجودی</span><strong>{formatRial(totalValue)}</strong></div>
+        <div className={lowStockCount ? "inventory-kpi-alert" : ""}><span>نیازمند سفارش</span><strong>{lowStockCount.toLocaleString("fa-IR")}</strong></div>
       </section>
 
-      <section className="sale-panel">
-        {status === "loading" ? <p className="state-message">در حال دریافت موجودی...</p> : null}
-        {status === "error" ? <p className="error-message">{error}</p> : null}
-        {status === "ready" && items.length === 0 ? <p className="state-message">هنوز موجودی برای کالاها ثبت نشده است.</p> : null}
-        {status === "ready" && items.length > 0 ? (
-          <div className="inventory-table" role="table" aria-label="لیست موجودی">
-            <div className="inventory-row inventory-row-head" role="row">
-              <span role="columnheader">کالا</span>
-              <span role="columnheader">موجودی</span>
-              <span role="columnheader">میانگین موزون</span>
-              <span role="columnheader">نقطه سفارش</span>
+      {notice ? <Alert severity="success" onClose={() => setNotice("")}>{notice}</Alert> : null}
+      {status === "loading" ? (
+        <section className="sale-panel inventory-state" aria-live="polite"><CircularProgress size={28} /><div><strong>در حال آماده‌سازی انبار</strong><span>موجودی و آخرین گردش‌ها دریافت می‌شوند.</span></div></section>
+      ) : null}
+      {status === "error" ? <Alert severity="error" action={<Button color="inherit" onClick={() => void load()}>تلاش دوباره</Button>}>{error}</Alert> : null}
+
+      {status === "ready" ? (
+        <div className="inventory-sections">
+          <section className="sale-panel inventory-panel" aria-labelledby="inventory-list-heading">
+            <div className="inventory-section-heading">
+              <div><h3 id="inventory-list-heading">وضعیت کالاها</h3><p>نقطه سفارش، مرز هشدار برای خرید بعدی است.</p></div>
+              <Chip label={`کم‌موجود (${lowStockCount.toLocaleString("fa-IR")})`} color={lowStockOnly ? "warning" : "default"} variant={lowStockOnly ? "filled" : "outlined"} onClick={() => setLowStockOnly((value) => !value)} />
             </div>
-            {items.map((item) => (
-              <div className="inventory-row" role="row" key={item.id}>
-                <strong role="cell">{item.variant_name}</strong>
-                <span role="cell">{formatDecimal(item.quantity_on_hand)}</span>
-                <span role="cell">{formatRial(item.weighted_average_cost_rial)}</span>
-                <span role="cell">{item.reorder_level == null ? "ثبت نشده" : formatDecimal(item.reorder_level)}</span>
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </section>
+            <TextField fullWidth label="جست‌وجوی کالا" value={search} onChange={(event) => setSearch(event.target.value)} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} />
+            {items.length === 0 ? <div className="inventory-empty"><Inventory2Rounded /><strong>هنوز موجودی ثبت نشده است.</strong><span>با ثبت نخستین خرید، موجودی اینجا نمایش داده می‌شود.</span></div> : null}
+            {items.length > 0 && filteredItems.length === 0 ? <div className="inventory-empty"><SearchRounded /><strong>نتیجه‌ای پیدا نشد.</strong><span>عبارت جست‌وجو یا فیلتر کم‌موجود را تغییر دهید.</span></div> : null}
+            <div className="inventory-card-grid">
+              {filteredItems.map((item) => {
+                const isLow = item.reorder_level != null && Number(item.quantity_on_hand) <= Number(item.reorder_level);
+                return (
+                  <article className={`inventory-stock-card${isLow ? " is-low" : ""}`} key={item.id}>
+                    <div className="inventory-stock-title"><div><strong>{item.variant_name}</strong><span>{isLow ? "نیازمند سفارش" : "وضعیت عادی"}</span></div><Chip size="small" color={isLow ? "warning" : "success"} label={isLow ? "کم‌موجود" : "موجود"} /></div>
+                    <div className="inventory-stock-metrics">
+                      <div><span>موجودی</span><strong>{formatDecimal(item.quantity_on_hand)}</strong></div>
+                      <div><span>میانگین بها</span><strong>{formatRial(item.weighted_average_cost_rial)}</strong></div>
+                      <div><span>نقطه سفارش</span><strong>{item.reorder_level == null ? "تنظیم نشده" : formatDecimal(item.reorder_level)}</strong></div>
+                    </div>
+                    <Button fullWidth variant="outlined" startIcon={<EditRounded />} onClick={() => openReorderDialog(item)}>تنظیم نقطه سفارش</Button>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="sale-panel inventory-panel" aria-labelledby="inventory-transactions-heading">
+            <div className="inventory-section-heading"><div><h3 id="inventory-transactions-heading">آخرین گردش‌ها</h3><p>ورود و برگشت کالا به ترتیب جدیدترین رخداد.</p></div><HistoryRounded /></div>
+            <TextField select fullWidth label="فیلتر بر اساس گونه" value={transactionVariantId} onChange={(event) => setTransactionVariantId(event.target.value)}>
+              <MenuItem value="">همه گونه‌ها</MenuItem>
+              {items.map((item) => <MenuItem value={String(item.variant_id)} key={item.variant_id}>{item.variant_name}</MenuItem>)}
+            </TextField>
+            {filteredTransactions.length === 0 ? <div className="inventory-empty"><HistoryRounded /><strong>گردشی برای نمایش وجود ندارد.</strong><span>پس از ثبت یا لغو خرید، رخدادها اینجا می‌آیند.</span></div> : null}
+            <div className="inventory-transaction-list">
+              {filteredTransactions.map((transaction) => {
+                const isIncoming = Number(transaction.quantity_delta) > 0;
+                return (
+                  <article className="inventory-transaction" key={transaction.id}>
+                    <div className={`inventory-transaction-sign ${isIncoming ? "is-in" : "is-out"}`}>{isIncoming ? "+" : "−"}</div>
+                    <div className="inventory-transaction-main"><strong>{transaction.variant_name}</strong><span>{transaction.transaction_type === "purchase_in" ? "ورود خرید" : transaction.transaction_type === "cancel_purchase" ? "لغو خرید" : transaction.transaction_type}</span><small>{transaction.note ?? (transaction.purchase_invoice_id ? `فاکتور خرید ${transaction.purchase_invoice_id}` : "گردش انبار")}</small></div>
+                    <div className="inventory-transaction-numbers"><strong className={isIncoming ? "is-in" : "is-out"}>{isIncoming ? "+" : ""}{formatDecimal(transaction.quantity_delta)}</strong><span>مانده: {formatDecimal(transaction.balance_after)}</span><small>{toPersianDigits(transaction.jalali_date)} · {toPersianDigits(transaction.local_time)}</small></div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      <Dialog open={Boolean(editingItem)} onClose={() => !saving && setEditingItem(null)} fullWidth maxWidth="xs">
+        <DialogTitle>تنظیم نقطه سفارش</DialogTitle>
+        <DialogContent><Stack spacing={2} sx={{ pt: 1 }}><Typography color="text.secondary">{editingItem?.variant_name}</Typography><TextField autoFocus label="نقطه سفارش" value={reorderLevel} onChange={(event) => setReorderLevel(event.target.value)} error={Boolean(reorderError)} helperText={reorderError || "عدد صفر یا بیشتر؛ برای حذف هشدار، خالی بگذارید."} slotProps={{ htmlInput: { inputMode: "decimal" } }} /></Stack></DialogContent>
+        <DialogActions><Button onClick={() => setEditingItem(null)} disabled={saving}>انصراف</Button><Button variant="contained" onClick={() => void saveReorderLevel()} disabled={saving}>{saving ? "در حال ذخیره..." : "ذخیره"}</Button></DialogActions>
+      </Dialog>
     </section>
   );
 }

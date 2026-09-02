@@ -14,7 +14,13 @@ from app.models.purchases import (
     PurchaseLot,
     Supplier,
 )
-from app.schemas.purchases import InventoryRead, PurchaseInvoiceCreate, money_from_quantity
+from app.schemas.purchases import (
+    InventoryRead,
+    InventoryTransactionRead,
+    InventoryUpdate,
+    PurchaseInvoiceCreate,
+    money_from_quantity,
+)
 
 
 def _round_rial(value: Decimal) -> int:
@@ -216,3 +222,64 @@ def list_inventory(db: Session) -> list[InventoryRead]:
         )
         for inventory, variant in rows
     ]
+
+
+def update_inventory(db: Session, inventory_id: int, payload: InventoryUpdate) -> InventoryRead:
+    row = db.execute(
+        select(InventoryItem, ProductVariant)
+        .join(ProductVariant, ProductVariant.id == InventoryItem.variant_id)
+        .where(InventoryItem.id == inventory_id)
+    ).first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ردیف موجودی پیدا نشد.")
+
+    inventory, variant = row
+    inventory.reorder_level = payload.reorder_level
+    db.commit()
+    db.refresh(inventory)
+    return InventoryRead(
+        id=inventory.id,
+        variant_id=inventory.variant_id,
+        variant_name=variant.name,
+        quantity_on_hand=inventory.quantity_on_hand,
+        weighted_average_cost_rial=inventory.weighted_average_cost_rial,
+        reorder_level=inventory.reorder_level,
+    )
+
+
+def list_inventory_transactions(
+    db: Session,
+    *,
+    variant_id: int | None = None,
+    limit: int = 50,
+) -> list[InventoryTransactionRead]:
+    rows = db.execute(
+        select(InventoryTransaction, ProductVariant)
+        .join(ProductVariant, ProductVariant.id == InventoryTransaction.variant_id)
+        .order_by(InventoryTransaction.id)
+    ).all()
+
+    balances: dict[int, Decimal] = {}
+    result: list[InventoryTransactionRead] = []
+    for transaction, variant in rows:
+        balance = balances.get(transaction.variant_id, Decimal("0")) + Decimal(transaction.quantity_delta)
+        balances[transaction.variant_id] = balance
+        if variant_id is not None and transaction.variant_id != variant_id:
+            continue
+        result.append(
+            InventoryTransactionRead(
+                id=transaction.id,
+                variant_id=transaction.variant_id,
+                variant_name=variant.name,
+                purchase_invoice_id=transaction.purchase_invoice_id,
+                purchase_invoice_item_id=transaction.purchase_invoice_item_id,
+                transaction_type=transaction.transaction_type,
+                quantity_delta=transaction.quantity_delta,
+                balance_after=balance,
+                unit_cost_rial=transaction.unit_cost_rial,
+                jalali_date=transaction.jalali_date,
+                local_time=transaction.local_time,
+                note=transaction.note,
+            )
+        )
+    return list(reversed(result[-limit:]))

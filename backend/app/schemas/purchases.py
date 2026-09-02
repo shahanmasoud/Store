@@ -100,3 +100,22 @@ class InventoryRead(BaseModel):
     quantity_on_hand: Decimal
     weighted_average_cost_rial: int
     reorder_level: Decimal | None
+
+
+class InventoryUpdate(BaseModel):
+    reorder_level: Decimal | None = Field(ge=0)
+
+
+class InventoryTransactionRead(BaseModel):
+    id: int
+    variant_id: int
+    variant_name: str
+    purchase_invoice_id: int | None
+    purchase_invoice_item_id: int | None
+    transaction_type: str
+    quantity_delta: Decimal
+    balance_after: Decimal
+    unit_cost_rial: int | None
+    jalali_date: str
+    local_time: str
+    note: str | None

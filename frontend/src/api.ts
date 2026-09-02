@@ -171,6 +171,21 @@ export type InventoryItem = {
   reorder_level?: number | string | null;
 };
 
+export type InventoryTransaction = {
+  id: number;
+  variant_id: number;
+  variant_name: string;
+  purchase_invoice_id?: number | null;
+  purchase_invoice_item_id?: number | null;
+  transaction_type: string;
+  quantity_delta: number | string;
+  balance_after: number | string;
+  unit_cost_rial?: number | null;
+  jalali_date: string;
+  local_time: string;
+  note?: string | null;
+};
+
 export type Unit = { id: number; name: string; symbol: string; is_active: boolean };
 export type Category = { id: number; name: string; parent_id?: number | null; is_active: boolean };
 export type Product = { id: number; name: string; description?: string | null; category_id?: number | null; is_active: boolean };
@@ -328,6 +343,19 @@ export const api = {
   },
   inventory() {
     return request<InventoryItem[]>("/inventory");
+  },
+  updateInventory(id: number, payload: { reorder_level: number | null }) {
+    return request<InventoryItem>(`/inventory/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  },
+  inventoryTransactions(options: { variantId?: number; limit?: number } = {}) {
+    const params = new URLSearchParams();
+    if (options.variantId != null) params.set("variant_id", String(options.variantId));
+    if (options.limit != null) params.set("limit", String(options.limit));
+    const query = params.toString();
+    return request<InventoryTransaction[]>(`/inventory-transactions${query ? `?${query}` : ""}`);
   },
   units() {
     return request<Unit[]>("/units");
