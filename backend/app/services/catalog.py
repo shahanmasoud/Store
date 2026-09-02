@@ -12,6 +12,7 @@ from app.schemas.catalog import (
     ProductCreate,
     ProductUpdate,
     ProductVariantCreate,
+    ProductVariantUpdate,
     UnitCreate,
     UnitUpdate,
 )
@@ -39,7 +40,7 @@ def _ensure_unique_unit(db: Session, name: str, symbol: str, *, exclude_id: int 
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="واحدی با این نماد وجود دارد.")
 
 
-def _commit_catalog_record(db: Session, record: Unit | Category | Product, entity_name: str):
+def _commit_catalog_record(db: Session, record: Unit | Category | Product | ProductVariant | PriceList, entity_name: str):
     try:
         db.commit()
     except IntegrityError as exc:
@@ -252,20 +253,91 @@ def list_variants(db: Session) -> list[ProductVariant]:
     return list(db.scalars(select(ProductVariant).where(ProductVariant.is_active.is_(True)).order_by(ProductVariant.name)))
 
 
-def create_variant(db: Session, payload: ProductVariantCreate) -> ProductVariant:
-    variant = ProductVariant(**payload.model_dump())
-    db.add(variant)
-    db.commit()
-    db.refresh(variant)
+def _get_variant(db: Session, variant_id: int) -> ProductVariant:
+    variant = db.get(ProductVariant, variant_id)
+    if variant is None or not variant.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="گونه فعال پیدا نشد.")
     return variant
 
 
+def _validate_variant_references(db: Session, product_id: int, unit_id: int) -> None:
+    _get_product(db, product_id)
+    _get_unit(db, unit_id)
+
+
+def _ensure_unique_sku(db: Session, sku: str | None, *, exclude_id: int | None = None) -> None:
+    if sku is None:
+        return
+    variants = db.scalars(select(ProductVariant))
+    if any(variant.id != exclude_id and variant.sku and variant.sku.casefold() == sku.casefold() for variant in variants):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="گونه‌ای با این کد کالا وجود دارد.")
+
+
+def create_variant(db: Session, payload: ProductVariantCreate) -> ProductVariant:
+    _validate_variant_references(db, payload.product_id, payload.unit_id)
+    _ensure_unique_sku(db, payload.sku)
+    variant = ProductVariant(**payload.model_dump())
+    db.add(variant)
+    return _commit_catalog_record(db, variant, "گونه")
+
+
+def update_variant(db: Session, variant_id: int, payload: ProductVariantUpdate) -> ProductVariant:
+    variant = _get_variant(db, variant_id)
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="حداقل یک تغییر وارد کنید.")
+    product_id = changes.get("product_id", variant.product_id)
+    unit_id = changes.get("unit_id", variant.unit_id)
+    sku = changes.get("sku", variant.sku)
+    _validate_variant_references(db, product_id, unit_id)
+    _ensure_unique_sku(db, sku, exclude_id=variant.id)
+    for field, value in changes.items():
+        setattr(variant, field, value)
+    return _commit_catalog_record(db, variant, "گونه")
+
+
+def deactivate_variant(db: Session, variant_id: int) -> ProductVariant:
+    from app.models.purchases import InventoryItem
+
+    variant = _get_variant(db, variant_id)
+    has_stock = db.scalar(
+        select(InventoryItem.id).where(
+            InventoryItem.variant_id == variant.id,
+            InventoryItem.quantity_on_hand != 0,
+        ).limit(1)
+    )
+    if has_stock is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="این گونه موجودی غیرصفر دارد؛ ابتدا موجودی آن را صفر کنید.",
+        )
+    variant.is_active = False
+    return _commit_catalog_record(db, variant, "گونه")
+
+
+def list_prices(
+    db: Session,
+    *,
+    variant_id: int | None = None,
+    price_type: str | None = None,
+) -> list[PriceList]:
+    query = select(PriceList).where(PriceList.is_active.is_(True))
+    if variant_id is not None:
+        query = query.where(PriceList.variant_id == variant_id)
+    if price_type is not None:
+        query = query.where(PriceList.price_type == price_type)
+    return list(db.scalars(query.order_by(PriceList.occurred_at_utc.desc(), PriceList.id.desc())))
+
+
 def create_price(db: Session, payload: PriceListCreate) -> PriceList:
+    variant = _get_variant(db, payload.variant_id)
     price = PriceList(**payload.model_dump())
     db.add(price)
-    db.commit()
-    db.refresh(price)
-    return price
+    if payload.price_type == "retail":
+        variant.retail_price_rial = payload.amount_rial
+    elif payload.price_type == "wholesale":
+        variant.wholesale_price_rial = payload.amount_rial
+    return _commit_catalog_record(db, price, "قیمت")
 
 
 def create_price_rule(db: Session, payload: PriceRuleCreate) -> PriceRule:

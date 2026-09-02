@@ -23,6 +23,17 @@ export type ProductVariant = {
   min_wholesale_quantity?: string | number | null;
   is_active: boolean;
 };
+export type PriceType = "retail" | "wholesale" | "online";
+export type PriceList = {
+  id: number;
+  variant_id: number;
+  price_type: PriceType;
+  amount_rial: number;
+  jalali_date: string;
+  local_time: string;
+  timezone: string;
+  is_active: boolean;
+};
 
 export type PaymentMethod = "cash" | "card" | "transfer" | "credit" | "cheque" | "voucher";
 export type PaymentStatus = "received" | "pending";
@@ -342,15 +353,36 @@ export const api = {
     product_id: number;
     unit_id: number;
     name: string;
-    sku?: string;
+    sku?: string | null;
     retail_price_rial: number;
     wholesale_price_rial?: number | null;
     min_wholesale_quantity?: number | null;
   }) {
     return request<ProductVariant>("/product-variants", { method: "POST", body: JSON.stringify(payload) });
   },
-  createPrice(payload: { variant_id: number; price_type: "retail" | "wholesale" | "online"; amount_rial: number; jalali_date: string; local_time: string }) {
-    return request<unknown>("/prices", { method: "POST", body: JSON.stringify(payload) });
+  updateProductVariant(id: number, payload: Partial<{
+    product_id: number;
+    unit_id: number;
+    name: string;
+    sku: string | null;
+    retail_price_rial: number;
+    wholesale_price_rial: number | null;
+    min_wholesale_quantity: number | null;
+  }>) {
+    return request<ProductVariant>(`/product-variants/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+  },
+  deactivateProductVariant(id: number) {
+    return request<ProductVariant>(`/product-variants/${id}`, { method: "DELETE" });
+  },
+  prices(filters: { variant_id?: number; price_type?: PriceType } = {}) {
+    const params = new URLSearchParams();
+    if (filters.variant_id) params.set("variant_id", String(filters.variant_id));
+    if (filters.price_type) params.set("price_type", filters.price_type);
+    const query = params.size ? `?${params}` : "";
+    return request<PriceList[]>(`/prices${query}`);
+  },
+  createPrice(payload: { variant_id: number; price_type: PriceType; amount_rial: number; jalali_date: string; local_time: string }) {
+    return request<PriceList>("/prices", { method: "POST", body: JSON.stringify(payload) });
   },
   persons() {
     return request<Person[]>("/persons");

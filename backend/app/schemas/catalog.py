@@ -111,9 +111,69 @@ class ProductVariantCreate(BaseModel):
     unit_id: int
     name: str = Field(min_length=1, max_length=180)
     sku: str | None = Field(default=None, max_length=80)
-    retail_price_rial: int = Field(default=0, ge=0)
-    wholesale_price_rial: int | None = Field(default=None, ge=0)
-    min_wholesale_quantity: Decimal | None = Field(default=None, ge=0)
+    retail_price_rial: int = 0
+    wholesale_price_rial: int | None = None
+    min_wholesale_quantity: Decimal | None = None
+
+    @field_validator("name")
+    @classmethod
+    def normalize_variant_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("نام گونه نمی‌تواند خالی باشد.")
+        return normalized
+
+    @field_validator("sku")
+    @classmethod
+    def normalize_sku(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @field_validator("retail_price_rial", "wholesale_price_rial", "min_wholesale_quantity")
+    @classmethod
+    def non_negative_variant_values(cls, value: int | Decimal | None) -> int | Decimal | None:
+        if value is not None and value < 0:
+            raise ValueError("قیمت و حداقل تعداد عمده نمی‌توانند منفی باشند.")
+        return value
+
+
+class ProductVariantUpdate(BaseModel):
+    product_id: int | None = None
+    unit_id: int | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=180)
+    sku: str | None = Field(default=None, max_length=80)
+    retail_price_rial: int | None = None
+    wholesale_price_rial: int | None = None
+    min_wholesale_quantity: Decimal | None = None
+
+    @field_validator("product_id", "unit_id")
+    @classmethod
+    def required_reference_when_present(cls, value: int | None) -> int:
+        if value is None:
+            raise ValueError("کالا و واحد گونه باید مشخص باشند.")
+        return value
+
+    @field_validator("name")
+    @classmethod
+    def normalize_optional_variant_name(cls, value: str | None) -> str:
+        if value is None or not value.strip():
+            raise ValueError("نام گونه نمی‌تواند خالی باشد.")
+        return value.strip()
+
+    @field_validator("sku")
+    @classmethod
+    def normalize_optional_sku(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @field_validator("retail_price_rial", "wholesale_price_rial", "min_wholesale_quantity")
+    @classmethod
+    def non_negative_optional_variant_values(cls, value: int | Decimal | None) -> int | Decimal | None:
+        if value is not None and value < 0:
+            raise ValueError("قیمت و حداقل تعداد عمده نمی‌توانند منفی باشند.")
+        return value
 
 
 class ProductVariantRead(ProductVariantCreate):
@@ -126,9 +186,16 @@ class ProductVariantRead(ProductVariantCreate):
 class PriceListCreate(BaseModel):
     variant_id: int
     price_type: str = Field(pattern="^(retail|wholesale|online)$")
-    amount_rial: int = Field(ge=0)
+    amount_rial: int
     jalali_date: str
     local_time: str
+
+    @field_validator("amount_rial")
+    @classmethod
+    def non_negative_price(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("مبلغ قیمت نمی‌تواند منفی باشد.")
+        return value
 
     @field_validator("jalali_date")
     @classmethod

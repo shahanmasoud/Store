@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_user
@@ -16,6 +16,7 @@ from app.schemas.catalog import (
     ProductUpdate,
     ProductVariantCreate,
     ProductVariantRead,
+    ProductVariantUpdate,
     UnitCreate,
     UnitRead,
     UnitUpdate,
@@ -93,6 +94,25 @@ def variants(db: Session = Depends(get_db)) -> list[ProductVariantRead]:
 @router.post("/product-variants", response_model=ProductVariantRead, status_code=status.HTTP_201_CREATED)
 def create_variant(payload: ProductVariantCreate, db: Session = Depends(get_db)) -> ProductVariantRead:
     return catalog_service.create_variant(db, payload)
+
+
+@router.patch("/product-variants/{variant_id}", response_model=ProductVariantRead)
+def update_variant(variant_id: int, payload: ProductVariantUpdate, db: Session = Depends(get_db)) -> ProductVariantRead:
+    return catalog_service.update_variant(db, variant_id, payload)
+
+
+@router.delete("/product-variants/{variant_id}", response_model=ProductVariantRead)
+def deactivate_variant(variant_id: int, db: Session = Depends(get_db)) -> ProductVariantRead:
+    return catalog_service.deactivate_variant(db, variant_id)
+
+
+@router.get("/prices", response_model=list[PriceListRead])
+def prices(
+    variant_id: int | None = None,
+    price_type: str | None = Query(default=None, pattern="^(retail|wholesale|online)$"),
+    db: Session = Depends(get_db),
+) -> list[PriceListRead]:
+    return catalog_service.list_prices(db, variant_id=variant_id, price_type=price_type)
 
 
 @router.post("/prices", response_model=PriceListRead, status_code=status.HTTP_201_CREATED)

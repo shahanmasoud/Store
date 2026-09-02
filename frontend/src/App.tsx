@@ -23,6 +23,8 @@ import RefreshRounded from "@mui/icons-material/RefreshRounded";
 import CategoryRounded from "@mui/icons-material/CategoryRounded";
 import SearchRounded from "@mui/icons-material/SearchRounded";
 import StraightenRounded from "@mui/icons-material/StraightenRounded";
+import HistoryRounded from "@mui/icons-material/HistoryRounded";
+import LocalOfferRounded from "@mui/icons-material/LocalOfferRounded";
 import Storefront from "./Storefront";
 import {
   api,
@@ -39,6 +41,8 @@ import {
   type PaymentCreate,
   type PaymentMethod,
   type PaymentStatus,
+  type PriceList,
+  type PriceType,
   type Person,
   type Product,
   type ProductVariant,
@@ -52,6 +56,7 @@ import {
 
 const TOKEN_KEY = "store_auth_token";
 const DEFAULT_JALALI_DATE = "1405/06/02";
+const PRICE_TYPE_LABELS: Record<PriceType, string> = { retail: "خرده‌فروشی", wholesale: "عمده‌فروشی", online: "آنلاین" };
 
 type AuthStatus = "checking" | "guest" | "authenticated";
 type AppView = "dashboard" | "sales" | "purchase" | "inventory" | "products" | "ledger" | "cheques" | "reports" | "online";
@@ -992,7 +997,7 @@ function ProductsView({ onBack }: { onBack: () => void }) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [variants, setVariants] = useState<ProductVariant[]>([]);
-  const [message, setMessage] = useState("");
+  const [prices, setPrices] = useState<PriceList[]>([]);
   const [catalogLoadError, setCatalogLoadError] = useState("");
   const [categoryStatus, setCategoryStatus] = useState<"loading" | "ready" | "error">("loading");
   const [categoryNotice, setCategoryNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -1019,26 +1024,51 @@ function ProductsView({ onBack }: { onBack: () => void }) {
   const [pendingDeactivateProduct, setPendingDeactivateProduct] = useState<Product | null>(null);
   const [productSearch, setProductSearch] = useState("");
   const [deactivatingRecord, setDeactivatingRecord] = useState(false);
+  const [variantStatus, setVariantStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [variantNotice, setVariantNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [variantProductId, setVariantProductId] = useState("");
+  const [variantUnitId, setVariantUnitId] = useState("");
+  const [variantName, setVariantName] = useState("");
+  const [variantSku, setVariantSku] = useState("");
+  const [variantRetail, setVariantRetail] = useState("");
+  const [variantWholesale, setVariantWholesale] = useState("");
+  const [variantMinWholesale, setVariantMinWholesale] = useState("");
+  const [editingVariantId, setEditingVariantId] = useState<number | null>(null);
+  const [variantSaving, setVariantSaving] = useState(false);
+  const [variantSearch, setVariantSearch] = useState("");
+  const [pendingDeactivateVariant, setPendingDeactivateVariant] = useState<ProductVariant | null>(null);
+  const [priceNotice, setPriceNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [priceVariantId, setPriceVariantId] = useState("");
+  const [priceType, setPriceType] = useState<PriceType>("retail");
+  const [priceAmount, setPriceAmount] = useState("");
+  const [priceDate, setPriceDate] = useState(DEFAULT_JALALI_DATE);
+  const [priceSaving, setPriceSaving] = useState(false);
+  const [historyVariantId, setHistoryVariantId] = useState("");
+  const [historyPriceType, setHistoryPriceType] = useState<"" | PriceType>("");
 
   const load = () => {
     setCategoryStatus("loading");
     setUnitProductStatus("loading");
+    setVariantStatus("loading");
     setCatalogLoadError("");
     setCategoryNotice(null);
-    return Promise.all([api.units(), api.categories(), api.products(), api.productVariants()])
-      .then(([nextUnits, nextCategories, nextProducts, nextVariants]) => {
+    return Promise.all([api.units(), api.categories(), api.products(), api.productVariants(), api.prices()])
+      .then(([nextUnits, nextCategories, nextProducts, nextVariants, nextPrices]) => {
         setUnits(nextUnits);
         setCategories(nextCategories);
         setProducts(nextProducts);
         setVariants(nextVariants);
+        setPrices(nextPrices);
         setCategoryStatus("ready");
         setUnitProductStatus("ready");
+        setVariantStatus("ready");
       })
       .catch((error) => {
         const text = error instanceof Error ? error.message : "دریافت اطلاعات کالا انجام نشد.";
         setCatalogLoadError(text);
         setCategoryStatus("error");
         setUnitProductStatus("error");
+        setVariantStatus("error");
       });
   };
 
@@ -1273,36 +1303,117 @@ function ProductsView({ onBack }: { onBack: () => void }) {
     }
   }
 
+  const filteredVariants = useMemo(() => {
+    const query = variantSearch.trim().toLocaleLowerCase("fa");
+    if (!query) return variants;
+    return variants.filter((variant) => {
+      const productName = products.find((product) => product.id === variant.product_id)?.name ?? "";
+      const unitName = units.find((unit) => unit.id === variant.unit_id)?.name ?? "";
+      return `${variant.name} ${variant.sku ?? ""} ${productName} ${unitName}`.toLocaleLowerCase("fa").includes(query);
+    });
+  }, [products, units, variantSearch, variants]);
+
+  const filteredPrices = useMemo(() => prices.filter((price) => {
+    if (historyVariantId && price.variant_id !== Number(historyVariantId)) return false;
+    return !historyPriceType || price.price_type === historyPriceType;
+  }), [historyPriceType, historyVariantId, prices]);
+
+  function resetVariantForm() {
+    setEditingVariantId(null);
+    setVariantProductId("");
+    setVariantUnitId("");
+    setVariantName("");
+    setVariantSku("");
+    setVariantRetail("");
+    setVariantWholesale("");
+    setVariantMinWholesale("");
+  }
+
+  function startVariantEdit(variant: ProductVariant) {
+    setEditingVariantId(variant.id);
+    setVariantProductId(String(variant.product_id));
+    setVariantUnitId(String(variant.unit_id));
+    setVariantName(variant.name);
+    setVariantSku(variant.sku ?? "");
+    setVariantRetail(moneyInputValue(variant.retail_price_rial));
+    setVariantWholesale(variant.wholesale_price_rial == null ? "" : moneyInputValue(variant.wholesale_price_rial));
+    setVariantMinWholesale(variant.min_wholesale_quantity == null ? "" : String(variant.min_wholesale_quantity));
+    setVariantNotice(null);
+  }
+
   async function submitVariant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await api.createProductVariant({
-      product_id: Number(form.get("productId")),
-      unit_id: Number(form.get("unitId")),
-      name: String(form.get("name") ?? ""),
-      sku: String(form.get("sku") ?? ""),
-      retail_price_rial: normalizeMoney(form.get("retail")),
-      wholesale_price_rial: normalizeMoney(form.get("wholesale")) || null,
-      min_wholesale_quantity: normalizeDecimal(form.get("minWholesale")) || null,
-    });
-    event.currentTarget.reset();
-    setMessage("گونه و قیمت کالا ثبت شد.");
-    load();
+    if (!variantProductId || !variantUnitId || !variantName.trim()) {
+      setVariantNotice({ type: "error", text: "کالای پایه، واحد و نام گونه را کامل وارد کنید." });
+      return;
+    }
+    setVariantSaving(true);
+    setVariantNotice(null);
+    const wasEditing = editingVariantId !== null;
+    const payload = {
+      product_id: Number(variantProductId),
+      unit_id: Number(variantUnitId),
+      name: variantName.trim(),
+      sku: variantSku.trim() || null,
+      retail_price_rial: normalizeMoney(variantRetail),
+      wholesale_price_rial: variantWholesale.trim() ? normalizeMoney(variantWholesale) : null,
+      min_wholesale_quantity: normalizeDecimal(variantMinWholesale) || null,
+    };
+    try {
+      if (editingVariantId === null) await api.createProductVariant(payload);
+      else await api.updateProductVariant(editingVariantId, payload);
+      resetVariantForm();
+      await load();
+      setVariantNotice({ type: "success", text: wasEditing ? "تغییرات گونه ذخیره شد." : "گونه جدید ثبت شد." });
+    } catch (error) {
+      setVariantNotice({ type: "error", text: error instanceof Error ? error.message : "ذخیره گونه انجام نشد." });
+    } finally {
+      setVariantSaving(false);
+    }
   }
 
   async function submitPrice(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await api.createPrice({
-      variant_id: Number(form.get("variantId")),
-      price_type: String(form.get("priceType")) as "retail" | "wholesale" | "online",
-      amount_rial: normalizeMoney(form.get("amount")),
-      jalali_date: String(form.get("date") ?? DEFAULT_JALALI_DATE),
-      local_time: currentLocalTime(),
-    });
-    event.currentTarget.reset();
-    setMessage("قیمت جدید ثبت شد.");
-    load();
+    if (!priceVariantId || !priceAmount.trim() || !priceDate.trim()) {
+      setPriceNotice({ type: "error", text: "گونه، مبلغ و تاریخ قیمت را کامل وارد کنید." });
+      return;
+    }
+    setPriceSaving(true);
+    setPriceNotice(null);
+    try {
+      await api.createPrice({
+        variant_id: Number(priceVariantId),
+        price_type: priceType,
+        amount_rial: normalizeMoney(priceAmount),
+        jalali_date: priceDate.trim(),
+        local_time: currentLocalTime(),
+      });
+      setPriceAmount("");
+      await load();
+      setPriceNotice({ type: "success", text: priceType === "online" ? "قیمت آنلاین در تاریخچه ثبت شد." : "قیمت ثبت شد و قیمت جاری گونه به‌روز شد." });
+    } catch (error) {
+      setPriceNotice({ type: "error", text: error instanceof Error ? error.message : "ثبت قیمت انجام نشد." });
+    } finally {
+      setPriceSaving(false);
+    }
+  }
+
+  async function deactivateVariant() {
+    if (pendingDeactivateVariant === null) return;
+    setDeactivatingRecord(true);
+    setVariantNotice(null);
+    try {
+      await api.deactivateProductVariant(pendingDeactivateVariant.id);
+      if (editingVariantId === pendingDeactivateVariant.id) resetVariantForm();
+      setPendingDeactivateVariant(null);
+      await load();
+      setVariantNotice({ type: "success", text: "گونه با موفقیت غیرفعال شد." });
+    } catch (error) {
+      setPendingDeactivateVariant(null);
+      setVariantNotice({ type: "error", text: error instanceof Error ? error.message : "غیرفعال‌سازی گونه انجام نشد." });
+    } finally {
+      setDeactivatingRecord(false);
+    }
   }
 
   return (
@@ -1486,44 +1597,66 @@ function ProductsView({ onBack }: { onBack: () => void }) {
           </Dialog>
         </section>
       ) : null}
-      {catalogTab === 2 ? <>
-        {message ? <p className="success-message">{message}</p> : null}
-      <div className="management-grid">
-        <form className="sale-panel compact-panel" onSubmit={submitVariant}>
-          <h3>گونه و قیمت پایه</h3>
-          <select name="productId" required>
-            <option value="">انتخاب کالا</option>
-            {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
-          </select>
-          <select name="unitId" required>
-            <option value="">انتخاب واحد</option>
-            {units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
-          </select>
-          <input name="name" placeholder="مثلا عدس درجه یک کیلویی" required />
-          <input name="sku" placeholder="کد کالا" />
-          <input name="retail" inputMode="numeric" placeholder="قیمت خرده‌فروشی تومان" required />
-          <input name="wholesale" inputMode="numeric" placeholder="قیمت عمده تومان" />
-          <input name="minWholesale" inputMode="decimal" placeholder="حداقل عمده" />
-          <button className="soft-button">ثبت گونه</button>
-        </form>
-        <form className="sale-panel compact-panel" onSubmit={submitPrice}>
-          <h3>به‌روزرسانی قیمت</h3>
-          <select name="variantId" required>
-            <option value="">انتخاب گونه</option>
-            {variants.map((variant) => <option key={variant.id} value={variant.id}>{variant.name}</option>)}
-          </select>
-          <select name="priceType">
-            <option value="retail">خرده</option>
-            <option value="wholesale">عمده</option>
-            <option value="online">آنلاین</option>
-          </select>
-          <input name="amount" inputMode="numeric" placeholder="مبلغ تومان" required />
-          <input name="date" defaultValue={DEFAULT_JALALI_DATE} />
-          <button className="soft-button">ثبت قیمت</button>
-        </form>
-      </div>
-      <SimpleTable headers={["کالا", "کد", "قیمت خرده", "قیمت عمده"]} rows={variants.map((v) => [v.name, v.sku || "-", formatRial(v.retail_price_rial), v.wholesale_price_rial ? formatRial(v.wholesale_price_rial) : "-"])} />
-      </> : null}
+      {catalogTab === 2 ? (
+        <section className="variant-price-workspace" aria-label="مدیریت گونه‌ها و تاریخچه قیمت">
+          <section className="variant-manager" aria-labelledby="variant-manager-title">
+            <header className="record-manager-heading">
+              <div><span className="record-manager-icon"><Inventory2Rounded /></span><div><h3 id="variant-manager-title">گونه‌های کالا</h3><p>بسته‌بندی، واحد فروش، کد و قیمت جاری هر گونه را مدیریت کنید.</p></div></div>
+              <Chip label={`${variants.length.toLocaleString("fa-IR")} گونه فعال`} color="primary" variant="outlined" />
+            </header>
+            {variantNotice ? <Alert severity={variantNotice.type} onClose={() => setVariantNotice(null)}>{variantNotice.text}</Alert> : null}
+            <div className="variant-manager-grid">
+              <form className="variant-form" onSubmit={submitVariant} noValidate>
+                <TextField select label="کالای پایه" value={variantProductId} onChange={(event) => setVariantProductId(event.target.value)} required disabled={variantSaving || variantStatus !== "ready"}><MenuItem value="">انتخاب کالا</MenuItem>{products.map((product) => <MenuItem value={String(product.id)} key={product.id}>{product.name}</MenuItem>)}</TextField>
+                <TextField select label="واحد" value={variantUnitId} onChange={(event) => setVariantUnitId(event.target.value)} required disabled={variantSaving || variantStatus !== "ready"}><MenuItem value="">انتخاب واحد</MenuItem>{units.map((unit) => <MenuItem value={String(unit.id)} key={unit.id}>{unit.name} ({unit.symbol})</MenuItem>)}</TextField>
+                <TextField label="نام گونه" value={variantName} onChange={(event) => setVariantName(event.target.value)} required disabled={variantSaving} helperText="مثلاً عدس درجه یک کیلویی" slotProps={{ htmlInput: { maxLength: 180 } }} />
+                <TextField label="کد کالا (SKU)" value={variantSku} onChange={(event) => setVariantSku(event.target.value)} disabled={variantSaving} helperText="اختیاری و یکتا" slotProps={{ htmlInput: { maxLength: 80, dir: "ltr" } }} />
+                <TextField label="قیمت خرده (تومان)" value={variantRetail} onChange={(event) => setVariantRetail(event.target.value)} inputMode="numeric" disabled={variantSaving} required />
+                <TextField label="قیمت عمده (تومان)" value={variantWholesale} onChange={(event) => setVariantWholesale(event.target.value)} inputMode="numeric" disabled={variantSaving} />
+                <TextField label="حداقل تعداد عمده" value={variantMinWholesale} onChange={(event) => setVariantMinWholesale(event.target.value)} inputMode="decimal" disabled={variantSaving} />
+                <div className="record-form-actions variant-form-actions"><Button type="submit" variant="contained" size="large" disabled={variantSaving || !variantProductId || !variantUnitId || !variantName.trim()} startIcon={variantSaving ? <CircularProgress size={18} color="inherit" /> : editingVariantId === null ? <AddRounded /> : <EditRounded />}>{variantSaving ? "در حال ذخیره…" : editingVariantId === null ? "ثبت گونه" : "ذخیره تغییرات"}</Button>{editingVariantId !== null ? <Button type="button" size="large" onClick={resetVariantForm} disabled={variantSaving} startIcon={<CloseRounded />}>انصراف</Button> : null}</div>
+              </form>
+
+              <div className="variant-list-panel">
+                <div className="variant-list-toolbar"><TextField className="record-search" size="small" label="جست‌وجوی گونه، SKU یا کالا" value={variantSearch} onChange={(event) => setVariantSearch(event.target.value)} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} /><Button startIcon={<RefreshRounded />} onClick={() => load()} disabled={variantStatus === "loading"}>تازه‌سازی</Button></div>
+                {variantStatus === "loading" ? <div className="record-state"><CircularProgress size={28} /><span>در حال دریافت گونه‌ها…</span></div> : null}
+                {variantStatus === "error" ? <div className="record-state record-state-error"><span>{catalogLoadError || "دریافت گونه‌ها انجام نشد."}</span><Button variant="outlined" onClick={() => load()}>تلاش دوباره</Button></div> : null}
+                {variantStatus === "ready" && variants.length === 0 ? <div className="record-state"><Inventory2Rounded /><strong>هنوز گونه‌ای ثبت نشده است</strong><span>ابتدا کالا و واحد پایه را در تب قبلی بسازید.</span></div> : null}
+                {variantStatus === "ready" && variants.length > 0 && filteredVariants.length === 0 ? <div className="record-state"><SearchRounded /><strong>گونه‌ای با این عبارت پیدا نشد</strong></div> : null}
+                {variantStatus === "ready" && filteredVariants.length > 0 ? <div className="variant-card-list">{filteredVariants.map((variant) => {
+                  const product = products.find((item) => item.id === variant.product_id);
+                  const unit = units.find((item) => item.id === variant.unit_id);
+                  return <article className="variant-card" key={variant.id}><div className="variant-card-main"><div><strong>{variant.name}</strong><small>{product?.name ?? "کالای نامشخص"} • {unit?.name ?? "واحد نامشخص"}{variant.sku ? ` • ${variant.sku}` : ""}</small></div><div className="variant-prices"><span><small>خرده</small><strong>{formatRial(variant.retail_price_rial)}</strong></span><span><small>عمده</small><strong>{variant.wholesale_price_rial == null ? "ثبت نشده" : formatRial(variant.wholesale_price_rial)}</strong></span></div></div><div className="record-item-actions"><Button startIcon={<EditRounded />} onClick={() => startVariantEdit(variant)}>ویرایش</Button><Button color="error" startIcon={<DeleteOutlineRounded />} onClick={() => setPendingDeactivateVariant(variant)}>غیرفعال</Button></div></article>;
+                })}</div> : null}
+              </div>
+            </div>
+          </section>
+
+          <section className="price-manager" aria-labelledby="price-manager-title">
+            <header className="record-manager-heading"><div><span className="record-manager-icon record-manager-icon-price"><LocalOfferRounded /></span><div><h3 id="price-manager-title">ثبت و تاریخچه قیمت</h3><p>هر تغییر قیمت ثبت می‌شود؛ قیمت خرده و عمده هم‌زمان روی گونه به‌روز می‌شوند.</p></div></div></header>
+            <div className="price-manager-grid">
+              <form className="price-form" onSubmit={submitPrice} noValidate>
+                <h4>قیمت جدید</h4>
+                {priceNotice ? <Alert severity={priceNotice.type} onClose={() => setPriceNotice(null)}>{priceNotice.text}</Alert> : null}
+                <TextField select label="گونه" value={priceVariantId} onChange={(event) => setPriceVariantId(event.target.value)} required disabled={priceSaving || variantStatus !== "ready"}><MenuItem value="">انتخاب گونه</MenuItem>{variants.map((variant) => <MenuItem key={variant.id} value={String(variant.id)}>{variant.name}</MenuItem>)}</TextField>
+                <TextField select label="نوع قیمت" value={priceType} onChange={(event) => setPriceType(event.target.value as PriceType)} disabled={priceSaving}>{Object.entries(PRICE_TYPE_LABELS).map(([value, label]) => <MenuItem value={value} key={value}>{label}</MenuItem>)}</TextField>
+                <TextField label="مبلغ (تومان)" value={priceAmount} onChange={(event) => setPriceAmount(event.target.value)} inputMode="numeric" required disabled={priceSaving} />
+                <TextField label="تاریخ شمسی" value={priceDate} onChange={(event) => setPriceDate(event.target.value)} required disabled={priceSaving} helperText="مثلاً 1405/06/02" slotProps={{ htmlInput: { dir: "ltr" } }} />
+                <Button type="submit" variant="contained" size="large" disabled={priceSaving || !priceVariantId || !priceAmount.trim() || !priceDate.trim()} startIcon={priceSaving ? <CircularProgress size={18} color="inherit" /> : <LocalOfferRounded />}>{priceSaving ? "در حال ثبت…" : "ثبت قیمت"}</Button>
+              </form>
+              <div className="price-history">
+                <div className="price-history-heading"><div><HistoryRounded /><div><strong>تاریخچه قیمت</strong><small>{filteredPrices.length.toLocaleString("fa-IR")} تغییر ثبت‌شده</small></div></div></div>
+                <div className="price-history-filters"><TextField select size="small" label="گونه" value={historyVariantId} onChange={(event) => setHistoryVariantId(event.target.value)}><MenuItem value="">همه گونه‌ها</MenuItem>{variants.map((variant) => <MenuItem value={String(variant.id)} key={variant.id}>{variant.name}</MenuItem>)}</TextField><TextField select size="small" label="نوع قیمت" value={historyPriceType} onChange={(event) => setHistoryPriceType(event.target.value as "" | PriceType)}><MenuItem value="">همه نوع‌ها</MenuItem>{Object.entries(PRICE_TYPE_LABELS).map(([value, label]) => <MenuItem value={value} key={value}>{label}</MenuItem>)}</TextField></div>
+                {variantStatus === "loading" ? <div className="record-state"><CircularProgress size={26} /><span>در حال دریافت تاریخچه…</span></div> : null}
+                {variantStatus === "ready" && filteredPrices.length === 0 ? <div className="record-state"><HistoryRounded /><strong>هنوز تغییری ثبت نشده است</strong></div> : null}
+                {variantStatus === "ready" && filteredPrices.length > 0 ? <div className="price-history-list">{filteredPrices.map((price) => { const variant = variants.find((item) => item.id === price.variant_id); return <article className="price-history-item" key={price.id}><div><strong>{variant?.name ?? `گونه ${price.variant_id.toLocaleString("fa-IR")}`}</strong><small>{PRICE_TYPE_LABELS[price.price_type]} • {price.jalali_date} ساعت {price.local_time}</small></div><strong>{formatRial(price.amount_rial)}</strong></article>; })}</div> : null}
+              </div>
+            </div>
+          </section>
+
+          <Dialog open={pendingDeactivateVariant !== null} onClose={() => { if (!deactivatingRecord) setPendingDeactivateVariant(null); }} fullWidth maxWidth="xs" slotProps={{ paper: { className: "category-confirm-dialog" } }}><DialogTitle>غیرفعال‌کردن گونه</DialogTitle><DialogContent><p>گونه «{pendingDeactivateVariant?.name}» از انتخاب‌های جدید پنهان می‌شود و سوابق خرید، فروش و قیمت آن باقی می‌ماند.</p><Alert severity="warning">اگر موجودی این گونه غیرصفر باشد، عملیات انجام نمی‌شود.</Alert></DialogContent><DialogActions><Button size="large" onClick={() => setPendingDeactivateVariant(null)} disabled={deactivatingRecord}>انصراف</Button><Button size="large" color="error" variant="contained" onClick={deactivateVariant} disabled={deactivatingRecord} startIcon={deactivatingRecord ? <CircularProgress size={18} color="inherit" /> : <DeleteOutlineRounded />}>غیرفعال شود</Button></DialogActions></Dialog>
+        </section>
+      ) : null}
     </CrudWorkspace>
   );
 }

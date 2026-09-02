@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,7 +11,8 @@ from app.core.security import get_password_hash
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.catalog import Category, Product, ProductVariant, Unit
+from app.models.catalog import Category, PriceList, Product, ProductVariant, Unit
+from app.models.purchases import InventoryItem
 from app.models.user import User
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -465,3 +467,190 @@ def test_catalog_mutations_require_authentication(
     response = client.request(method, path, json=payload)
 
     assert response.status_code == 401
+
+
+def create_variant(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    *,
+    product_id: int,
+    unit_id: int,
+    name: str = "گونه تست",
+    sku: str | None = None,
+    retail_price_rial: int = 1000,
+) -> dict:
+    response = client.post(
+        "/api/v1/product-variants",
+        json={
+            "product_id": product_id,
+            "unit_id": unit_id,
+            "name": name,
+            "sku": sku,
+            "retail_price_rial": retail_price_rial,
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+def test_variant_create_normalizes_fields_and_validates_references(client: TestClient, auth_headers: dict[str, str]) -> None:
+    unit = create_unit(client, auth_headers, "کیلوگرم", "kg")
+    product = create_product(client, auth_headers, "برنج")
+
+    created = create_variant(
+        client,
+        auth_headers,
+        product_id=product["id"],
+        unit_id=unit["id"],
+        name="  برنج کیلویی  ",
+        sku="   ",
+    )
+    invalid_product = client.post(
+        "/api/v1/product-variants",
+        json={"product_id": 9999, "unit_id": unit["id"], "name": "نامعتبر"},
+        headers=auth_headers,
+    )
+    invalid_unit = client.post(
+        "/api/v1/product-variants",
+        json={"product_id": product["id"], "unit_id": 9999, "name": "نامعتبر"},
+        headers=auth_headers,
+    )
+
+    assert created["name"] == "برنج کیلویی"
+    assert created["sku"] is None
+    assert invalid_product.status_code == 404
+    assert invalid_unit.status_code == 404
+
+
+def test_variant_update_and_duplicate_sku_are_case_insensitive(client: TestClient, auth_headers: dict[str, str]) -> None:
+    unit = create_unit(client, auth_headers, "عدد", "qty")
+    product = create_product(client, auth_headers, "کنسرو")
+    first = create_variant(client, auth_headers, product_id=product["id"], unit_id=unit["id"], sku="CAN-01")
+    second = create_variant(client, auth_headers, product_id=product["id"], unit_id=unit["id"], name="گونه دوم")
+
+    duplicate_create = client.post(
+        "/api/v1/product-variants",
+        json={"product_id": product["id"], "unit_id": unit["id"], "name": "تکراری", "sku": "can-01"},
+        headers=auth_headers,
+    )
+    duplicate_update = client.patch(
+        f"/api/v1/product-variants/{second['id']}",
+        json={"sku": "  Can-01  "},
+        headers=auth_headers,
+    )
+    updated = client.patch(
+        f"/api/v1/product-variants/{first['id']}",
+        json={"name": "  کنسرو خانواده  ", "retail_price_rial": 2500, "wholesale_price_rial": 2000},
+        headers=auth_headers,
+    )
+    assert client.delete(f"/api/v1/product-variants/{first['id']}", headers=auth_headers).status_code == 200
+    duplicate_inactive = client.post(
+        "/api/v1/product-variants",
+        json={"product_id": product["id"], "unit_id": unit["id"], "name": "تکراری غیرفعال", "sku": "can-01"},
+        headers=auth_headers,
+    )
+
+    assert duplicate_create.status_code == 409
+    assert duplicate_update.status_code == 409
+    assert duplicate_inactive.status_code == 409
+    assert updated.status_code == 200
+    assert updated.json()["name"] == "کنسرو خانواده"
+    assert updated.json()["retail_price_rial"] == 2500
+
+
+def test_variant_rejects_negative_values_with_persian_message(client: TestClient, auth_headers: dict[str, str]) -> None:
+    unit = create_unit(client, auth_headers, "عدد", "qty")
+    product = create_product(client, auth_headers, "محصول")
+
+    response = client.post(
+        "/api/v1/product-variants",
+        json={"product_id": product["id"], "unit_id": unit["id"], "name": "گونه", "retail_price_rial": -1},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 422
+    assert "منفی" in str(response.json())
+
+
+def test_variant_soft_delete_allows_zero_stock_and_blocks_nonzero_stock(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    db_session: Session,
+) -> None:
+    unit = create_unit(client, auth_headers, "کیلوگرم", "kg")
+    product = create_product(client, auth_headers, "حبوبات")
+    zero_stock = create_variant(client, auth_headers, product_id=product["id"], unit_id=unit["id"], name="موجودی صفر")
+    stocked = create_variant(client, auth_headers, product_id=product["id"], unit_id=unit["id"], name="موجودی مثبت")
+    db_session.add_all([
+        InventoryItem(variant_id=zero_stock["id"], quantity_on_hand=Decimal("0")),
+        InventoryItem(variant_id=stocked["id"], quantity_on_hand=Decimal("1.5")),
+    ])
+    db_session.commit()
+
+    allowed = client.delete(f"/api/v1/product-variants/{zero_stock['id']}", headers=auth_headers)
+    blocked = client.delete(f"/api/v1/product-variants/{stocked['id']}", headers=auth_headers)
+
+    assert allowed.status_code == 200
+    assert allowed.json()["is_active"] is False
+    assert db_session.get(ProductVariant, zero_stock["id"]) is not None
+    assert blocked.status_code == 409
+    assert "موجودی غیرصفر" in blocked.json()["detail"]
+
+
+def test_price_history_filters_orders_and_syncs_current_prices(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    db_session: Session,
+) -> None:
+    unit = create_unit(client, auth_headers, "بسته", "pack")
+    product = create_product(client, auth_headers, "محصول قیمت‌دار")
+    variant = create_variant(client, auth_headers, product_id=product["id"], unit_id=unit["id"], retail_price_rial=100)
+
+    retail = client.post(
+        "/api/v1/prices",
+        json={"variant_id": variant["id"], "price_type": "retail", "amount_rial": 150, "jalali_date": "1405/06/01", "local_time": "09:00"},
+        headers=auth_headers,
+    )
+    wholesale = client.post(
+        "/api/v1/prices",
+        json={"variant_id": variant["id"], "price_type": "wholesale", "amount_rial": 120, "jalali_date": "1405/06/02", "local_time": "10:00"},
+        headers=auth_headers,
+    )
+    online = client.post(
+        "/api/v1/prices",
+        json={"variant_id": variant["id"], "price_type": "online", "amount_rial": 170, "jalali_date": "1405/06/03", "local_time": "11:00"},
+        headers=auth_headers,
+    )
+    history = client.get(f"/api/v1/prices?variant_id={variant['id']}", headers=auth_headers)
+    retail_only = client.get(f"/api/v1/prices?variant_id={variant['id']}&price_type=retail", headers=auth_headers)
+    current = db_session.get(ProductVariant, variant["id"])
+
+    assert retail.status_code == wholesale.status_code == online.status_code == 201
+    assert [item["price_type"] for item in history.json()] == ["online", "wholesale", "retail"]
+    assert len(retail_only.json()) == 1
+    assert current is not None
+    db_session.refresh(current)
+    assert current.retail_price_rial == 150
+    assert current.wholesale_price_rial == 120
+
+
+def test_price_rejects_inactive_variant_and_price_endpoints_require_auth(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    unit = create_unit(client, auth_headers, "عدد", "qty")
+    product = create_product(client, auth_headers, "غیرفعال")
+    variant = create_variant(client, auth_headers, product_id=product["id"], unit_id=unit["id"])
+    assert client.delete(f"/api/v1/product-variants/{variant['id']}", headers=auth_headers).status_code == 200
+
+    create_response = client.post(
+        "/api/v1/prices",
+        json={"variant_id": variant["id"], "price_type": "retail", "amount_rial": 10, "jalali_date": "1405/06/03", "local_time": "11:00"},
+        headers=auth_headers,
+    )
+
+    assert create_response.status_code == 404
+    assert client.get("/api/v1/prices").status_code == 401
+    assert client.patch("/api/v1/product-variants/1", json={"name": "x"}).status_code == 401
+    assert client.delete("/api/v1/product-variants/1").status_code == 401
