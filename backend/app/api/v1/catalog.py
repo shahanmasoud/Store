@@ -11,6 +11,7 @@ from app.schemas.catalog import (
     PriceListRead,
     PriceRuleCreate,
     PriceRuleRead,
+    PriceRuleUpdate,
     ProductCreate,
     ProductRead,
     ProductUpdate,
@@ -123,3 +124,22 @@ def create_price(payload: PriceListCreate, db: Session = Depends(get_db)) -> Pri
 @router.post("/price-rules", response_model=PriceRuleRead, status_code=status.HTTP_201_CREATED)
 def create_price_rule(payload: PriceRuleCreate, db: Session = Depends(get_db)) -> PriceRuleRead:
     return catalog_service.create_price_rule(db, payload)
+
+
+@router.get("/price-rules", response_model=list[PriceRuleRead])
+def price_rules(variant_id: int | None = None, db: Session = Depends(get_db)) -> list[PriceRuleRead]:
+    return catalog_service.list_price_rules(db, variant_id=variant_id)
+
+
+@router.patch("/price-rules/{price_rule_id}", response_model=PriceRuleRead)
+def update_price_rule(
+    price_rule_id: int,
+    payload: PriceRuleUpdate,
+    db: Session = Depends(get_db),
+) -> PriceRuleRead:
+    return catalog_service.update_price_rule(db, price_rule_id, payload)
+
+
+@router.delete("/price-rules/{price_rule_id}", response_model=PriceRuleRead)
+def deactivate_price_rule(price_rule_id: int, db: Session = Depends(get_db)) -> PriceRuleRead:
+    return catalog_service.deactivate_price_rule(db, price_rule_id)

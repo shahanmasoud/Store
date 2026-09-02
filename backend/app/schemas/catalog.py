@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.time import validate_jalali_date, validate_local_time
 
@@ -218,17 +218,84 @@ class PriceListRead(PriceListCreate):
 
 class PriceRuleCreate(BaseModel):
     variant_id: int
-    min_quantity: Decimal = Field(ge=0)
-    discount_amount_rial: int | None = Field(default=None, ge=0)
-    discount_percent: Decimal | None = Field(default=None, ge=0, le=100)
+    min_quantity: Decimal
+    discount_amount_rial: int | None = None
+    discount_percent: Decimal | None = None
     starts_jalali_date: str | None = None
+
+    @field_validator("min_quantity")
+    @classmethod
+    def non_negative_min_quantity(cls, value: Decimal) -> Decimal:
+        if value < 0:
+            raise ValueError("حداقل تعداد نمی‌تواند منفی باشد.")
+        return value
+
+    @field_validator("discount_amount_rial")
+    @classmethod
+    def non_negative_discount_amount(cls, value: int | None) -> int | None:
+        if value is not None and value < 0:
+            raise ValueError("مبلغ تخفیف نمی‌تواند منفی باشد.")
+        return value
+
+    @field_validator("discount_percent")
+    @classmethod
+    def valid_discount_percent(cls, value: Decimal | None) -> Decimal | None:
+        if value is not None and (value < 0 or value > 100):
+            raise ValueError("درصد تخفیف باید بین صفر تا صد باشد.")
+        return value
 
     @field_validator("starts_jalali_date")
     @classmethod
     def optional_jalali_date_format(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        return validate_jalali_date(value.strip())
+
+    @model_validator(mode="after")
+    def exactly_one_positive_discount(self) -> "PriceRuleCreate":
+        has_amount = self.discount_amount_rial is not None and self.discount_amount_rial > 0
+        has_percent = self.discount_percent is not None and self.discount_percent > 0
+        if has_amount == has_percent:
+            raise ValueError("دقیقاً یکی از مبلغ یا درصد تخفیف باید مقداری مثبت داشته باشد.")
+        return self
+
+
+class PriceRuleUpdate(BaseModel):
+    variant_id: int | None = None
+    min_quantity: Decimal | None = None
+    discount_amount_rial: int | None = None
+    discount_percent: Decimal | None = None
+    starts_jalali_date: str | None = None
+
+    @field_validator("variant_id", "min_quantity")
+    @classmethod
+    def required_value_when_present(cls, value: int | Decimal | None) -> int | Decimal:
         if value is None:
-            return value
-        return validate_jalali_date(value)
+            raise ValueError("گونه و حداقل تعداد باید مشخص باشند.")
+        if isinstance(value, Decimal) and value < 0:
+            raise ValueError("حداقل تعداد نمی‌تواند منفی باشد.")
+        return value
+
+    @field_validator("discount_amount_rial")
+    @classmethod
+    def non_negative_optional_amount(cls, value: int | None) -> int | None:
+        if value is not None and value < 0:
+            raise ValueError("مبلغ تخفیف نمی‌تواند منفی باشد.")
+        return value
+
+    @field_validator("discount_percent")
+    @classmethod
+    def valid_optional_percent(cls, value: Decimal | None) -> Decimal | None:
+        if value is not None and (value < 0 or value > 100):
+            raise ValueError("درصد تخفیف باید بین صفر تا صد باشد.")
+        return value
+
+    @field_validator("starts_jalali_date")
+    @classmethod
+    def optional_update_jalali_date_format(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        return validate_jalali_date(value.strip())
 
 
 class PriceRuleRead(PriceRuleCreate):

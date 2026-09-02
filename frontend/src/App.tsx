@@ -42,6 +42,7 @@ import {
   type PaymentMethod,
   type PaymentStatus,
   type PriceList,
+  type PriceRule,
   type PriceType,
   type Person,
   type Product,
@@ -1045,6 +1046,17 @@ function ProductsView({ onBack }: { onBack: () => void }) {
   const [priceSaving, setPriceSaving] = useState(false);
   const [historyVariantId, setHistoryVariantId] = useState("");
   const [historyPriceType, setHistoryPriceType] = useState<"" | PriceType>("");
+  const [priceRules, setPriceRules] = useState<PriceRule[]>([]);
+  const [ruleNotice, setRuleNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [ruleVariantId, setRuleVariantId] = useState("");
+  const [ruleMinQuantity, setRuleMinQuantity] = useState("");
+  const [ruleDiscountType, setRuleDiscountType] = useState<"amount" | "percent">("percent");
+  const [ruleDiscountValue, setRuleDiscountValue] = useState("");
+  const [ruleStartDate, setRuleStartDate] = useState("");
+  const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
+  const [ruleSaving, setRuleSaving] = useState(false);
+  const [ruleVariantFilter, setRuleVariantFilter] = useState("");
+  const [pendingDeactivateRule, setPendingDeactivateRule] = useState<PriceRule | null>(null);
 
   const load = () => {
     setCategoryStatus("loading");
@@ -1052,13 +1064,14 @@ function ProductsView({ onBack }: { onBack: () => void }) {
     setVariantStatus("loading");
     setCatalogLoadError("");
     setCategoryNotice(null);
-    return Promise.all([api.units(), api.categories(), api.products(), api.productVariants(), api.prices()])
-      .then(([nextUnits, nextCategories, nextProducts, nextVariants, nextPrices]) => {
+    return Promise.all([api.units(), api.categories(), api.products(), api.productVariants(), api.prices(), api.priceRules()])
+      .then(([nextUnits, nextCategories, nextProducts, nextVariants, nextPrices, nextPriceRules]) => {
         setUnits(nextUnits);
         setCategories(nextCategories);
         setProducts(nextProducts);
         setVariants(nextVariants);
         setPrices(nextPrices);
+        setPriceRules(nextPriceRules);
         setCategoryStatus("ready");
         setUnitProductStatus("ready");
         setVariantStatus("ready");
@@ -1318,6 +1331,10 @@ function ProductsView({ onBack }: { onBack: () => void }) {
     return !historyPriceType || price.price_type === historyPriceType;
   }), [historyPriceType, historyVariantId, prices]);
 
+  const filteredPriceRules = useMemo(() => priceRules.filter((rule) => (
+    !ruleVariantFilter || rule.variant_id === Number(ruleVariantFilter)
+  )), [priceRules, ruleVariantFilter]);
+
   function resetVariantForm() {
     setEditingVariantId(null);
     setVariantProductId("");
@@ -1395,6 +1412,82 @@ function ProductsView({ onBack }: { onBack: () => void }) {
       setPriceNotice({ type: "error", text: error instanceof Error ? error.message : "ثبت قیمت انجام نشد." });
     } finally {
       setPriceSaving(false);
+    }
+  }
+
+  function resetRuleForm() {
+    setEditingRuleId(null);
+    setRuleVariantId("");
+    setRuleMinQuantity("");
+    setRuleDiscountType("percent");
+    setRuleDiscountValue("");
+    setRuleStartDate("");
+  }
+
+  function startRuleEdit(rule: PriceRule) {
+    const usesAmount = rule.discount_amount_rial != null && rule.discount_amount_rial > 0;
+    setEditingRuleId(rule.id);
+    setRuleVariantId(String(rule.variant_id));
+    setRuleMinQuantity(String(rule.min_quantity));
+    setRuleDiscountType(usesAmount ? "amount" : "percent");
+    setRuleDiscountValue(usesAmount ? moneyInputValue(rule.discount_amount_rial ?? 0) : String(rule.discount_percent ?? ""));
+    setRuleStartDate(rule.starts_jalali_date ?? "");
+    setRuleNotice(null);
+  }
+
+  async function submitPriceRule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const parseRuleDecimal = (value: string) => Number(
+      toEnglishDigits(value).replace(/[٫/]/g, ".").replace(/[٬،\s]/g, "").replace(",", "."),
+    );
+    const minQuantity = parseRuleDecimal(ruleMinQuantity);
+    const discountValue = ruleDiscountType === "amount" ? parseLocalizedNumber(ruleDiscountValue) : parseRuleDecimal(ruleDiscountValue);
+    if (!ruleVariantId || !Number.isFinite(minQuantity) || minQuantity < 0 || !Number.isFinite(discountValue) || discountValue <= 0) {
+      setRuleNotice({ type: "error", text: "گونه، حداقل تعداد و مقدار مثبت تخفیف را درست وارد کنید." });
+      return;
+    }
+    if (ruleDiscountType === "percent" && discountValue > 100) {
+      setRuleNotice({ type: "error", text: "درصد تخفیف نمی‌تواند بیشتر از ۱۰۰ باشد." });
+      return;
+    }
+    setRuleSaving(true);
+    setRuleNotice(null);
+    const wasEditing = editingRuleId !== null;
+    const payload = {
+      variant_id: Number(ruleVariantId),
+      min_quantity: minQuantity,
+      discount_amount_rial: ruleDiscountType === "amount" ? normalizeMoney(ruleDiscountValue) : null,
+      discount_percent: ruleDiscountType === "percent" ? discountValue : null,
+      starts_jalali_date: ruleStartDate.trim() || null,
+    };
+    try {
+      if (editingRuleId === null) await api.createPriceRule(payload);
+      else await api.updatePriceRule(editingRuleId, payload);
+      resetRuleForm();
+      await load();
+      setRuleNotice({ type: "success", text: wasEditing ? "قاعده تخفیف به‌روز شد." : "قاعده تخفیف جدید ثبت شد." });
+    } catch (error) {
+      setRuleNotice({ type: "error", text: error instanceof Error ? error.message : "ذخیره قاعده تخفیف انجام نشد." });
+    } finally {
+      setRuleSaving(false);
+    }
+  }
+
+  async function deactivatePriceRule() {
+    if (pendingDeactivateRule === null) return;
+    setDeactivatingRecord(true);
+    setRuleNotice(null);
+    try {
+      await api.deactivatePriceRule(pendingDeactivateRule.id);
+      if (editingRuleId === pendingDeactivateRule.id) resetRuleForm();
+      setPendingDeactivateRule(null);
+      await load();
+      setRuleNotice({ type: "success", text: "قاعده تخفیف غیرفعال شد." });
+    } catch (error) {
+      setPendingDeactivateRule(null);
+      setRuleNotice({ type: "error", text: error instanceof Error ? error.message : "غیرفعال‌سازی قاعده انجام نشد." });
+    } finally {
+      setDeactivatingRecord(false);
     }
   }
 
@@ -1654,7 +1747,40 @@ function ProductsView({ onBack }: { onBack: () => void }) {
             </div>
           </section>
 
+          <section className="discount-rule-manager" aria-labelledby="discount-rule-manager-title">
+            <header className="record-manager-heading">
+              <div><span className="record-manager-icon record-manager-icon-discount"><LocalOfferRounded /></span><div><h3 id="discount-rule-manager-title">قواعد تخفیف تعدادی</h3><p>برای خرید از یک تعداد مشخص، فقط یک تخفیف مبلغی یا درصدی تعریف کنید.</p></div></div>
+              <Chip label={`${priceRules.length.toLocaleString("fa-IR")} قاعده فعال`} color="secondary" variant="outlined" />
+            </header>
+            {ruleNotice ? <Alert severity={ruleNotice.type} onClose={() => setRuleNotice(null)}>{ruleNotice.text}</Alert> : null}
+            <div className="discount-rule-grid">
+              <form className="discount-rule-form" onSubmit={submitPriceRule} noValidate>
+                <div className="discount-rule-form-heading"><strong>{editingRuleId === null ? "قاعده جدید" : "ویرایش قاعده"}</strong><small>محدوده اجرا و نوع تخفیف را مشخص کنید.</small></div>
+                <TextField select label="گونه کالا" value={ruleVariantId} onChange={(event) => setRuleVariantId(event.target.value)} required disabled={ruleSaving || variantStatus !== "ready"}><MenuItem value="">انتخاب گونه</MenuItem>{variants.map((variant) => <MenuItem value={String(variant.id)} key={variant.id}>{variant.name}</MenuItem>)}</TextField>
+                <TextField label="حداقل تعداد" value={ruleMinQuantity} onChange={(event) => setRuleMinQuantity(event.target.value)} inputMode="decimal" required disabled={ruleSaving} helperText="از صفر به بالا؛ مثلاً ۵" />
+                <TextField select label="نوع تخفیف" value={ruleDiscountType} onChange={(event) => { setRuleDiscountType(event.target.value as "amount" | "percent"); setRuleDiscountValue(""); }} disabled={ruleSaving}><MenuItem value="percent">درصدی</MenuItem><MenuItem value="amount">مبلغ ثابت</MenuItem></TextField>
+                <TextField label={ruleDiscountType === "amount" ? "مبلغ تخفیف (تومان)" : "درصد تخفیف"} value={ruleDiscountValue} onChange={(event) => setRuleDiscountValue(event.target.value)} inputMode={ruleDiscountType === "amount" ? "numeric" : "decimal"} required disabled={ruleSaving} helperText={ruleDiscountType === "amount" ? "مبلغ مثبت را به تومان وارد کنید." : "مقداری بیشتر از صفر و حداکثر ۱۰۰"} />
+                <TextField label="تاریخ شروع (اختیاری)" value={ruleStartDate} onChange={(event) => setRuleStartDate(event.target.value)} disabled={ruleSaving} helperText="مثلاً 1405/06/02؛ خالی یعنی بدون محدودیت" slotProps={{ htmlInput: { dir: "ltr" } }} />
+                <div className="record-form-actions discount-rule-form-actions"><Button type="submit" variant="contained" size="large" disabled={ruleSaving || !ruleVariantId || !ruleMinQuantity.trim() || !ruleDiscountValue.trim()} startIcon={ruleSaving ? <CircularProgress size={18} color="inherit" /> : editingRuleId === null ? <AddRounded /> : <EditRounded />}>{ruleSaving ? "در حال ذخیره…" : editingRuleId === null ? "ثبت قاعده" : "ذخیره تغییرات"}</Button>{editingRuleId !== null ? <Button type="button" size="large" onClick={resetRuleForm} disabled={ruleSaving} startIcon={<CloseRounded />}>انصراف</Button> : null}</div>
+              </form>
+
+              <div className="discount-rule-list-panel">
+                <div className="discount-rule-toolbar"><div><strong>قواعد فعال</strong><small>قاعده مناسب هر گونه را سریع پیدا و اصلاح کنید.</small></div><TextField select size="small" label="فیلتر گونه" value={ruleVariantFilter} onChange={(event) => setRuleVariantFilter(event.target.value)}><MenuItem value="">همه گونه‌ها</MenuItem>{variants.map((variant) => <MenuItem value={String(variant.id)} key={variant.id}>{variant.name}</MenuItem>)}</TextField></div>
+                {variantStatus === "loading" ? <div className="record-state"><CircularProgress size={26} /><span>در حال دریافت قواعد…</span></div> : null}
+                {variantStatus === "error" ? <div className="record-state record-state-error"><span>{catalogLoadError || "دریافت قواعد تخفیف انجام نشد."}</span><Button variant="outlined" onClick={() => load()}>تلاش دوباره</Button></div> : null}
+                {variantStatus === "ready" && priceRules.length === 0 ? <div className="record-state"><LocalOfferRounded /><strong>هنوز قاعده‌ای ثبت نشده است</strong><span>فرم روبه‌رو را برای اولین تخفیف تکمیل کنید.</span></div> : null}
+                {variantStatus === "ready" && priceRules.length > 0 && filteredPriceRules.length === 0 ? <div className="record-state"><SearchRounded /><strong>برای این گونه قاعده‌ای پیدا نشد</strong></div> : null}
+                {variantStatus === "ready" && filteredPriceRules.length > 0 ? <div className="discount-rule-list">{filteredPriceRules.map((rule) => {
+                  const variant = variants.find((item) => item.id === rule.variant_id);
+                  const amountDiscount = rule.discount_amount_rial != null && rule.discount_amount_rial > 0;
+                  return <article className="discount-rule-card" key={rule.id}><div className="discount-rule-card-main"><div><strong>{variant?.name ?? `گونه ${rule.variant_id.toLocaleString("fa-IR")}`}</strong><small>شروع: {rule.starts_jalali_date || "بدون محدودیت تاریخ"}</small></div><div className="discount-rule-summary"><span><small>از تعداد</small><strong>{formatDecimal(rule.min_quantity)}</strong></span><span className="discount-rule-value"><small>تخفیف</small><strong>{amountDiscount ? formatRial(rule.discount_amount_rial ?? 0) : `${formatDecimal(rule.discount_percent ?? 0)}٪`}</strong></span></div></div><div className="record-item-actions"><Button startIcon={<EditRounded />} onClick={() => startRuleEdit(rule)}>ویرایش</Button><Button color="error" startIcon={<DeleteOutlineRounded />} onClick={() => setPendingDeactivateRule(rule)}>غیرفعال</Button></div></article>;
+                })}</div> : null}
+              </div>
+            </div>
+          </section>
+
           <Dialog open={pendingDeactivateVariant !== null} onClose={() => { if (!deactivatingRecord) setPendingDeactivateVariant(null); }} fullWidth maxWidth="xs" slotProps={{ paper: { className: "category-confirm-dialog" } }}><DialogTitle>غیرفعال‌کردن گونه</DialogTitle><DialogContent><p>گونه «{pendingDeactivateVariant?.name}» از انتخاب‌های جدید پنهان می‌شود و سوابق خرید، فروش و قیمت آن باقی می‌ماند.</p><Alert severity="warning">اگر موجودی این گونه غیرصفر باشد، عملیات انجام نمی‌شود.</Alert></DialogContent><DialogActions><Button size="large" onClick={() => setPendingDeactivateVariant(null)} disabled={deactivatingRecord}>انصراف</Button><Button size="large" color="error" variant="contained" onClick={deactivateVariant} disabled={deactivatingRecord} startIcon={deactivatingRecord ? <CircularProgress size={18} color="inherit" /> : <DeleteOutlineRounded />}>غیرفعال شود</Button></DialogActions></Dialog>
+          <Dialog open={pendingDeactivateRule !== null} onClose={() => { if (!deactivatingRecord) setPendingDeactivateRule(null); }} fullWidth maxWidth="xs" slotProps={{ paper: { className: "category-confirm-dialog" } }}><DialogTitle>غیرفعال‌کردن قاعده تخفیف</DialogTitle><DialogContent><p>این قاعده برای «{variants.find((variant) => variant.id === pendingDeactivateRule?.variant_id)?.name ?? "گونه انتخاب‌شده"}» دیگر در محاسبات جدید استفاده نمی‌شود.</p><Alert severity="info">سابقه قاعده در سیستم باقی می‌ماند.</Alert></DialogContent><DialogActions><Button size="large" onClick={() => setPendingDeactivateRule(null)} disabled={deactivatingRecord}>انصراف</Button><Button size="large" color="error" variant="contained" onClick={deactivatePriceRule} disabled={deactivatingRecord} startIcon={deactivatingRecord ? <CircularProgress size={18} color="inherit" /> : <DeleteOutlineRounded />}>غیرفعال شود</Button></DialogActions></Dialog>
         </section>
       ) : null}
     </CrudWorkspace>

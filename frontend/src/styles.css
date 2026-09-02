@@ -1569,7 +1569,8 @@ button {
 }
 
 .variant-manager,
-.price-manager {
+.price-manager,
+.discount-rule-manager {
   display: grid;
   gap: 18px;
   min-width: 0;
@@ -1734,14 +1735,136 @@ button {
   gap: 10px;
 }
 
+.record-manager-icon-discount {
+  color: #7c3aed;
+  background: #f1eafe;
+}
+
+.discount-rule-manager {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+  padding: 22px;
+  border: 1px solid #ded9ed;
+  border-radius: 22px;
+  background: linear-gradient(145deg, #fff 45%, #fbf9ff);
+  box-shadow: 0 12px 32px rgba(70, 44, 110, 0.06);
+}
+
+.discount-rule-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1.28fr);
+  gap: 18px;
+  align-items: start;
+  min-width: 0;
+}
+
+.discount-rule-form,
+.discount-rule-list-panel {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid #e5e0ef;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.discount-rule-form {
+  background: #fbf9ff;
+}
+
+.discount-rule-form-heading,
+.discount-rule-toolbar > div,
+.discount-rule-card-main > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.discount-rule-form-heading strong,
+.discount-rule-toolbar strong {
+  color: #2e2540;
+}
+
+.discount-rule-form-heading small,
+.discount-rule-toolbar small,
+.discount-rule-card small {
+  color: #716980;
+  line-height: 1.55;
+}
+
+.discount-rule-form-actions {
+  grid-column: auto;
+}
+
+.discount-rule-toolbar,
+.discount-rule-card-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.discount-rule-toolbar .MuiTextField-root {
+  width: min(100%, 260px);
+}
+
+.discount-rule-list {
+  display: grid;
+  gap: 10px;
+  max-height: 510px;
+  padding-inline-end: 3px;
+  overflow: auto;
+}
+
+.discount-rule-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid #e6e1ee;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.discount-rule-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(105px, 1fr));
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.discount-rule-summary > span {
+  display: grid;
+  gap: 2px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: #f3f0f8;
+}
+
+.discount-rule-summary strong {
+  color: #50327f;
+  white-space: nowrap;
+}
+
+.discount-rule-summary .discount-rule-value {
+  background: #eef8f4;
+}
+
+.discount-rule-summary .discount-rule-value strong {
+  color: #087f5b;
+}
+
 @media (max-width: 960px) {
   .variant-manager-grid,
-  .price-manager-grid {
+  .price-manager-grid,
+  .discount-rule-grid {
     grid-template-columns: 1fr;
   }
 
   .variant-card-list,
-  .price-history-list {
+  .price-history-list,
+  .discount-rule-list {
     max-height: none;
   }
 }
@@ -1752,7 +1875,8 @@ button {
   }
 
   .variant-manager,
-  .price-manager {
+  .price-manager,
+  .discount-rule-manager {
     gap: 14px;
     padding: 14px;
     border-radius: 18px;
@@ -1760,14 +1884,18 @@ button {
 
   .variant-form,
   .price-form,
-  .price-history {
+  .price-history,
+  .discount-rule-form,
+  .discount-rule-list-panel {
     grid-template-columns: 1fr;
     padding: 14px;
   }
 
   .variant-list-toolbar,
   .variant-card-main,
-  .price-history-item {
+  .price-history-item,
+  .discount-rule-toolbar,
+  .discount-rule-card-main {
     align-items: stretch;
     flex-direction: column;
   }
@@ -1777,20 +1905,36 @@ button {
     width: 100%;
   }
 
+  .discount-rule-toolbar .MuiTextField-root {
+    width: 100%;
+  }
+
   .variant-list-toolbar .MuiButton-root,
   .variant-form-actions .MuiButton-root,
-  .price-form .MuiButton-root {
+  .price-form .MuiButton-root,
+  .discount-rule-form-actions .MuiButton-root {
     min-height: 44px;
   }
 
   .variant-prices,
-  .price-history-filters {
+  .price-history-filters,
+  .discount-rule-summary {
     grid-template-columns: 1fr;
   }
 
   .variant-card .record-item-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .discount-rule-card .record-item-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .discount-rule-card .record-item-actions .MuiButton-root {
+    min-width: 0;
+    min-height: 44px;
   }
 
   .variant-card .record-item-actions .MuiButton-root {

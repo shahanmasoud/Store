@@ -9,6 +9,7 @@ from app.schemas.catalog import (
     CategoryUpdate,
     PriceListCreate,
     PriceRuleCreate,
+    PriceRuleUpdate,
     ProductCreate,
     ProductUpdate,
     ProductVariantCreate,
@@ -40,7 +41,7 @@ def _ensure_unique_unit(db: Session, name: str, symbol: str, *, exclude_id: int 
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="واحدی با این نماد وجود دارد.")
 
 
-def _commit_catalog_record(db: Session, record: Unit | Category | Product | ProductVariant | PriceList, entity_name: str):
+def _commit_catalog_record(db: Session, record: Unit | Category | Product | ProductVariant | PriceList | PriceRule, entity_name: str):
     try:
         db.commit()
     except IntegrityError as exc:
@@ -341,8 +342,52 @@ def create_price(db: Session, payload: PriceListCreate) -> PriceList:
 
 
 def create_price_rule(db: Session, payload: PriceRuleCreate) -> PriceRule:
+    _get_variant(db, payload.variant_id)
     rule = PriceRule(**payload.model_dump())
     db.add(rule)
-    db.commit()
-    db.refresh(rule)
+    return _commit_catalog_record(db, rule, "قاعده تخفیف")
+
+
+def list_price_rules(db: Session, *, variant_id: int | None = None) -> list[PriceRule]:
+    query = select(PriceRule).where(PriceRule.is_active.is_(True))
+    if variant_id is not None:
+        query = query.where(PriceRule.variant_id == variant_id)
+    return list(db.scalars(query.order_by(PriceRule.min_quantity.asc(), PriceRule.id.desc())))
+
+
+def _get_price_rule(db: Session, price_rule_id: int) -> PriceRule:
+    rule = db.get(PriceRule, price_rule_id)
+    if rule is None or not rule.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="قاعده تخفیف فعال پیدا نشد.")
     return rule
+
+
+def _validate_price_rule_discount(discount_amount_rial: int | None, discount_percent) -> None:
+    has_amount = discount_amount_rial is not None and discount_amount_rial > 0
+    has_percent = discount_percent is not None and discount_percent > 0
+    if has_amount == has_percent:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="دقیقاً یکی از مبلغ یا درصد تخفیف باید مقداری مثبت داشته باشد.",
+        )
+
+
+def update_price_rule(db: Session, price_rule_id: int, payload: PriceRuleUpdate) -> PriceRule:
+    rule = _get_price_rule(db, price_rule_id)
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="حداقل یک تغییر وارد کنید.")
+    variant_id = changes.get("variant_id", rule.variant_id)
+    amount = changes.get("discount_amount_rial", rule.discount_amount_rial)
+    percent = changes.get("discount_percent", rule.discount_percent)
+    _get_variant(db, variant_id)
+    _validate_price_rule_discount(amount, percent)
+    for field, value in changes.items():
+        setattr(rule, field, value)
+    return _commit_catalog_record(db, rule, "قاعده تخفیف")
+
+
+def deactivate_price_rule(db: Session, price_rule_id: int) -> PriceRule:
+    rule = _get_price_rule(db, price_rule_id)
+    rule.is_active = False
+    return _commit_catalog_record(db, rule, "قاعده تخفیف")

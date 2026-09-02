@@ -11,7 +11,7 @@ from app.core.security import get_password_hash
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.catalog import Category, PriceList, Product, ProductVariant, Unit
+from app.models.catalog import Category, PriceList, PriceRule, Product, ProductVariant, Unit
 from app.models.purchases import InventoryItem
 from app.models.user import User
 
@@ -654,3 +654,155 @@ def test_price_rejects_inactive_variant_and_price_endpoints_require_auth(
     assert client.get("/api/v1/prices").status_code == 401
     assert client.patch("/api/v1/product-variants/1", json={"name": "x"}).status_code == 401
     assert client.delete("/api/v1/product-variants/1").status_code == 401
+
+
+def test_price_rule_crud_filters_and_soft_deletes(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    db_session: Session,
+) -> None:
+    unit = create_unit(client, auth_headers, "بسته", "pack")
+    product = create_product(client, auth_headers, "محصول تخفیف‌دار")
+    first_variant = create_variant(client, auth_headers, product_id=product["id"], unit_id=unit["id"], name="گونه اول")
+    second_variant = create_variant(client, auth_headers, product_id=product["id"], unit_id=unit["id"], name="گونه دوم")
+
+    first_rule = client.post(
+        "/api/v1/price-rules",
+        json={
+            "variant_id": first_variant["id"],
+            "min_quantity": "5.5",
+            "discount_percent": "10",
+            "starts_jalali_date": "1405/06/02",
+        },
+        headers=auth_headers,
+    )
+    second_rule = client.post(
+        "/api/v1/price-rules",
+        json={
+            "variant_id": second_variant["id"],
+            "min_quantity": 2,
+            "discount_amount_rial": 50000,
+        },
+        headers=auth_headers,
+    )
+    filtered = client.get(f"/api/v1/price-rules?variant_id={first_variant['id']}", headers=auth_headers)
+    updated = client.patch(
+        f"/api/v1/price-rules/{first_rule.json()['id']}",
+        json={"min_quantity": 8, "discount_percent": None, "discount_amount_rial": 75000},
+        headers=auth_headers,
+    )
+    deleted = client.delete(f"/api/v1/price-rules/{first_rule.json()['id']}", headers=auth_headers)
+    remaining = client.get("/api/v1/price-rules", headers=auth_headers)
+
+    assert first_rule.status_code == second_rule.status_code == 201
+    assert [item["id"] for item in filtered.json()] == [first_rule.json()["id"]]
+    assert updated.status_code == 200
+    assert updated.json()["discount_amount_rial"] == 75000
+    assert updated.json()["discount_percent"] is None
+    assert deleted.status_code == 200
+    assert deleted.json()["is_active"] is False
+    assert [item["id"] for item in remaining.json()] == [second_rule.json()["id"]]
+    persisted = db_session.get(PriceRule, first_rule.json()["id"])
+    assert persisted is not None
+    assert persisted.is_active is False
+
+
+@pytest.mark.parametrize(
+    "discount_fields, expected_text",
+    [
+        ({}, "دقیقاً یکی"),
+        ({"discount_amount_rial": 0}, "دقیقاً یکی"),
+        ({"discount_percent": 0}, "دقیقاً یکی"),
+        ({"discount_amount_rial": 1000, "discount_percent": 5}, "دقیقاً یکی"),
+        ({"discount_percent": 101}, "بین صفر تا صد"),
+    ],
+)
+def test_price_rule_rejects_invalid_discount_combinations_with_persian_message(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    discount_fields: dict[str, int],
+    expected_text: str,
+) -> None:
+    unit = create_unit(client, auth_headers, "عدد", "qty")
+    product = create_product(client, auth_headers, "محصول")
+    variant = create_variant(client, auth_headers, product_id=product["id"], unit_id=unit["id"])
+
+    response = client.post(
+        "/api/v1/price-rules",
+        json={"variant_id": variant["id"], "min_quantity": 1, **discount_fields},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 422
+    assert expected_text in str(response.json())
+
+
+def test_price_rule_rejects_negative_quantity_bad_date_and_inactive_variant(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    unit = create_unit(client, auth_headers, "کیلوگرم", "kg")
+    product = create_product(client, auth_headers, "حبوبات")
+    variant = create_variant(client, auth_headers, product_id=product["id"], unit_id=unit["id"])
+
+    negative = client.post(
+        "/api/v1/price-rules",
+        json={"variant_id": variant["id"], "min_quantity": -1, "discount_percent": 5},
+        headers=auth_headers,
+    )
+    bad_date = client.post(
+        "/api/v1/price-rules",
+        json={"variant_id": variant["id"], "min_quantity": 1, "discount_percent": 5, "starts_jalali_date": "1405/13/01"},
+        headers=auth_headers,
+    )
+    assert client.delete(f"/api/v1/product-variants/{variant['id']}", headers=auth_headers).status_code == 200
+    inactive = client.post(
+        "/api/v1/price-rules",
+        json={"variant_id": variant["id"], "min_quantity": 1, "discount_percent": 5},
+        headers=auth_headers,
+    )
+
+    assert negative.status_code == 422
+    assert "منفی" in str(negative.json())
+    assert bad_date.status_code == 422
+    assert inactive.status_code == 404
+    assert "گونه فعال" in inactive.json()["detail"]
+
+
+def test_price_rule_update_revalidates_discount_and_active_variant(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    unit = create_unit(client, auth_headers, "عدد", "qty")
+    product = create_product(client, auth_headers, "محصول")
+    active_variant = create_variant(client, auth_headers, product_id=product["id"], unit_id=unit["id"], name="فعال")
+    inactive_variant = create_variant(client, auth_headers, product_id=product["id"], unit_id=unit["id"], name="غیرفعال")
+    rule = client.post(
+        "/api/v1/price-rules",
+        json={"variant_id": active_variant["id"], "min_quantity": 1, "discount_percent": 5},
+        headers=auth_headers,
+    ).json()
+    assert client.delete(f"/api/v1/product-variants/{inactive_variant['id']}", headers=auth_headers).status_code == 200
+
+    both_discounts = client.patch(
+        f"/api/v1/price-rules/{rule['id']}",
+        json={"discount_amount_rial": 1000},
+        headers=auth_headers,
+    )
+    inactive_reference = client.patch(
+        f"/api/v1/price-rules/{rule['id']}",
+        json={"variant_id": inactive_variant["id"]},
+        headers=auth_headers,
+    )
+
+    assert both_discounts.status_code == 422
+    assert "دقیقاً یکی" in both_discounts.json()["detail"]
+    assert inactive_reference.status_code == 404
+    assert "گونه فعال" in inactive_reference.json()["detail"]
+
+
+def test_price_rule_endpoints_require_auth(client: TestClient) -> None:
+    assert client.get("/api/v1/price-rules").status_code == 401
+    assert client.post("/api/v1/price-rules", json={}).status_code == 401
+    assert client.patch("/api/v1/price-rules/1", json={"min_quantity": 2}).status_code == 401
+    assert client.delete("/api/v1/price-rules/1").status_code == 401

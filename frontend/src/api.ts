@@ -34,6 +34,22 @@ export type PriceList = {
   timezone: string;
   is_active: boolean;
 };
+export type PriceRule = {
+  id: number;
+  variant_id: number;
+  min_quantity: string | number;
+  discount_amount_rial?: number | null;
+  discount_percent?: string | number | null;
+  starts_jalali_date?: string | null;
+  is_active: boolean;
+};
+export type PriceRulePayload = {
+  variant_id: number;
+  min_quantity: number;
+  discount_amount_rial: number | null;
+  discount_percent: number | null;
+  starts_jalali_date: string | null;
+};
 
 export type PaymentMethod = "cash" | "card" | "transfer" | "credit" | "cheque" | "voucher";
 export type PaymentStatus = "received" | "pending";
@@ -383,6 +399,19 @@ export const api = {
   },
   createPrice(payload: { variant_id: number; price_type: PriceType; amount_rial: number; jalali_date: string; local_time: string }) {
     return request<PriceList>("/prices", { method: "POST", body: JSON.stringify(payload) });
+  },
+  priceRules(filters: { variant_id?: number } = {}) {
+    const query = filters.variant_id ? `?variant_id=${filters.variant_id}` : "";
+    return request<PriceRule[]>(`/price-rules${query}`);
+  },
+  createPriceRule(payload: PriceRulePayload) {
+    return request<PriceRule>("/price-rules", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updatePriceRule(id: number, payload: Partial<PriceRulePayload>) {
+    return request<PriceRule>(`/price-rules/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+  },
+  deactivatePriceRule(id: number) {
+    return request<PriceRule>(`/price-rules/${id}`, { method: "DELETE" });
   },
   persons() {
     return request<Person[]>("/persons");
