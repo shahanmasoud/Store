@@ -82,3 +82,8 @@ $env:STORE_BASE_URL="http://127.0.0.1:8003"
 - UI: فارسی، راست‌به‌چپ، ساده برای کاربر کم‌تجربه، با استاندارد `premium-frontend`
 - زمان: ذخیره فنی UTC در کنار تاریخ و ساعت شمسی نمایشی
 - داده مالی: حذف فیزیکی ممنوع؛ اصلاح، لغو یا برگشت ثبت می‌شود
+
+## استقرار
+
+راهنمای استقرار تک‌دامنه React و FastAPI روی PythonAnywhere در
+[`docs/pythonanywhere-deployment.md`](docs/pythonanywhere-deployment.md) قرار دارد.

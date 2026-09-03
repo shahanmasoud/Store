@@ -1,5 +1,9 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app.api.v1.api import api_router
@@ -20,6 +24,21 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix=settings.api_v1_prefix)
+
+frontend_dir = Path(__file__).resolve().parent / "frontend"
+frontend_index = frontend_dir / "index.html"
+frontend_assets = frontend_dir / "assets"
+
+if frontend_index.is_file() and frontend_assets.is_dir():
+    app.mount("/assets", StaticFiles(directory=frontend_assets), name="frontend-assets")
+
+    @app.get("/", include_in_schema=False)
+    def storefront() -> FileResponse:
+        return FileResponse(frontend_index)
+
+    @app.get("/admin", include_in_schema=False)
+    def admin_frontend() -> FileResponse:
+        return FileResponse(frontend_index)
 
 
 @app.get("/health", tags=["system"])

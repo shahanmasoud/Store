@@ -53,3 +53,21 @@ def test_ready_returns_database_status(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ready", "database": "ok"}
+
+
+def test_bundled_frontend_serves_storefront_and_admin(client: TestClient) -> None:
+    storefront = client.get("/")
+    admin = client.get("/admin")
+
+    assert storefront.status_code == 200
+    assert admin.status_code == 200
+    assert "text/html" in storefront.headers["content-type"]
+    assert "text/html" in admin.headers["content-type"]
+    assert "اتوماسیون فروشگاه حبوبات" in storefront.text
+
+
+def test_unknown_api_path_remains_json_404(client: TestClient) -> None:
+    response = client.get("/api/v1/does-not-exist")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Not Found"}
