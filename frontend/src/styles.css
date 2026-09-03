@@ -1639,6 +1639,342 @@ button {
   }
 }
 
+/* Reports and online operations */
+.report-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 0.8fr) minmax(180px, 0.8fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+}
+
+.report-toolbar-copy,
+.report-toolbar-copy strong,
+.report-toolbar-copy small {
+  display: block;
+}
+
+.report-toolbar-copy strong {
+  color: #17332b;
+  font-size: 1rem;
+}
+
+.report-toolbar-copy small,
+.report-updated {
+  margin-top: 4px;
+  color: #6b7f78;
+}
+
+.report-updated {
+  grid-column: 1 / -1;
+}
+
+.report-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.report-kpis article {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  min-height: 132px;
+  padding: 18px;
+  border: 1px solid #dce7e2;
+  border-top: 4px solid #4b8170;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #fff, #f8fbfa);
+  box-shadow: 0 8px 24px rgba(22, 56, 45, 0.055);
+}
+
+.report-kpis article.positive { border-top-color: #0a8f65; }
+.report-kpis article.warning { border-top-color: #dc8b18; }
+.report-kpis article.negative { border-top-color: #c64646; }
+
+.report-kpis span,
+.report-kpis small {
+  color: #687b75;
+}
+
+.report-kpis strong {
+  color: #17332b;
+  font-size: clamp(1.08rem, 2vw, 1.38rem);
+  overflow-wrap: anywhere;
+}
+
+.report-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.report-breakdown,
+.report-list-panel {
+  min-width: 0;
+  padding: 20px;
+}
+
+.report-breakdown { grid-row: span 2; }
+
+.cashflow-components,
+.report-item-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.cashflow-components > div,
+.report-item-list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid #e0e9e5;
+  border-radius: 13px;
+  background: #fbfdfc;
+}
+
+.cashflow-components span,
+.report-item-list small {
+  color: #667b74;
+}
+
+.report-item-list article > div,
+.report-item-list article > div strong,
+.report-item-list article > div small {
+  display: block;
+  min-width: 0;
+}
+
+.report-item-list article > div:last-child { text-align: left; }
+
+.online-tabs-panel {
+  padding: 4px 10px;
+  overflow: hidden;
+}
+
+.online-tabs-panel .MuiTab-root {
+  min-height: 52px;
+  font-weight: 800;
+}
+
+.online-split {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.78fr) minmax(0, 1.22fr);
+  align-items: start;
+  gap: 18px;
+}
+
+.online-form,
+.online-list-panel,
+.online-orders-panel {
+  min-width: 0;
+  padding: 20px;
+}
+
+.online-form {
+  display: grid;
+  gap: 16px;
+}
+
+.online-form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.online-card-list,
+.online-order-list,
+.online-order-lines {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.online-list-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.online-list-filters.single { grid-template-columns: 1fr; }
+
+.online-card-list article {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #dfe9e5;
+  border-radius: 15px;
+  background: #fbfdfc;
+}
+
+.online-card-list article.muted { opacity: 0.64; }
+
+.online-card-list article > div,
+.online-card-list article > div strong,
+.online-card-list article > div small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.online-card-list article > div small { color: #677b74; }
+
+.online-card-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: #087f5b;
+  border-radius: 12px;
+  background: #e8f5f0;
+}
+
+.online-order-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(2, minmax(150px, 0.7fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.online-order-card {
+  overflow: hidden;
+  border: 1px solid #dce7e2;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.online-order-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  min-height: 76px;
+  padding: 14px 16px;
+  color: inherit;
+  text-align: right;
+  border: 0;
+  background: #fbfdfc;
+  cursor: pointer;
+}
+
+.online-order-summary:hover { background: #f2f8f5; }
+
+.online-order-summary > div,
+.online-order-summary strong,
+.online-order-summary small {
+  display: block;
+  min-width: 0;
+}
+
+.online-order-summary small { color: #667b74; }
+.online-order-summary > div:last-child { text-align: left; }
+
+.online-order-details {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border-top: 1px solid #e2ebe7;
+}
+
+.online-order-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.online-order-meta span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f5f9f7;
+}
+
+.online-order-meta small { color: #6a7e77; }
+
+.online-order-lines > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px dashed #dce7e2;
+}
+
+.online-order-lines span,
+.online-order-lines span strong,
+.online-order-lines span small { display: block; }
+.online-order-lines span small { color: #687b75; }
+
+@media (max-width: 960px) {
+  .report-toolbar,
+  .online-split {
+    grid-template-columns: 1fr;
+  }
+
+  .report-toolbar-copy,
+  .report-updated { grid-column: auto; }
+
+  .report-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .report-detail-grid { grid-template-columns: 1fr; }
+  .report-breakdown { grid-row: auto; }
+  .online-order-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 600px) {
+  .report-kpis,
+  .online-form-row,
+  .online-list-filters,
+  .online-order-filters,
+  .online-order-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .report-toolbar,
+  .report-breakdown,
+  .report-list-panel,
+  .online-form,
+  .online-list-panel,
+  .online-orders-panel {
+    padding: 16px;
+  }
+
+  .cashflow-components > div,
+  .report-item-list article,
+  .online-card-list article,
+  .online-order-summary {
+    align-items: flex-start;
+  }
+
+  .cashflow-components > div,
+  .report-item-list article,
+  .online-order-summary {
+    flex-direction: column;
+  }
+
+  .report-item-list article > div:last-child,
+  .online-order-summary > div:last-child { text-align: right; }
+
+  .online-card-list article {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .online-card-list article > .MuiChip-root,
+  .online-card-list article > strong {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
 /* Ledger and cheque management */
 .ledger-shell {
   display: grid;

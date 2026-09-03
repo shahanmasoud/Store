@@ -7,12 +7,14 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.catalog import ProductVariant
 from app.models.online import OnlineChannel, OnlineOrder, OnlineOrderItem, OnlinePriceRule, StockReservation
+from app.core.time import current_jalali_date
 from app.models.purchases import InventoryItem
 from app.schemas.online import (
     OnlineCatalogItemRead,
     OnlineChannelCreate,
     OnlineOrderCreate,
     OnlinePriceRuleCreate,
+    StockReservationRead,
     StockReservationCreate,
 )
 
@@ -64,7 +66,7 @@ def _variant_or_422(db: Session, variant_id: int) -> ProductVariant:
     return variant
 
 
-def _available_quantity(db: Session, variant_id: int) -> Decimal:
+def _available_quantity(db: Session, variant_id: int, effective_jalali_date: str) -> Decimal:
     inventory = db.scalar(select(InventoryItem).where(InventoryItem.variant_id == variant_id))
     on_hand = inventory.quantity_on_hand if inventory else Decimal("0")
     reserved = db.scalar(
@@ -72,6 +74,8 @@ def _available_quantity(db: Session, variant_id: int) -> Decimal:
             StockReservation.variant_id == variant_id,
             StockReservation.status == "reserved",
             StockReservation.is_active.is_(True),
+            (StockReservation.expires_jalali_date.is_(None))
+            | (StockReservation.expires_jalali_date >= effective_jalali_date),
         )
     )
     return on_hand - Decimal(reserved or 0)
@@ -133,7 +137,21 @@ def create_price_rule(db: Session, payload: OnlinePriceRuleCreate) -> OnlinePric
     return rule
 
 
+def list_price_rules(
+    db: Session,
+    channel_id: int | None = None,
+    variant_id: int | None = None,
+) -> list[OnlinePriceRule]:
+    query = select(OnlinePriceRule).where(OnlinePriceRule.is_active.is_(True))
+    if channel_id is not None:
+        query = query.where(OnlinePriceRule.channel_id == channel_id)
+    if variant_id is not None:
+        query = query.where(OnlinePriceRule.variant_id == variant_id)
+    return list(db.scalars(query.order_by(OnlinePriceRule.id.desc())))
+
+
 def list_catalog(db: Session, channel: OnlineChannel) -> list[OnlineCatalogItemRead]:
+    effective_date = current_jalali_date()
     variants = list(db.scalars(select(ProductVariant).where(ProductVariant.is_active.is_(True)).order_by(ProductVariant.name)))
     return [
         OnlineCatalogItemRead(
@@ -141,23 +159,63 @@ def list_catalog(db: Session, channel: OnlineChannel) -> list[OnlineCatalogItemR
             name=variant.name,
             sku=variant.sku,
             retail_price_rial=variant.retail_price_rial,
-            online_price_rial=_online_price(db, channel.id, variant, Decimal("1")),
-            available_quantity=_available_quantity(db, variant.id),
+            online_price_rial=_online_price(db, channel.id, variant, Decimal("1"), effective_date),
+            available_quantity=_available_quantity(db, variant.id, effective_date),
         )
         for variant in variants
     ]
 
 
 def create_reservation(db: Session, payload: StockReservationCreate) -> StockReservation:
+    effective_date = current_jalali_date()
     _channel_or_404(db, payload.channel_id)
     _variant_or_422(db, payload.variant_id)
-    if _available_quantity(db, payload.variant_id) < payload.quantity:
+    if payload.expires_jalali_date and payload.expires_jalali_date < effective_date:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="تاریخ انقضای رزرو نمی‌تواند پیش از تاریخ موثر باشد.",
+        )
+    if _available_quantity(db, payload.variant_id, effective_date) < payload.quantity:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="موجودی قابل رزرو کافی نیست.")
     reservation = StockReservation(**payload.model_dump())
     db.add(reservation)
     db.commit()
     db.refresh(reservation)
     return reservation
+
+
+def list_reservations(
+    db: Session,
+    channel_id: int | None = None,
+    variant_id: int | None = None,
+    reservation_status: str | None = None,
+    effective_jalali_date: str | None = None,
+) -> list[StockReservationRead]:
+    effective_date = effective_jalali_date or current_jalali_date()
+    query = select(StockReservation).where(StockReservation.is_active.is_(True))
+    if channel_id is not None:
+        query = query.where(StockReservation.channel_id == channel_id)
+    if variant_id is not None:
+        query = query.where(StockReservation.variant_id == variant_id)
+    if reservation_status is not None:
+        query = query.where(StockReservation.status == reservation_status)
+    reservations = list(db.scalars(query.order_by(StockReservation.id.desc())))
+    return [
+        StockReservationRead.model_validate(
+            {
+                **{
+                    column.name: getattr(reservation, column.name)
+                    for column in StockReservation.__table__.columns
+                },
+                "is_expired": bool(
+                    reservation.status == "reserved"
+                    and reservation.expires_jalali_date
+                    and reservation.expires_jalali_date < effective_date
+                ),
+            }
+        )
+        for reservation in reservations
+    ]
 
 
 def create_order(db: Session, channel: OnlineChannel, payload: OnlineOrderCreate) -> OnlineOrder:
@@ -171,12 +229,13 @@ def create_order(db: Session, channel: OnlineChannel, payload: OnlineOrderCreate
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="شناسه سفارش آنلاین تکراری است.")
 
+    effective_date = current_jalali_date()
     variants = {_item.variant_id: _variant_or_422(db, _item.variant_id) for _item in payload.items}
     requested_by_variant: dict[int, Decimal] = {}
     for item in payload.items:
         requested_by_variant[item.variant_id] = requested_by_variant.get(item.variant_id, Decimal("0")) + item.quantity
     for variant_id, requested_quantity in requested_by_variant.items():
-        if _available_quantity(db, variant_id) < requested_quantity:
+        if _available_quantity(db, variant_id, effective_date) < requested_quantity:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="موجودی قابل فروش آنلاین کافی نیست.")
 
     subtotal = 0

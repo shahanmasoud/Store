@@ -40,6 +40,8 @@ import {
   type LedgerEntry,
   type OnlineChannel,
   type OnlineOrder,
+  type OnlinePriceRule,
+  type StockReservation,
   type PaymentCreate,
   type PaymentMethod,
   type PaymentStatus,
@@ -58,7 +60,6 @@ import {
 } from "./api";
 
 const TOKEN_KEY = "store_auth_token";
-const DEFAULT_JALALI_DATE = "1405/06/02";
 const PRICE_TYPE_LABELS: Record<PriceType, string> = { retail: "خرده‌فروشی", wholesale: "عمده‌فروشی", online: "آنلاین" };
 
 type AuthStatus = "checking" | "guest" | "authenticated";
@@ -248,12 +249,25 @@ function normalizeDecimal(value: FormDataEntryValue | null) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
+function currentJalaliDate() {
+  const parts = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+    timeZone: "Asia/Tehran",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    toEnglishDigits(parts.find((item) => item.type === type)?.value ?? "");
+  return `${part("year")}/${part("month").padStart(2, "0")}/${part("day").padStart(2, "0")}`;
+}
+
 function splitJalaliDate(value: string) {
-  const [year = "1405", month = "06", day = "02"] = toEnglishDigits(value).split("/");
+  const [fallbackYear, fallbackMonth, fallbackDay] = currentJalaliDate().split("/");
+  const [year = fallbackYear, month = fallbackMonth, day = fallbackDay] = toEnglishDigits(value).split("/");
   return {
-    year: Number(year) || 1405,
-    month: Math.min(12, Math.max(1, Number(month) || 6)),
-    day: Math.min(31, Math.max(1, Number(day) || 2)),
+    year: Number(year) || Number(fallbackYear),
+    month: Math.min(12, Math.max(1, Number(month) || Number(fallbackMonth))),
+    day: Math.min(31, Math.max(1, Number(day) || Number(fallbackDay))),
   };
 }
 
@@ -262,8 +276,15 @@ function buildJalaliDate(year: number, month: number, day: number) {
 }
 
 function currentLocalTime() {
-  const now = new Date();
-  return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const parts = new Intl.DateTimeFormat("fa-IR", {
+    timeZone: "Asia/Tehran",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const part = (type: "hour" | "minute") =>
+    toEnglishDigits(parts.find((item) => item.type === type)?.value ?? "00").padStart(2, "0");
+  return `${part("hour")}:${part("minute")}`;
 }
 
 function makeDraftPayment(method: PaymentMethod, amountRial = 0): PaymentDraft {
@@ -293,7 +314,8 @@ function JalaliDateField({
   const [open, setOpen] = useState(false);
   const selected = splitJalaliDate(value);
   const days = Array.from({ length: selected.month <= 6 ? 31 : 30 }, (_, index) => index + 1);
-  const years = Array.from({ length: 5 }, (_, index) => 1403 + index);
+  const currentYear = splitJalaliDate(currentJalaliDate()).year;
+  const years = Array.from({ length: 5 }, (_, index) => currentYear - 2 + index);
 
   function updateDate(patch: Partial<{ year: number; month: number; day: number }>) {
     const next = { ...selected, ...patch };
@@ -649,7 +671,7 @@ function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenI
   const [variantsError, setVariantsError] = useState("");
   const [items, setItems] = useState<PurchaseDraftItem[]>([]);
   const [supplierName, setSupplierName] = useState("");
-  const [purchaseDate, setPurchaseDate] = useState(DEFAULT_JALALI_DATE);
+  const [purchaseDate, setPurchaseDate] = useState(currentJalaliDate);
   const [purchaseTime, setPurchaseTime] = useState(currentLocalTime());
   const [invoiceDiscount, setInvoiceDiscount] = useState(0);
   const [extraCost, setExtraCost] = useState(0);
@@ -1103,7 +1125,7 @@ function ProductsView({ onBack }: { onBack: () => void }) {
   const [priceVariantId, setPriceVariantId] = useState("");
   const [priceType, setPriceType] = useState<PriceType>("retail");
   const [priceAmount, setPriceAmount] = useState("");
-  const [priceDate, setPriceDate] = useState(DEFAULT_JALALI_DATE);
+  const [priceDate, setPriceDate] = useState(currentJalaliDate);
   const [priceSaving, setPriceSaving] = useState(false);
   const [historyVariantId, setHistoryVariantId] = useState("");
   const [historyPriceType, setHistoryPriceType] = useState<"" | PriceType>("");
@@ -1864,12 +1886,12 @@ function LedgerView({ onBack }: { onBack: () => void }) {
   const [personSaving, setPersonSaving] = useState(false);
   const [entryType, setEntryType] = useState<"debit" | "credit">("debit");
   const [entryAmount, setEntryAmount] = useState("");
-  const [entryDate, setEntryDate] = useState(DEFAULT_JALALI_DATE);
+  const [entryDate, setEntryDate] = useState(currentJalaliDate);
   const [entryDescription, setEntryDescription] = useState("");
   const [entrySaving, setEntrySaving] = useState(false);
   const [settlementType, setSettlementType] = useState<"debit" | "credit">("debit");
   const [settlementAmount, setSettlementAmount] = useState("");
-  const [settlementDate, setSettlementDate] = useState(DEFAULT_JALALI_DATE);
+  const [settlementDate, setSettlementDate] = useState(currentJalaliDate);
   const [settlementNote, setSettlementNote] = useState("");
   const [settlementSaving, setSettlementSaving] = useState(false);
   const selected = people.find((person) => person.id === selectedId);
@@ -1976,18 +1998,18 @@ function ChequesView({ onBack }: { onBack: () => void }) {
   const [bank, setBank] = useState("");
   const [number, setNumber] = useState("");
   const [amount, setAmount] = useState("");
-  const [issueDate, setIssueDate] = useState(DEFAULT_JALALI_DATE);
-  const [dueDate, setDueDate] = useState(DEFAULT_JALALI_DATE);
+  const [issueDate, setIssueDate] = useState(currentJalaliDate);
+  const [dueDate, setDueDate] = useState(currentJalaliDate);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [eventCheque, setEventCheque] = useState<Cheque | null>(null);
   const [eventType, setEventType] = useState<"cleared" | "bounced" | "canceled">("cleared");
-  const [eventDate, setEventDate] = useState(DEFAULT_JALALI_DATE);
+  const [eventDate, setEventDate] = useState(currentJalaliDate);
   const [eventNote, setEventNote] = useState("");
   const [eventSaving, setEventSaving] = useState(false);
   const [eventDialogError, setEventDialogError] = useState("");
   const [historyId, setHistoryId] = useState<number | null>(null);
-  const [duesDate, setDuesDate] = useState(DEFAULT_JALALI_DATE);
+  const [duesDate, setDuesDate] = useState(currentJalaliDate);
   const [dues, setDues] = useState<Dues | null>(null);
   const [duesStatus, setDuesStatus] = useState<"loading" | "ready" | "error">("loading");
 
@@ -2029,7 +2051,7 @@ function ChequesView({ onBack }: { onBack: () => void }) {
   }
 
   function openEvent(cheque: Cheque, nextType: "cleared" | "bounced" | "canceled") {
-    setEventCheque(cheque); setEventType(nextType); setEventDate(DEFAULT_JALALI_DATE); setEventNote(""); setEventDialogError(""); setNotice(null);
+    setEventCheque(cheque); setEventType(nextType); setEventDate(currentJalaliDate()); setEventNote(""); setEventDialogError(""); setNotice(null);
   }
 
   async function submitEvent(event: FormEvent<HTMLFormElement>) {
@@ -2059,78 +2081,291 @@ function ChequesView({ onBack }: { onBack: () => void }) {
 }
 
 function ReportsView({ onBack }: { onBack: () => void }) {
-  const [from, setFrom] = useState(DEFAULT_JALALI_DATE);
-  const [to, setTo] = useState(DEFAULT_JALALI_DATE);
+  type ReportKey = "sales" | "profit" | "inventory" | "cashflow" | "debts";
+  type LoadState = "idle" | "loading" | "ready" | "error";
+  const emptyStates: Record<ReportKey, LoadState> = { sales: "idle", profit: "idle", inventory: "idle", cashflow: "idle", debts: "idle" };
+  const [from, setFrom] = useState(currentJalaliDate);
+  const [to, setTo] = useState(currentJalaliDate);
   const [sales, setSales] = useState<SalesSummaryReport | null>(null);
   const [profit, setProfit] = useState<ProfitLossReport | null>(null);
   const [inventory, setInventory] = useState<InventoryReport | null>(null);
   const [cashflow, setCashflow] = useState<CashflowReport | null>(null);
   const [debts, setDebts] = useState<CustomerDebtsReport | null>(null);
-  const [message, setMessage] = useState("");
+  const [states, setStates] = useState<Record<ReportKey, LoadState>>(emptyStates);
+  const [rangeError, setRangeError] = useState("");
+  const [lastUpdated, setLastUpdated] = useState("");
 
   async function loadReports(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
-    try {
-      const [nextSales, nextProfit, nextInventory, nextCashflow, nextDebts] = await Promise.all([api.salesSummary(from, to), api.profitLoss(from, to), api.inventoryReport(), api.cashflow(to), api.customerDebts()]);
-      setSales(nextSales); setProfit(nextProfit); setInventory(nextInventory); setCashflow(nextCashflow); setDebts(nextDebts);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "گزارش‌ها دریافت نشدند.");
+    if (!from || !to || from > to) {
+      setRangeError("تاریخ شروع نمی‌تواند بعد از تاریخ پایان باشد.");
+      return;
     }
+    setRangeError("");
+    setStates({ sales: "loading", profit: "loading", inventory: "loading", cashflow: "loading", debts: "loading" });
+    const jobs = [api.salesSummary(from, to), api.profitLoss(from, to), api.inventoryReport(), api.cashflow(to), api.customerDebts()] as const;
+    const results = await Promise.allSettled(jobs);
+    const nextStates = { ...emptyStates };
+    const keys: ReportKey[] = ["sales", "profit", "inventory", "cashflow", "debts"];
+    results.forEach((result, index) => { nextStates[keys[index]] = result.status === "fulfilled" ? "ready" : "error"; });
+    if (results[0].status === "fulfilled") setSales(results[0].value); else setSales(null);
+    if (results[1].status === "fulfilled") setProfit(results[1].value); else setProfit(null);
+    if (results[2].status === "fulfilled") setInventory(results[2].value); else setInventory(null);
+    if (results[3].status === "fulfilled") setCashflow(results[3].value); else setCashflow(null);
+    if (results[4].status === "fulfilled") setDebts(results[4].value); else setDebts(null);
+    setStates(nextStates);
+    setLastUpdated(currentLocalTime());
   }
   useEffect(() => { loadReports(); }, []);
 
+  const failedCount = Object.values(states).filter((state) => state === "error").length;
+  const loading = Object.values(states).some((state) => state === "loading");
+  const allFailed = failedCount === 5;
+  const lowStockItems = inventory?.items.filter((item) => item.needs_reorder) ?? [];
+  const collectionRate = sales && sales.registered_sales_rial > 0
+    ? Math.round((sales.received_rial / sales.registered_sales_rial) * 100)
+    : 0;
+
   return (
     <CrudWorkspace title="گزارش‌ها" eyebrow="فروش، سود، انبار و جریان نقد" onBack={onBack}>
-      <form className="journal-form sale-panel" onSubmit={loadReports}>
-        <JalaliDateField label="از تاریخ" value={from} onChange={setFrom} required />
-        <JalaliDateField label="تا تاریخ" value={to} onChange={setTo} required />
-        <button className="ghost-button">به‌روزرسانی</button>
+      <form className="report-toolbar sale-panel" onSubmit={loadReports} noValidate>
+        <div className="report-toolbar-copy"><strong>بازه گزارش</strong><small>فروش و سود در این بازه؛ جریان نقد تا تاریخ پایان</small></div>
+        <JalaliDateField label="از تاریخ" value={from} onChange={(value) => { setFrom(value); setRangeError(""); }} required />
+        <JalaliDateField label="تا تاریخ" value={to} onChange={(value) => { setTo(value); setRangeError(""); }} required />
+        <Button type="submit" variant="contained" size="large" disabled={loading} startIcon={loading ? <CircularProgress size={18} color="inherit" /> : <RefreshRounded />}>
+          {loading ? "در حال دریافت…" : "به‌روزرسانی گزارش"}
+        </Button>
+        {lastUpdated ? <small className="report-updated">آخرین دریافت: ساعت {toPersianDigits(lastUpdated)}</small> : null}
       </form>
-      {message ? <p className="error-message">{message}</p> : null}
-      <div className="metric-grid">
-        <Metric label="تعداد فاکتور" value={sales?.invoice_count.toLocaleString("fa-IR") ?? "-"} />
-        <Metric label="فروش ثبت‌شده" value={sales ? formatRial(sales.registered_sales_rial) : "-"} />
-        <Metric label="دریافت‌شده" value={sales ? formatRial(sales.received_rial) : "-"} />
-        <Metric label="مانده فروش" value={sales ? formatRial(sales.pending_rial) : "-"} />
-        <Metric label="سود ناخالص" value={profit ? formatRial(profit.gross_profit_rial) : "-"} />
-        <Metric label="حاشیه سود" value={profit ? `${profit.gross_margin_percent.toLocaleString("fa-IR")}٪` : "-"} />
-        <Metric label="ارزش انبار" value={inventory ? formatRial(inventory.total_value_rial) : "-"} />
-        <Metric label="جریان نقد مورد انتظار" value={cashflow ? formatRial(cashflow.net_expected_rial) : "-"} />
-        <Metric label="بدهی مشتریان" value={debts ? formatRial(debts.total_remaining_rial) : "-"} />
+      {rangeError ? <Alert severity="error">{rangeError}</Alert> : null}
+      {allFailed ? <Alert severity="error" action={<Button color="inherit" onClick={() => loadReports()}>تلاش دوباره</Button>}>هیچ‌یک از گزارش‌ها دریافت نشد.</Alert> : null}
+      {failedCount > 0 && !allFailed ? <Alert severity="warning" action={<Button color="inherit" onClick={() => loadReports()}>دریافت دوباره</Button>}>بخشی از گزارش‌ها در دسترس نیست؛ اطلاعات موفق حفظ شده‌اند.</Alert> : null}
+      {loading ? <LinearProgress aria-label="در حال دریافت گزارش‌ها" /> : null}
+
+      <div className="report-kpis">
+        <article><span>فروش ثبت‌شده</span><strong>{sales ? formatRial(sales.registered_sales_rial) : "—"}</strong><small>{sales ? `${sales.invoice_count.toLocaleString("fa-IR")} فاکتور • میانگین ${formatRial(sales.average_invoice_rial)}` : "در انتظار داده"}</small></article>
+        <article className="positive"><span>وصول فروش</span><strong>{sales ? formatRial(sales.received_rial) : "—"}</strong><small>{sales ? `${collectionRate.toLocaleString("fa-IR")}٪ از فروش بازه` : "در انتظار داده"}</small></article>
+        <article className={profit && profit.gross_profit_rial < 0 ? "negative" : "positive"}><span>سود ناخالص تخمینی</span><strong>{profit ? formatRial(profit.gross_profit_rial) : "—"}</strong><small>{profit ? `حاشیه ${profit.gross_margin_percent.toLocaleString("fa-IR")}٪ • بهای تخمینی ${formatRial(profit.estimated_cost_rial)}` : "در انتظار داده"}</small></article>
+        <article><span>ارزش موجودی</span><strong>{inventory ? formatRial(inventory.total_value_rial) : "—"}</strong><small>{inventory ? `${inventory.item_count.toLocaleString("fa-IR")} گونه • ${inventory.low_stock_count.toLocaleString("fa-IR")} کم‌موجود` : "در انتظار داده"}</small></article>
+        <article className={cashflow && cashflow.net_expected_rial < 0 ? "negative" : "positive"}><span>جریان نقد مورد انتظار</span><strong>{cashflow ? formatRial(cashflow.net_expected_rial) : "—"}</strong><small>تا پایان بازه انتخابی</small></article>
+        <article className={debts?.total_remaining_rial ? "warning" : "positive"}><span>مطالبات از مشتریان</span><strong>{debts ? formatRial(debts.total_remaining_rial) : "—"}</strong><small>{debts ? `${debts.people.length.toLocaleString("fa-IR")} مشتری بدهکار` : "در انتظار داده"}</small></article>
+      </div>
+
+      <div className="report-detail-grid">
+        <section className="sale-panel report-breakdown">
+          <div className="ledger-section-heading"><div><strong>اجزای جریان نقد</strong><small>ورودی‌ها و تعهدها تا {toPersianDigits(to)}</small></div></div>
+          {states.cashflow === "error" ? <div className="record-state record-state-error"><span>جریان نقد دریافت نشد.</span><Button onClick={() => loadReports()}>تلاش دوباره</Button></div> : null}
+          {states.cashflow === "loading" && !cashflow ? <div className="record-state"><CircularProgress size={26} /><span>در حال محاسبه…</span></div> : null}
+          {cashflow ? <div className="cashflow-components">
+            <div><span>اقساط زمان‌بندی‌شده فروش</span><strong className="text-ok">+ {formatRial(cashflow.pending_sales_payments_rial)}</strong></div>
+            <div><span>مانده تخصیص‌نیافته فروش</span><strong className="text-ok">+ {formatRial(cashflow.unallocated_sales_due_rial)}</strong></div>
+            <div><span>اسناد بدهکار مشتریان</span><strong className="text-ok">+ {formatRial(cashflow.open_customer_receivables_rial)}</strong></div>
+            <div><span>چک‌های دریافتی</span><strong className="text-ok">+ {formatRial(cashflow.pending_received_cheques_rial)}</strong></div>
+            <div><span>تعهد تأمین‌کنندگان</span><strong className="text-danger">− {formatRial(cashflow.open_supplier_payables_rial)}</strong></div>
+            <div><span>چک‌های پرداختی</span><strong className="text-danger">− {formatRial(cashflow.pending_paid_cheques_rial)}</strong></div>
+          </div> : null}
+        </section>
+
+        <section className="sale-panel report-list-panel">
+          <div className="ledger-section-heading"><div><strong>کالاهای کم‌موجود</strong><small>موجودی برابر یا کمتر از نقطه سفارش</small></div><Chip size="small" color={lowStockItems.length ? "warning" : "success"} label={`${lowStockItems.length.toLocaleString("fa-IR")} مورد`} /></div>
+          {states.inventory === "error" ? <div className="record-state record-state-error"><span>جزئیات انبار دریافت نشد.</span></div> : null}
+          {states.inventory === "loading" && !inventory ? <div className="record-state"><CircularProgress size={26} /></div> : null}
+          {inventory && lowStockItems.length === 0 ? <div className="record-state"><FactCheckRounded /><strong>هیچ کالای کم‌موجودی نیست</strong></div> : null}
+          <div className="report-item-list">{lowStockItems.map((item) => <article key={item.variant_id}><div><strong>{item.variant_name}</strong><small>ارزش {formatRial(item.estimated_value_rial)}</small></div><div><span>{formatDecimal(item.quantity_on_hand)} موجود</span><small>نقطه سفارش {formatDecimal(item.reorder_level ?? 0)}</small></div></article>)}</div>
+        </section>
+
+        <section className="sale-panel report-list-panel report-debtors">
+          <div className="ledger-section-heading"><div><strong>بدهکاران</strong><small>مانده خالص بدهکار منهای بستانکار هر شخص</small></div><Chip size="small" label={debts ? formatRial(debts.total_remaining_rial) : "—"} /></div>
+          {states.debts === "error" ? <div className="record-state record-state-error"><span>مطالبات مشتریان دریافت نشد.</span></div> : null}
+          {states.debts === "loading" && !debts ? <div className="record-state"><CircularProgress size={26} /></div> : null}
+          {debts && debts.people.length === 0 ? <div className="record-state"><FactCheckRounded /><strong>مشتری بدهکاری وجود ندارد</strong></div> : null}
+          <div className="report-item-list">{debts?.people.map((person) => <article key={person.person_id}><div><strong>{person.person_name}</strong><small>مانده باز حساب</small></div><strong className="text-danger">{formatRial(person.remaining_rial)}</strong></article>)}</div>
+        </section>
       </div>
     </CrudWorkspace>
   );
 }
 
 function OnlineView({ onBack }: { onBack: () => void }) {
+  type OnlineSection = "channels" | "rules" | "reservations" | "orders" | "variants";
+  type LoadState = "loading" | "ready" | "error";
+  const initialStates: Record<OnlineSection, LoadState> = { channels: "loading", rules: "loading", reservations: "loading", orders: "loading", variants: "loading" };
+  const [tab, setTab] = useState(0);
   const [channels, setChannels] = useState<OnlineChannel[]>([]);
+  const [rules, setRules] = useState<OnlinePriceRule[]>([]);
+  const [reservations, setReservations] = useState<StockReservation[]>([]);
   const [orders, setOrders] = useState<OnlineOrder[]>([]);
-  const [message, setMessage] = useState("");
-  const load = () => Promise.all([api.onlineChannels(), api.onlineOrders()]).then(([nextChannels, nextOrders]) => { setChannels(nextChannels); setOrders(nextOrders); });
-  useEffect(() => { load().catch((error) => setMessage(error instanceof Error ? error.message : "اطلاعات آنلاین دریافت نشد.")); }, []);
+  const [variants, setVariants] = useState<ProductVariant[]>([]);
+  const [states, setStates] = useState(initialStates);
+  const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [channelName, setChannelName] = useState("");
+  const [channelToken, setChannelToken] = useState("");
+  const [showChannelToken, setShowChannelToken] = useState(false);
+  const [channelNote, setChannelNote] = useState("");
+  const [channelSaving, setChannelSaving] = useState(false);
+  const [ruleChannelId, setRuleChannelId] = useState("");
+  const [ruleVariantId, setRuleVariantId] = useState("");
+  const [rulePrice, setRulePrice] = useState("");
+  const [ruleMinQuantity, setRuleMinQuantity] = useState("1");
+  const [ruleStarts, setRuleStarts] = useState(currentJalaliDate);
+  const [ruleEnds, setRuleEnds] = useState("");
+  const [ruleSaving, setRuleSaving] = useState(false);
+  const [reservationChannelId, setReservationChannelId] = useState("");
+  const [reservationVariantId, setReservationVariantId] = useState("");
+  const [reservationQuantity, setReservationQuantity] = useState("1");
+  const [reservationExpiry, setReservationExpiry] = useState(currentJalaliDate);
+  const [reservationNote, setReservationNote] = useState("");
+  const [reservationSaving, setReservationSaving] = useState(false);
+  const [channelSearch, setChannelSearch] = useState("");
+  const [ruleChannelFilter, setRuleChannelFilter] = useState("");
+  const [ruleVariantFilter, setRuleVariantFilter] = useState("");
+  const [reservationChannelFilter, setReservationChannelFilter] = useState("");
+  const [reservationStatusFilter, setReservationStatusFilter] = useState("");
+  const [channelFilter, setChannelFilter] = useState("");
+  const [orderStatusFilter, setOrderStatusFilter] = useState("");
+  const [orderSearch, setOrderSearch] = useState("");
+  const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
+
+  async function loadSection(section: OnlineSection) {
+    setStates((current) => ({ ...current, [section]: "loading" }));
+    try {
+      if (section === "channels") setChannels(await api.onlineChannels());
+      if (section === "rules") setRules(await api.onlinePriceRules());
+      if (section === "reservations") setReservations(await api.stockReservations({ asOf: currentJalaliDate() }));
+      if (section === "orders") setOrders(await api.onlineOrders());
+      if (section === "variants") setVariants((await api.productVariants()).filter((item) => item.is_active));
+      setStates((current) => ({ ...current, [section]: "ready" }));
+    } catch {
+      setStates((current) => ({ ...current, [section]: "error" }));
+    }
+  }
+
+  useEffect(() => {
+    (["channels", "rules", "reservations", "orders", "variants"] as OnlineSection[]).forEach((section) => { loadSection(section); });
+  }, []);
 
   async function submitChannel(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await api.createOnlineChannel({ name: String(form.get("name") ?? ""), token: String(form.get("token") ?? ""), note: String(form.get("note") ?? "") });
-    event.currentTarget.reset();
-    setMessage("کانال آنلاین ثبت شد.");
-    load();
+    if (!channelName.trim() || channelToken.length < 16) return;
+    setChannelSaving(true); setNotice(null);
+    try {
+      await api.createOnlineChannel({ name: channelName.trim(), token: channelToken, note: channelNote.trim() || undefined });
+      setChannelName(""); setChannelToken(""); setShowChannelToken(false); setChannelNote("");
+      setNotice({ type: "success", text: "کانال آنلاین ثبت شد. توکن متنی دیگر از سرور قابل بازیابی نیست." });
+      await loadSection("channels");
+    } catch (error) { setNotice({ type: "error", text: error instanceof Error ? error.message : "ثبت کانال انجام نشد." }); }
+    finally { setChannelSaving(false); }
   }
 
+  async function submitRule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const price = normalizeMoney(rulePrice);
+    const quantity = parseLocalizedNumber(ruleMinQuantity);
+    if (!ruleChannelId || !ruleVariantId || price <= 0 || quantity <= 0 || (ruleEnds && ruleStarts > ruleEnds)) return;
+    setRuleSaving(true); setNotice(null);
+    try {
+      await api.createOnlinePriceRule({ channel_id: Number(ruleChannelId), variant_id: Number(ruleVariantId), price_rial: price, min_quantity: quantity, starts_jalali_date: ruleStarts || null, ends_jalali_date: ruleEnds || null });
+      setRulePrice(""); setRuleMinQuantity("1"); setRuleEnds("");
+      setNotice({ type: "success", text: "قانون قیمت آنلاین ثبت شد." });
+      await loadSection("rules");
+    } catch (error) { setNotice({ type: "error", text: error instanceof Error ? error.message : "ثبت قانون قیمت انجام نشد." }); }
+    finally { setRuleSaving(false); }
+  }
+
+  async function submitReservation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const quantity = parseLocalizedNumber(reservationQuantity);
+    if (!reservationChannelId || !reservationVariantId || quantity <= 0 || reservationExpiry < currentJalaliDate()) return;
+    setReservationSaving(true); setNotice(null);
+    try {
+      await api.createStockReservation({ channel_id: Number(reservationChannelId), variant_id: Number(reservationVariantId), quantity, expires_jalali_date: reservationExpiry || null, local_time: currentLocalTime(), note: reservationNote.trim() || undefined });
+      setReservationQuantity("1"); setReservationNote("");
+      setNotice({ type: "success", text: "رزرو دستی ثبت شد." });
+      await loadSection("reservations");
+    } catch (error) { setNotice({ type: "error", text: error instanceof Error ? error.message : "ثبت رزرو انجام نشد." }); }
+    finally { setReservationSaving(false); }
+  }
+
+  const filteredOrders = orders.filter((order) => {
+    const matchesChannel = !channelFilter || order.channel_id === Number(channelFilter);
+    const matchesStatus = !orderStatusFilter || order.status === orderStatusFilter;
+    const needle = orderSearch.trim().toLocaleLowerCase("fa-IR");
+    const matchesSearch = !needle || [order.external_order_id, order.customer_name, order.customer_phone].some((value) => value?.toLocaleLowerCase("fa-IR").includes(needle));
+    return matchesChannel && matchesStatus && matchesSearch;
+  });
+  const filteredChannels = channels.filter((channel) => channel.name.toLocaleLowerCase("fa-IR").includes(channelSearch.trim().toLocaleLowerCase("fa-IR")));
+  const filteredRules = rules.filter((rule) => (!ruleChannelFilter || rule.channel_id === Number(ruleChannelFilter)) && (!ruleVariantFilter || rule.variant_id === Number(ruleVariantFilter)));
+  const filteredReservations = reservations.filter((reservation) => {
+    const effectiveStatus = reservation.is_expired ? "expired" : reservation.status;
+    return (!reservationChannelFilter || reservation.channel_id === Number(reservationChannelFilter)) && (!reservationStatusFilter || effectiveStatus === reservationStatusFilter);
+  });
+  const channelNameFor = (id: number) => channels.find((channel) => channel.id === id)?.name ?? `کانال ${id.toLocaleString("fa-IR")}`;
+  const variantNameFor = (id: number) => variants.find((variant) => variant.id === id)?.name ?? `کالا ${id.toLocaleString("fa-IR")}`;
+  const orderStatusLabel = (status: string) => ({ pending: "در انتظار", confirmed: "تأییدشده", canceled: "لغوشده", converted: "تبدیل‌شده" } as Record<string, string>)[status] ?? status;
+
+  function retryFormDependencies() {
+    if (states.channels === "error") loadSection("channels");
+    if (states.variants === "error") loadSection("variants");
+  }
+
+  const SectionState = ({ section, empty, hasItems }: { section: OnlineSection; empty: string; hasItems: boolean }) => states[section] === "loading" ? <div className="record-state"><CircularProgress size={26} /><span>در حال دریافت…</span></div> : states[section] === "error" ? <div className="record-state record-state-error"><strong>دریافت اطلاعات انجام نشد</strong><Button variant="outlined" startIcon={<RefreshRounded />} onClick={() => loadSection(section)}>تلاش دوباره</Button></div> : !hasItems ? <div className="record-state"><StorefrontRounded /><strong>{empty}</strong></div> : null;
+
   return (
-    <CrudWorkspace title="اتصال آنلاین" eyebrow="کانال‌ها و سفارش‌های سایت" onBack={onBack}>
-      {message ? <p className="success-message">{message}</p> : null}
-      <form className="sale-panel cheque-form" onSubmit={submitChannel}>
-        <input name="name" placeholder="نام کانال، مثلا سایت فروشگاه" required />
-        <input name="token" placeholder="توکن اتصال" required />
-        <input name="note" placeholder="یادداشت" />
-        <button className="soft-button">ثبت کانال</button>
-      </form>
-      <div className="management-grid">
-        <section className="sale-panel compact-panel"><h3>کانال‌ها</h3>{channels.map((channel) => <p key={channel.id}>{channel.name} <span className="badge">{channel.is_active ? "فعال" : "غیرفعال"}</span></p>)}</section>
-        <section className="sale-panel compact-panel"><h3>سفارش‌های آنلاین</h3>{orders.length ? orders.map((order) => <p key={order.id}>{order.customer_name} - {formatRial(order.total_rial)} - {order.status}</p>) : <p className="state-message">هنوز سفارشی ثبت نشده است.</p>}</section>
-      </div>
+    <CrudWorkspace title="عملیات آنلاین" eyebrow="کانال‌ها، قیمت، رزرو و سفارش" onBack={onBack}>
+      {notice ? <Alert severity={notice.type} onClose={() => setNotice(null)}>{notice.text}</Alert> : null}
+      <section className="sale-panel online-tabs-panel">
+        <Tabs value={tab} onChange={(_, value) => setTab(value)} variant="scrollable" scrollButtons="auto" aria-label="بخش‌های عملیات آنلاین">
+          <Tab label="کانال‌ها" /><Tab label="قیمت‌ها" /><Tab label="رزروها" /><Tab label="سفارش‌ها" />
+        </Tabs>
+      </section>
+
+      {tab === 0 ? <div className="online-split">
+        <form className="sale-panel online-form" onSubmit={submitChannel} noValidate>
+          <div className="ledger-section-heading"><div><strong>اتصال کانال جدید</strong><small>برای سایت، اپ یا بازارگاه یک کلید مستقل بسازید</small></div></div>
+          <TextField label="نام کانال" value={channelName} onChange={(event) => setChannelName(event.target.value)} required disabled={channelSaving} error={channelName.length > 0 && !channelName.trim()} />
+          <TextField type={showChannelToken ? "text" : "password"} label="توکن اتصال" value={channelToken} onChange={(event) => setChannelToken(event.target.value)} required disabled={channelSaving} error={channelToken.length > 0 && channelToken.length < 16} helperText={channelToken.length > 0 && channelToken.length < 16 ? "توکن باید دست‌کم ۱۶ نویسه باشد." : "توکن فقط همین‌جا وارد می‌شود و بعداً از سرور قابل بازیابی نیست."} slotProps={{ htmlInput: { autoComplete: "new-password", dir: "ltr" }, input: { endAdornment: <InputAdornment position="end"><Button size="small" onClick={() => setShowChannelToken((value) => !value)}>{showChannelToken ? "پنهان" : "نمایش"}</Button></InputAdornment> } }} />
+          <TextField label="یادداشت (اختیاری)" value={channelNote} onChange={(event) => setChannelNote(event.target.value)} multiline minRows={2} disabled={channelSaving} />
+          <Alert severity="info">توکن را در مدیر رمز عبور امن نگه دارید؛ سامانه فقط هش آن را ذخیره می‌کند.</Alert>
+          <Button type="submit" variant="contained" size="large" disabled={channelSaving || !channelName.trim() || channelToken.length < 16} startIcon={channelSaving ? <CircularProgress size={18} color="inherit" /> : <AddRounded />}>{channelSaving ? "در حال ثبت…" : "ثبت کانال"}</Button>
+        </form>
+        <section className="sale-panel online-list-panel"><div className="ledger-section-heading"><div><strong>کانال‌های فعال</strong><small>توکن ذخیره‌شده هیچ‌گاه نمایش داده نمی‌شود</small></div><Chip label={`${filteredChannels.length.toLocaleString("fa-IR")} کانال`} /></div><div className="online-list-filters single"><TextField size="small" label="جست‌وجوی کانال" value={channelSearch} onChange={(event) => setChannelSearch(event.target.value)} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} /></div><SectionState section="channels" hasItems={channels.length > 0} empty="هنوز کانالی تعریف نشده است" />{states.channels === "ready" && channels.length > 0 && filteredChannels.length === 0 ? <div className="record-state"><SearchRounded /><strong>کانالی با این جست‌وجو پیدا نشد</strong></div> : null}<div className="online-card-list">{filteredChannels.map((channel) => <article key={channel.id}><span className="online-card-icon"><SyncRounded /></span><div><strong>{channel.name}</strong><small>{channel.note || "بدون یادداشت"}</small></div><Chip size="small" color="success" label="فعال" /></article>)}</div></section>
+      </div> : null}
+
+      {tab === 1 ? <div className="online-split">
+        <form className="sale-panel online-form" onSubmit={submitRule} noValidate>
+          <div className="ledger-section-heading"><div><strong>قانون قیمت کانال</strong><small>قیمت ویژه یک کالا برای کانال و بازه مشخص</small></div></div>
+          {states.channels === "error" || states.variants === "error" ? <Alert severity="error" action={<Button color="inherit" onClick={retryFormDependencies}>تلاش دوباره</Button>}>فهرست کانال یا کالا دریافت نشده و فرم فعلاً قابل ثبت نیست.</Alert> : null}
+          <TextField select label="کانال" value={ruleChannelId} onChange={(event) => setRuleChannelId(event.target.value)} required disabled={ruleSaving || states.channels !== "ready"}><MenuItem value="">انتخاب کنید</MenuItem>{channels.map((channel) => <MenuItem key={channel.id} value={channel.id}>{channel.name}</MenuItem>)}</TextField>
+          <TextField select label="کالا" value={ruleVariantId} onChange={(event) => setRuleVariantId(event.target.value)} required disabled={ruleSaving || states.variants !== "ready"}><MenuItem value="">انتخاب کنید</MenuItem>{variants.map((variant) => <MenuItem key={variant.id} value={variant.id}>{variant.name}</MenuItem>)}</TextField>
+          <div className="online-form-row"><TextField label="قیمت آنلاین (تومان)" value={rulePrice} onChange={(event) => setRulePrice(event.target.value)} inputMode="numeric" required error={rulePrice.length > 0 && normalizeMoney(rulePrice) <= 0} /><TextField label="حداقل تعداد" value={ruleMinQuantity} onChange={(event) => setRuleMinQuantity(event.target.value)} inputMode="decimal" required error={parseLocalizedNumber(ruleMinQuantity) <= 0} /></div>
+          <div className="online-form-row"><JalaliDateField label="شروع" value={ruleStarts} onChange={setRuleStarts} /><JalaliDateField label="پایان (اختیاری)" value={ruleEnds} onChange={setRuleEnds} /></div>
+          {ruleEnds && ruleStarts > ruleEnds ? <Alert severity="error">تاریخ پایان نمی‌تواند پیش از شروع باشد.</Alert> : null}
+          <Button type="submit" variant="contained" size="large" disabled={ruleSaving || states.channels !== "ready" || states.variants !== "ready" || !ruleChannelId || !ruleVariantId || normalizeMoney(rulePrice) <= 0 || parseLocalizedNumber(ruleMinQuantity) <= 0 || Boolean(ruleEnds && ruleStarts > ruleEnds)} startIcon={ruleSaving ? <CircularProgress size={18} color="inherit" /> : <LocalOfferRounded />}>{ruleSaving ? "در حال ثبت…" : "ثبت قانون قیمت"}</Button>
+        </form>
+        <section className="sale-panel online-list-panel"><div className="ledger-section-heading"><div><strong>قوانین فعال</strong><small>جدیدترین قانون در اولویت است</small></div><Chip label={`${filteredRules.length.toLocaleString("fa-IR")} قانون`} /></div><div className="online-list-filters"><TextField select size="small" label="کانال" value={ruleChannelFilter} onChange={(event) => setRuleChannelFilter(event.target.value)}><MenuItem value="">همه</MenuItem>{channels.map((channel) => <MenuItem key={channel.id} value={channel.id}>{channel.name}</MenuItem>)}</TextField><TextField select size="small" label="کالا" value={ruleVariantFilter} onChange={(event) => setRuleVariantFilter(event.target.value)}><MenuItem value="">همه</MenuItem>{variants.map((variant) => <MenuItem key={variant.id} value={variant.id}>{variant.name}</MenuItem>)}</TextField></div><SectionState section="rules" hasItems={rules.length > 0} empty="هنوز قانون قیمت آنلاینی ثبت نشده است" />{states.rules === "ready" && rules.length > 0 && filteredRules.length === 0 ? <div className="record-state"><SearchRounded /><strong>قانونی با این فیلتر پیدا نشد</strong></div> : null}<div className="online-card-list">{filteredRules.map((rule) => <article key={rule.id}><span className="online-card-icon"><LocalOfferRounded /></span><div><strong>{variantNameFor(rule.variant_id)}</strong><small>{channelNameFor(rule.channel_id)} • از تعداد {formatDecimal(rule.min_quantity)} • {rule.starts_jalali_date ? `از ${toPersianDigits(rule.starts_jalali_date)}` : "بدون شروع"}{rule.ends_jalali_date ? ` تا ${toPersianDigits(rule.ends_jalali_date)}` : ""}</small></div><strong>{formatRial(rule.price_rial)}</strong></article>)}</div></section>
+      </div> : null}
+
+      {tab === 2 ? <div className="online-split">
+        <form className="sale-panel online-form" onSubmit={submitReservation} noValidate>
+          <div className="ledger-section-heading"><div><strong>رزرو دستی موجودی</strong><small>رزرو منقضی به‌طور خودکار از موجودی قابل فروش کنار گذاشته می‌شود</small></div></div>
+          {states.channels === "error" || states.variants === "error" ? <Alert severity="error" action={<Button color="inherit" onClick={retryFormDependencies}>تلاش دوباره</Button>}>فهرست کانال یا کالا دریافت نشده و فرم فعلاً قابل ثبت نیست.</Alert> : null}
+          <TextField select label="کانال" value={reservationChannelId} onChange={(event) => setReservationChannelId(event.target.value)} required disabled={reservationSaving || states.channels !== "ready"}><MenuItem value="">انتخاب کنید</MenuItem>{channels.map((channel) => <MenuItem key={channel.id} value={channel.id}>{channel.name}</MenuItem>)}</TextField>
+          <TextField select label="کالا" value={reservationVariantId} onChange={(event) => setReservationVariantId(event.target.value)} required disabled={reservationSaving || states.variants !== "ready"}><MenuItem value="">انتخاب کنید</MenuItem>{variants.map((variant) => <MenuItem key={variant.id} value={variant.id}>{variant.name}</MenuItem>)}</TextField>
+          <div className="online-form-row"><TextField label="تعداد" value={reservationQuantity} onChange={(event) => setReservationQuantity(event.target.value)} inputMode="decimal" required error={parseLocalizedNumber(reservationQuantity) <= 0} /><JalaliDateField label="تاریخ انقضا" value={reservationExpiry} onChange={setReservationExpiry} required /></div>
+          {reservationExpiry < currentJalaliDate() ? <Alert severity="error">تاریخ انقضا نمی‌تواند پیش از امروز باشد.</Alert> : null}
+          <TextField label="یادداشت (اختیاری)" value={reservationNote} onChange={(event) => setReservationNote(event.target.value)} multiline minRows={2} />
+          <Button type="submit" variant="contained" size="large" disabled={reservationSaving || states.channels !== "ready" || states.variants !== "ready" || !reservationChannelId || !reservationVariantId || parseLocalizedNumber(reservationQuantity) <= 0 || reservationExpiry < currentJalaliDate()} startIcon={reservationSaving ? <CircularProgress size={18} color="inherit" /> : <Inventory2Rounded />}>{reservationSaving ? "در حال ثبت…" : "ثبت رزرو"}</Button>
+        </form>
+        <section className="sale-panel online-list-panel"><div className="ledger-section-heading"><div><strong>رزروهای موجودی</strong><small>رزروهای سفارش و رزروهای دستی</small></div><Chip label={`${filteredReservations.length.toLocaleString("fa-IR")} رزرو`} /></div><div className="online-list-filters"><TextField select size="small" label="کانال" value={reservationChannelFilter} onChange={(event) => setReservationChannelFilter(event.target.value)}><MenuItem value="">همه</MenuItem>{channels.map((channel) => <MenuItem key={channel.id} value={channel.id}>{channel.name}</MenuItem>)}</TextField><TextField select size="small" label="وضعیت" value={reservationStatusFilter} onChange={(event) => setReservationStatusFilter(event.target.value)}><MenuItem value="">همه</MenuItem><MenuItem value="reserved">فعال</MenuItem><MenuItem value="expired">منقضی</MenuItem><MenuItem value="released">آزادشده</MenuItem></TextField></div><SectionState section="reservations" hasItems={reservations.length > 0} empty="هنوز رزروی ثبت نشده است" />{states.reservations === "ready" && reservations.length > 0 && filteredReservations.length === 0 ? <div className="record-state"><SearchRounded /><strong>رزروی با این فیلتر پیدا نشد</strong></div> : null}<div className="online-card-list">{filteredReservations.map((reservation) => <article key={reservation.id} className={reservation.is_expired ? "muted" : ""}><span className="online-card-icon"><Inventory2Rounded /></span><div><strong>{variantNameFor(reservation.variant_id)}</strong><small>{channelNameFor(reservation.channel_id)} • {formatDecimal(reservation.quantity)} واحد • {reservation.expires_jalali_date ? `تا ${toPersianDigits(reservation.expires_jalali_date)}` : "بدون انقضا"}{reservation.order_id ? ` • سفارش ${reservation.order_id.toLocaleString("fa-IR")}` : ""}</small></div><Chip size="small" color={reservation.is_expired ? "default" : reservation.status === "reserved" ? "warning" : "success"} label={reservation.is_expired ? "منقضی" : reservation.status === "reserved" ? "رزروشده" : reservation.status} /></article>)}</div></section>
+      </div> : null}
+
+      {tab === 3 ? <section className="sale-panel online-orders-panel">
+        <div className="ledger-section-heading"><div><strong>سفارش‌های آنلاین</strong><small>جزئیات دریافتی از همه کانال‌ها</small></div><Chip label={`${filteredOrders.length.toLocaleString("fa-IR")} نتیجه`} /></div>
+        <div className="online-order-filters"><TextField size="small" label="شناسه، مشتری یا تلفن" value={orderSearch} onChange={(event) => setOrderSearch(event.target.value)} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} /><TextField select size="small" label="کانال" value={channelFilter} onChange={(event) => setChannelFilter(event.target.value)}><MenuItem value="">همه کانال‌ها</MenuItem>{channels.map((channel) => <MenuItem key={channel.id} value={channel.id}>{channel.name}</MenuItem>)}</TextField><TextField select size="small" label="وضعیت" value={orderStatusFilter} onChange={(event) => setOrderStatusFilter(event.target.value)}><MenuItem value="">همه وضعیت‌ها</MenuItem><MenuItem value="pending">در انتظار</MenuItem><MenuItem value="confirmed">تأییدشده</MenuItem><MenuItem value="canceled">لغوشده</MenuItem><MenuItem value="converted">تبدیل‌شده</MenuItem></TextField></div>
+        <SectionState section="orders" hasItems={orders.length > 0} empty="هنوز سفارش آنلاینی دریافت نشده است" />
+        {states.orders === "ready" && orders.length > 0 && filteredOrders.length === 0 ? <div className="record-state"><SearchRounded /><strong>سفارشی با این فیلتر پیدا نشد</strong></div> : null}
+        <div className="online-order-list">{filteredOrders.map((order) => <article key={order.id} className="online-order-card"><button type="button" className="online-order-summary" onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)} aria-expanded={expandedOrder === order.id}><div><strong>سفارش {toPersianDigits(order.external_order_id)}</strong><small>{channelNameFor(order.channel_id)} • {order.customer_name || "مشتری نامشخص"}</small></div><div><strong>{formatRial(order.total_rial)}</strong><Chip size="small" color={order.status === "canceled" ? "error" : order.status === "pending" ? "warning" : "success"} label={orderStatusLabel(order.status)} /></div></button>{expandedOrder === order.id ? <div className="online-order-details"><div className="online-order-meta"><span><small>تاریخ</small><strong>{toPersianDigits(order.jalali_date)}، {toPersianDigits(order.local_time)}</strong></span><span><small>تلفن مشتری</small><strong>{order.customer_phone ? toPersianDigits(order.customer_phone) : "ثبت نشده"}</strong></span><span><small>جمع قبل تخفیف</small><strong>{formatRial(order.subtotal_rial)}</strong></span><span><small>تخفیف</small><strong>{formatRial(order.discount_amount_rial)}</strong></span></div><div className="online-order-lines">{order.items.map((item) => <div key={item.id}><span><strong>{item.product_snapshot}</strong><small>{formatDecimal(item.quantity)} × {formatRial(item.unit_price_rial)}</small></span><strong>{formatRial(item.line_total_rial)}</strong></div>)}</div></div> : null}</article>)}</div>
+      </section> : null}
     </CrudWorkspace>
   );
 }
@@ -2177,12 +2412,12 @@ function SalesView({ onBack }: { onBack: () => void }) {
   const [invoiceDiscount, setInvoiceDiscount] = useState(0);
   const [customerName, setCustomerName] = useState("");
   const [saleNote, setSaleNote] = useState("");
-  const [saleDate, setSaleDate] = useState(DEFAULT_JALALI_DATE);
+  const [saleDate, setSaleDate] = useState(currentJalaliDate);
   const [saleTime, setSaleTime] = useState(currentLocalTime());
   const [submitStatus, setSubmitStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [submitMessage, setSubmitMessage] = useState("");
   const [lastSale, setLastSale] = useState<SaleInvoice | null>(null);
-  const [journalDate, setJournalDate] = useState(DEFAULT_JALALI_DATE);
+  const [journalDate, setJournalDate] = useState(currentJalaliDate);
   const [journal, setJournal] = useState<DailyJournal | null>(null);
   const [journalStatus, setJournalStatus] = useState<"idle" | "loading" | "error">("loading");
   const [journalError, setJournalError] = useState("");
@@ -2231,7 +2466,7 @@ function SalesView({ onBack }: { onBack: () => void }) {
         setVariantsError(error instanceof Error ? error.message : "کالاها دریافت نشدند.");
         setVariantsStatus("error");
       });
-    api.dailyJournal(DEFAULT_JALALI_DATE)
+    api.dailyJournal(currentJalaliDate())
       .then((nextJournal) => {
         if (!isMounted) return;
         setJournal(nextJournal);

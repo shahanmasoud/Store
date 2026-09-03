@@ -54,6 +54,10 @@ class InventoryReportRead(BaseModel):
 class CashflowReportRead(BaseModel):
     jalali_date_to: str
     pending_sales_payments_rial: int
+    unallocated_sales_due_rial: int
+    total_sales_receivables_rial: int
+    open_customer_receivables_rial: int
+    open_supplier_payables_rial: int
     open_ledger_rial: int
     pending_received_cheques_rial: int
     pending_paid_cheques_rial: int

@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.catalog import ProductVariant
@@ -89,19 +89,33 @@ def profit_loss(db: Session, from_jalali: str, to_jalali: str) -> ProfitLossRead
     )
 
 
-def _open_ledger_balance(db: Session, jalali_date_to: str) -> int:
-    entries = db.scalars(
-        select(LedgerEntry).where(
+def _ledger_components(db: Session, jalali_date_to: str) -> tuple[int, int]:
+    rows = db.execute(
+        select(Person, LedgerEntry).join(LedgerEntry, LedgerEntry.person_id == Person.id).where(
             LedgerEntry.status == "open",
             LedgerEntry.remaining_rial > 0,
             LedgerEntry.jalali_date <= jalali_date_to,
             LedgerEntry.is_active.is_(True),
+            Person.is_active.is_(True),
         )
+    ).all()
+    balances: dict[int, int] = {}
+    people: dict[int, Person] = {}
+    for person, entry in rows:
+        people[person.id] = person
+        direction = 1 if entry.entry_type == "debit" else -1
+        balances[person.id] = balances.get(person.id, 0) + (direction * entry.remaining_rial)
+    customer_receivables = sum(
+        max(balance, 0)
+        for person_id, balance in balances.items()
+        if people[person_id].person_type in {"customer", "both"}
     )
-    return sum(
-        entry.remaining_rial if entry.entry_type == "debit" else -entry.remaining_rial
-        for entry in entries
+    supplier_payables = sum(
+        max(-balance, 0)
+        for person_id, balance in balances.items()
+        if people[person_id].person_type in {"supplier", "both"}
     )
+    return customer_receivables, supplier_payables
 
 
 def inventory_report(db: Session) -> InventoryReportRead:
@@ -147,7 +161,34 @@ def cashflow_report(db: Session, jalali_date_to: str) -> CashflowReportRead:
             )
         )
     )
-    open_ledger = _open_ledger_balance(db, jalali_date_to)
+    active_invoices = list(
+        db.scalars(
+            select(SaleInvoice).where(
+                SaleInvoice.jalali_date <= jalali_date_to,
+                SaleInvoice.status != "canceled",
+                SaleInvoice.is_active.is_(True),
+            )
+        )
+    )
+    active_invoice_ids = [invoice.id for invoice in active_invoices]
+    assigned_pending_by_invoice: dict[int, int] = {}
+    if active_invoice_ids:
+        for invoice_id, amount in db.execute(
+            select(Payment.invoice_id, func.coalesce(func.sum(Payment.amount_rial), 0))
+            .where(
+                Payment.invoice_id.in_(active_invoice_ids),
+                Payment.status == "pending",
+                Payment.due_jalali_date.is_not(None),
+            )
+            .group_by(Payment.invoice_id)
+        ):
+            assigned_pending_by_invoice[invoice_id] = int(amount)
+    unallocated_sales_due = sum(
+        max(invoice.due_total_rial - assigned_pending_by_invoice.get(invoice.id, 0), 0)
+        for invoice in active_invoices
+    )
+    customer_receivables, supplier_payables = _ledger_components(db, jalali_date_to)
+    open_ledger = customer_receivables - supplier_payables
     received_cheques = sum(
         db.scalars(
             select(Cheque.amount_rial).where(
@@ -171,10 +212,21 @@ def cashflow_report(db: Session, jalali_date_to: str) -> CashflowReportRead:
     return CashflowReportRead(
         jalali_date_to=jalali_date_to,
         pending_sales_payments_rial=pending_sales,
+        unallocated_sales_due_rial=unallocated_sales_due,
+        total_sales_receivables_rial=pending_sales + unallocated_sales_due,
+        open_customer_receivables_rial=customer_receivables,
+        open_supplier_payables_rial=supplier_payables,
         open_ledger_rial=open_ledger,
         pending_received_cheques_rial=received_cheques,
         pending_paid_cheques_rial=paid_cheques,
-        net_expected_rial=pending_sales + open_ledger + received_cheques - paid_cheques,
+        net_expected_rial=(
+            pending_sales
+            + unallocated_sales_due
+            + customer_receivables
+            + received_cheques
+            - supplier_payables
+            - paid_cheques
+        ),
     )
 
 
@@ -185,26 +237,27 @@ def customer_debts(db: Session) -> CustomerDebtReportRead:
         .where(
             LedgerEntry.status == "open",
             LedgerEntry.remaining_rial > 0,
-            LedgerEntry.entry_type == "debit",
             LedgerEntry.is_active.is_(True),
             Person.is_active.is_(True),
+            Person.person_type.in_(["customer", "both"]),
         )
         .order_by(Person.name)
     ).all()
     totals: dict[int, CustomerDebtRowRead] = {}
     for person, entry in rows:
+        direction = 1 if entry.entry_type == "debit" else -1
         current = totals.get(person.id)
-        if current is None:
-            totals[person.id] = CustomerDebtRowRead(
-                person_id=person.id,
-                person_name=person.name,
-                remaining_rial=entry.remaining_rial,
-            )
-        else:
-            totals[person.id] = current.model_copy(
-                update={"remaining_rial": current.remaining_rial + entry.remaining_rial}
-            )
-    people = list(totals.values())
+        next_remaining = (current.remaining_rial if current else 0) + (direction * entry.remaining_rial)
+        totals[person.id] = CustomerDebtRowRead(
+            person_id=person.id,
+            person_name=person.name,
+            remaining_rial=next_remaining,
+        )
+    people = [
+        person.model_copy(update={"remaining_rial": max(person.remaining_rial, 0)})
+        for person in totals.values()
+        if person.remaining_rial > 0
+    ]
     return CustomerDebtReportRead(
         total_remaining_rial=sum(person.remaining_rial for person in people),
         people=people,

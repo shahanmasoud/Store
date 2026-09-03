@@ -272,26 +272,75 @@ export type InventoryReport = {
   item_count: number;
   total_value_rial: number;
   low_stock_count: number;
-  items: InventoryItem[];
+  items: Array<{
+    variant_id: number;
+    variant_name: string;
+    quantity_on_hand: number | string;
+    weighted_average_cost_rial: number;
+    estimated_value_rial: number;
+    reorder_level?: number | string | null;
+    needs_reorder: boolean;
+  }>;
 };
 export type CashflowReport = {
   pending_sales_payments_rial: number;
+  unallocated_sales_due_rial: number;
+  total_sales_receivables_rial: number;
+  open_customer_receivables_rial: number;
+  open_supplier_payables_rial: number;
   open_ledger_rial: number;
   pending_received_cheques_rial: number;
   pending_paid_cheques_rial: number;
   net_expected_rial: number;
 };
-export type CustomerDebtsReport = { total_remaining_rial: number; people: Array<Person & { remaining_rial: number }> };
+export type CustomerDebtsReport = { total_remaining_rial: number; people: Array<{ person_id: number; person_name: string; remaining_rial: number }> };
 export type OnlineChannel = { id: number; name: string; note?: string | null; is_active: boolean };
+export type OnlinePriceRule = {
+  id: number;
+  channel_id: number;
+  variant_id: number;
+  price_rial: number;
+  min_quantity: number | string;
+  starts_jalali_date?: string | null;
+  ends_jalali_date?: string | null;
+  is_active: boolean;
+};
+export type StockReservation = {
+  id: number;
+  channel_id: number;
+  variant_id: number;
+  order_id?: number | null;
+  quantity: number | string;
+  status: string;
+  expires_jalali_date?: string | null;
+  local_time: string;
+  timezone: string;
+  note?: string | null;
+  is_active: boolean;
+  is_expired: boolean;
+};
 export type OnlineOrder = {
   id: number;
   channel_id: number;
-  customer_name: string;
+  external_order_id: string;
+  customer_name?: string | null;
   customer_phone?: string | null;
   status: string;
   total_rial: number;
+  subtotal_rial: number;
+  discount_amount_rial: number;
   jalali_date: string;
   local_time: string;
+  timezone: string;
+  is_active: boolean;
+  items: Array<{
+    id: number;
+    variant_id: number;
+    quantity: number | string;
+    unit_price_rial: number;
+    line_total_rial: number;
+    product_snapshot: string;
+  }>;
 };
 
 const API_BASE_URL =
@@ -529,6 +578,42 @@ export const api = {
   },
   createOnlineChannel(payload: { name: string; token: string; note?: string }) {
     return request<OnlineChannel>("/online/channels", { method: "POST", body: JSON.stringify(payload) });
+  },
+  onlinePriceRules(filters: { channelId?: number; variantId?: number } = {}) {
+    const params = new URLSearchParams();
+    if (filters.channelId) params.set("channel_id", String(filters.channelId));
+    if (filters.variantId) params.set("variant_id", String(filters.variantId));
+    const query = params.size ? `?${params}` : "";
+    return request<OnlinePriceRule[]>(`/online/price-rules${query}`);
+  },
+  createOnlinePriceRule(payload: {
+    channel_id: number;
+    variant_id: number;
+    price_rial: number;
+    min_quantity: number;
+    starts_jalali_date?: string | null;
+    ends_jalali_date?: string | null;
+  }) {
+    return request<OnlinePriceRule>("/online/price-rules", { method: "POST", body: JSON.stringify(payload) });
+  },
+  stockReservations(filters: { channelId?: number; variantId?: number; status?: string; asOf?: string } = {}) {
+    const params = new URLSearchParams();
+    if (filters.channelId) params.set("channel_id", String(filters.channelId));
+    if (filters.variantId) params.set("variant_id", String(filters.variantId));
+    if (filters.status) params.set("status", filters.status);
+    if (filters.asOf) params.set("as_of_jalali_date", filters.asOf);
+    const query = params.size ? `?${params}` : "";
+    return request<StockReservation[]>(`/online/reservations${query}`);
+  },
+  createStockReservation(payload: {
+    channel_id: number;
+    variant_id: number;
+    quantity: number;
+    expires_jalali_date?: string | null;
+    local_time: string;
+    note?: string;
+  }) {
+    return request<StockReservation>("/online/reservations", { method: "POST", body: JSON.stringify(payload) });
   },
   onlineOrders(channelId?: number) {
     const query = channelId ? `?channel_id=${channelId}` : "";

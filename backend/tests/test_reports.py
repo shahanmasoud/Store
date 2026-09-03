@@ -238,6 +238,10 @@ def test_cashflow_and_customer_debt_reports(client: TestClient, db_session: Sess
 
     assert cashflow.status_code == 200
     assert cashflow.json()["pending_sales_payments_rial"] == 1_500_000
+    assert cashflow.json()["unallocated_sales_due_rial"] == 0
+    assert cashflow.json()["total_sales_receivables_rial"] == 1_500_000
+    assert cashflow.json()["open_customer_receivables_rial"] == 2_000_000
+    assert cashflow.json()["open_supplier_payables_rial"] == 750_000
     assert cashflow.json()["open_ledger_rial"] == 1_250_000
     assert cashflow.json()["pending_received_cheques_rial"] == 3_000_000
     assert cashflow.json()["pending_paid_cheques_rial"] == 1_000_000
@@ -245,6 +249,110 @@ def test_cashflow_and_customer_debt_reports(client: TestClient, db_session: Sess
     assert debts.status_code == 200
     assert debts.json()["total_remaining_rial"] == 2_000_000
     assert debts.json()["people"][0]["person_name"] == "Customer One"
+
+
+def test_customer_debt_nets_credit_per_person_and_clamps_at_zero(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    debtor = create_person(client, auth_headers, "Net Debtor")
+    creditor = create_person(client, auth_headers, "Net Creditor")
+    for person_id, entry_type, amount in [
+        (debtor["id"], "debit", 2_000_000),
+        (debtor["id"], "credit", 600_000),
+        (creditor["id"], "debit", 200_000),
+        (creditor["id"], "credit", 500_000),
+    ]:
+        response = client.post(
+            "/api/v1/ledger/manual-entry",
+            json={
+                "person_id": person_id,
+                "entry_type": entry_type,
+                "amount_rial": amount,
+                "jalali_date": "1405/06/05",
+                "local_time": "10:00",
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 201
+
+    report = client.get("/api/v1/reports/customer-debts", headers=auth_headers)
+
+    assert report.status_code == 200
+    assert report.json()["total_remaining_rial"] == 1_400_000
+    assert report.json()["people"] == [
+        {"person_id": debtor["id"], "person_name": "Net Debtor", "remaining_rial": 1_400_000}
+    ]
+
+
+def test_cashflow_keeps_unallocated_invoice_due_visible(
+    client: TestClient,
+    db_session: Session,
+    auth_headers: dict[str, str],
+) -> None:
+    seed_sale_inventory(db_session)
+    payload = sale_payload()
+    payload["payments"] = [{"method": "cash", "amount_rial": 1_000_000}]
+    created = client.post("/api/v1/sales", json=payload, headers=auth_headers)
+    assert created.status_code == 201
+    assert created.json()["due_total_rial"] == 1_900_000
+
+    report = client.get("/api/v1/reports/cashflow?jalali_date_to=1405/06/30", headers=auth_headers)
+
+    assert report.status_code == 200
+    assert report.json()["pending_sales_payments_rial"] == 0
+    assert report.json()["unallocated_sales_due_rial"] == 1_900_000
+    assert report.json()["total_sales_receivables_rial"] == 1_900_000
+    assert report.json()["net_expected_rial"] == 1_900_000
+
+
+def test_undated_pending_payment_remains_unallocated_receivable(
+    client: TestClient,
+    db_session: Session,
+    auth_headers: dict[str, str],
+) -> None:
+    seed_sale_inventory(db_session)
+    payload = sale_payload()
+    payload["payments"] = [{"method": "credit", "amount_rial": 1_000_000, "status": "pending"}]
+    created = client.post("/api/v1/sales", json=payload, headers=auth_headers)
+    assert created.status_code == 201
+
+    report = client.get("/api/v1/reports/cashflow?jalali_date_to=1405/06/30", headers=auth_headers)
+
+    assert report.status_code == 200
+    assert report.json()["pending_sales_payments_rial"] == 0
+    assert report.json()["unallocated_sales_due_rial"] == 2_900_000
+
+
+def test_both_person_participates_in_receivable_and_payable_components(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    receivable = create_person(client, auth_headers, "Both Receivable", "both")
+    payable = create_person(client, auth_headers, "Both Payable", "both")
+    for person_id, entry_type, amount in [
+        (receivable["id"], "debit", 900_000),
+        (payable["id"], "credit", 400_000),
+    ]:
+        response = client.post(
+            "/api/v1/ledger/manual-entry",
+            json={
+                "person_id": person_id,
+                "entry_type": entry_type,
+                "amount_rial": amount,
+                "jalali_date": "1405/06/05",
+                "local_time": "10:00",
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 201
+
+    cashflow = client.get("/api/v1/reports/cashflow?jalali_date_to=1405/06/30", headers=auth_headers)
+    debts = client.get("/api/v1/reports/customer-debts", headers=auth_headers)
+
+    assert cashflow.json()["open_customer_receivables_rial"] == 900_000
+    assert cashflow.json()["open_supplier_payables_rial"] == 400_000
+    assert debts.json()["total_remaining_rial"] == 900_000
 
 
 def test_report_date_validation_rejects_gregorian_date(client: TestClient, auth_headers: dict[str, str]) -> None:

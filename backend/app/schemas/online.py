@@ -10,6 +10,21 @@ class OnlineChannelCreate(BaseModel):
     token: str = Field(min_length=16, max_length=160)
     note: str | None = None
 
+    @field_validator("name")
+    @classmethod
+    def non_blank_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("نام کانال نمی‌تواند خالی باشد.")
+        return cleaned
+
+    @field_validator("token")
+    @classmethod
+    def meaningful_token(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("توکن اتصال نمی‌تواند فقط فاصله باشد.")
+        return value
+
 
 class OnlineChannelRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -23,7 +38,7 @@ class OnlineChannelRead(BaseModel):
 class OnlinePriceRuleCreate(BaseModel):
     channel_id: int
     variant_id: int
-    price_rial: int = Field(ge=0)
+    price_rial: int = Field(gt=0)
     min_quantity: Decimal = Field(default=Decimal("1"), gt=0)
     starts_jalali_date: str | None = None
     ends_jalali_date: str | None = None
@@ -64,14 +79,19 @@ class StockReservationCreate(BaseModel):
         return validate_local_time(value)
 
 
-class StockReservationRead(StockReservationCreate):
-    model_config = ConfigDict(from_attributes=True)
-
+class StockReservationRead(BaseModel):
     id: int
+    channel_id: int
+    variant_id: int
     order_id: int | None
+    quantity: Decimal
     status: str
+    expires_jalali_date: str | None
+    local_time: str
     timezone: str
+    note: str | None
     is_active: bool
+    is_expired: bool = False
 
 
 class OnlineCatalogItemRead(BaseModel):
