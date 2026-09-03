@@ -1639,6 +1639,118 @@ button {
   }
 }
 
+/* Final admin shell: accessible focus and a contained mobile drawer replace the
+   former horizontally scrolling navigation. */
+.mobile-nav-trigger,
+.mobile-admin-drawer {
+  display: none !important;
+}
+
+.topbar h1:focus-visible {
+  outline: 3px solid rgba(8, 127, 91, 0.38);
+  outline-offset: 5px;
+  border-radius: 4px;
+}
+
+.sidebar-link:focus-visible,
+.quick-start-steps button:focus-visible,
+.material-module-card .MuiCardActionArea-root:focus-visible {
+  outline: 3px solid #0b6f51;
+  outline-offset: 3px;
+}
+
+.dashboard-snapshot-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 170px;
+  margin-top: 16px;
+  border: 1px solid #dce7e2;
+  border-radius: 8px;
+  background: #fff;
+}
+
+@media (max-width: 920px) {
+  .app-layout > .app-sidebar {
+    display: none;
+  }
+
+  .topbar-actions {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .mobile-nav-trigger {
+    display: inline-flex !important;
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    justify-self: start;
+    color: #087f5b !important;
+    border: 1px solid #bcd8cc !important;
+  }
+
+  .mobile-admin-drawer {
+    display: block !important;
+  }
+
+  .mobile-admin-drawer .MuiDrawer-paper {
+    width: min(86vw, 340px);
+    max-width: 100%;
+    padding: 16px 14px 24px;
+    overflow-x: hidden;
+    background: #f8fbf9;
+  }
+
+  .mobile-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #dce7e2;
+  }
+
+  .mobile-drawer-header .sidebar-brand {
+    display: flex;
+    margin: 0;
+    padding: 0;
+  }
+
+  .mobile-admin-drawer .sidebar-nav {
+    display: grid;
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+    gap: 6px;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .mobile-admin-drawer .sidebar-section-label {
+    display: block;
+    margin-top: 6px;
+  }
+
+  .mobile-admin-drawer .sidebar-link {
+    grid-template-columns: 28px minmax(0, 1fr);
+    width: 100%;
+    min-width: 0;
+    min-height: 50px;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 680px) {
+  .topbar-actions {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .topbar-actions .ghost-button {
+    grid-column: 1 / -1;
+  }
+}
+
 /* Reports and online operations */
 .report-toolbar {
   display: grid;
@@ -5961,5 +6073,26 @@ textarea:focus {
   .sales-workspace .payment-row,
   .sales-workspace .journal-breakdown {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Keep final shell overrides last so older compatibility media queries cannot
+   restore the removed horizontal admin navigation. */
+@media (max-width: 920px) {
+  .app-layout > .app-sidebar {
+    display: none;
+  }
+
+  .topbar-actions {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .mobile-nav-trigger {
+    display: inline-flex !important;
+    width: 44px;
+  }
+
+  .mobile-admin-drawer {
+    display: block !important;
   }
 }
