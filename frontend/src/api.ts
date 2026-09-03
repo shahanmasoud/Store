@@ -229,6 +229,15 @@ export type LedgerEntry = {
   is_active: boolean;
 };
 export type ChequeType = "received" | "paid";
+export type ChequeStatus = "pending" | "cleared" | "bounced" | "canceled";
+export type ChequeEvent = {
+  id: number;
+  cheque_id: number;
+  event_type: "created" | "cleared" | "bounced" | "canceled";
+  jalali_date: string;
+  local_time: string;
+  note?: string | null;
+};
 export type Cheque = {
   id: number;
   cheque_type: ChequeType;
@@ -238,11 +247,10 @@ export type Cheque = {
   amount_rial: number;
   issue_jalali_date: string;
   due_jalali_date: string;
-  local_time: string;
   note?: string | null;
-  status: string;
+  status: ChequeStatus;
   is_active: boolean;
-  events: unknown[];
+  events: ChequeEvent[];
 };
 export type Dues = { jalali_date_to: string; open_ledger_entries: LedgerEntry[]; pending_cheques: Cheque[] };
 export type SalesSummaryReport = {
@@ -476,7 +484,7 @@ export const api = {
   createManualEntry(payload: { person_id: number; entry_type: "debit" | "credit"; amount_rial: number; jalali_date: string; local_time: string; description?: string }) {
     return request<LedgerEntry>("/ledger/manual-entry", { method: "POST", body: JSON.stringify(payload) });
   },
-  createSettlement(payload: { person_id: number; amount_rial: number; jalali_date: string; local_time: string; note?: string }) {
+  createSettlement(payload: { person_id: number; entry_type: "debit" | "credit"; amount_rial: number; jalali_date: string; local_time: string; note?: string }) {
     return request<unknown>("/settlements", { method: "POST", body: JSON.stringify(payload) });
   },
   dues(jalaliDateTo: string) {

@@ -43,6 +43,7 @@ class Settlement(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     person_id: Mapped[int] = mapped_column(ForeignKey("persons.id"), nullable=False, index=True)
+    entry_type: Mapped[str] = mapped_column(String(20), default="debit", nullable=False, index=True)
     amount_rial: Mapped[int] = mapped_column(Integer, nullable=False)
     jalali_date: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
     local_time: Mapped[str] = mapped_column(String(5), nullable=False)

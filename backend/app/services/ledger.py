@@ -80,6 +80,7 @@ def create_settlement(db: Session, payload: SettlementCreate) -> Settlement:
             select(LedgerEntry)
             .where(
                 LedgerEntry.person_id == payload.person_id,
+                LedgerEntry.entry_type == payload.entry_type,
                 LedgerEntry.status == "open",
                 LedgerEntry.remaining_rial > 0,
                 LedgerEntry.is_active.is_(True),
@@ -89,7 +90,11 @@ def create_settlement(db: Session, payload: SettlementCreate) -> Settlement:
     )
     open_balance = sum(entry.remaining_rial for entry in open_entries)
     if payload.amount_rial > open_balance:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="مبلغ تسویه از مانده باز بیشتر است.")
+        side = "بدهکار" if payload.entry_type == "debit" else "بستانکار"
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"مبلغ تسویه از مانده {side} بیشتر است.",
+        )
 
     remaining_settlement = payload.amount_rial
     for entry in open_entries:
@@ -103,6 +108,7 @@ def create_settlement(db: Session, payload: SettlementCreate) -> Settlement:
 
     settlement = Settlement(
         person_id=payload.person_id,
+        entry_type=payload.entry_type,
         amount_rial=payload.amount_rial,
         jalali_date=payload.jalali_date,
         local_time=payload.local_time,
@@ -144,8 +150,21 @@ def create_cheque(db: Session, payload: ChequeCreate) -> Cheque:
 
 def add_cheque_event(db: Session, cheque_id: int, payload: ChequeEventCreate) -> Cheque:
     cheque = _cheque_or_404(db, cheque_id)
-    if cheque.status == "canceled":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="چک ابطال‌شده قابل تغییر نیست.")
+    allowed_transitions = {
+        "pending": {"cleared", "bounced", "canceled"},
+        "bounced": {"cleared", "canceled"},
+        "cleared": set(),
+        "canceled": set(),
+    }
+    if payload.event_type not in allowed_transitions.get(cheque.status, set()):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="این تغییر وضعیت برای چک مجاز نیست.")
+    latest_event = max(cheque.events, key=lambda item: (item.jalali_date, item.local_time, item.id), default=None)
+    latest_moment = (latest_event.jalali_date, latest_event.local_time) if latest_event else (cheque.issue_jalali_date, "00:00")
+    if (payload.jalali_date, payload.local_time) < latest_moment:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="تاریخ اقدام نمی‌تواند پیش از آخرین رویداد چک باشد.",
+        )
     cheque.status = payload.event_type
     if payload.event_type == "canceled":
         cheque.is_active = False

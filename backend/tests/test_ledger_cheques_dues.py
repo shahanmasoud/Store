@@ -152,7 +152,48 @@ def test_over_settlement_returns_409(client: TestClient, auth_headers: dict[str,
     )
 
     assert response.status_code == 409
-    assert response.json()["detail"] == "مبلغ تسویه از مانده باز بیشتر است."
+    assert response.json()["detail"] == "مبلغ تسویه از مانده بدهکار بیشتر است."
+
+
+def test_settlement_only_consumes_selected_side_for_mixed_ledger(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    person = create_person(client, auth_headers)
+    debit = create_entry(client, auth_headers, person["id"], 1_000_000, "1405/06/01", "debit")
+    credit = create_entry(client, auth_headers, person["id"], 500_000, "1405/06/02", "credit")
+
+    too_much_credit = client.post(
+        "/api/v1/settlements",
+        json={
+            "person_id": person["id"],
+            "entry_type": "credit",
+            "amount_rial": 700_000,
+            "jalali_date": "1405/06/10",
+            "local_time": "12:30",
+        },
+        headers=auth_headers,
+    )
+    assert too_much_credit.status_code == 409
+
+    settled = client.post(
+        "/api/v1/settlements",
+        json={
+            "person_id": person["id"],
+            "entry_type": "credit",
+            "amount_rial": 400_000,
+            "jalali_date": "1405/06/10",
+            "local_time": "12:30",
+        },
+        headers=auth_headers,
+    )
+    ledger = client.get(f"/api/v1/ledger/persons/{person['id']}", headers=auth_headers).json()
+    by_id = {entry["id"]: entry for entry in ledger}
+
+    assert settled.status_code == 201
+    assert settled.json()["entry_type"] == "credit"
+    assert by_id[debit["id"]]["remaining_rial"] == 1_000_000
+    assert by_id[credit["id"]]["remaining_rial"] == 100_000
 
 
 def test_cheque_lifecycle_events_update_status_and_append_events(
@@ -190,6 +231,104 @@ def test_cheque_lifecycle_events_update_status_and_append_events(
     assert cleared.status_code == 200
     assert cleared.json()["status"] == "cleared"
     assert [event["event_type"] for event in cleared.json()["events"]] == ["created", "cleared"]
+
+    repeated = client.post(
+        f"/api/v1/cheques/{cheque_id}/events",
+        json={"event_type": "bounced", "jalali_date": "1405/06/22", "local_time": "11:00"},
+        headers=auth_headers,
+    )
+    assert repeated.status_code == 409
+    assert repeated.json()["detail"] == "این تغییر وضعیت برای چک مجاز نیست."
+
+
+def test_cheque_rejects_invalid_date_order_and_early_event(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    invalid = client.post(
+        "/api/v1/cheques",
+        json={
+            "cheque_type": "paid",
+            "bank_name": "Melli",
+            "cheque_number": "date-order",
+            "amount_rial": 1_000_000,
+            "issue_jalali_date": "1405/06/10",
+            "due_jalali_date": "1405/06/01",
+            "local_time": "10:00",
+        },
+        headers=auth_headers,
+    )
+    assert invalid.status_code == 422
+
+    created = client.post(
+        "/api/v1/cheques",
+        json={
+            "cheque_type": "paid",
+            "bank_name": "Melli",
+            "cheque_number": "early-event",
+            "amount_rial": 1_000_000,
+            "issue_jalali_date": "1405/06/10",
+            "due_jalali_date": "1405/06/20",
+            "local_time": "10:00",
+        },
+        headers=auth_headers,
+    ).json()
+    event = client.post(
+        f"/api/v1/cheques/{created['id']}/events",
+        json={"event_type": "cleared", "jalali_date": "1405/06/09", "local_time": "11:00"},
+        headers=auth_headers,
+    )
+    assert event.status_code == 422
+    assert event.json()["detail"] == "تاریخ اقدام نمی‌تواند پیش از آخرین رویداد چک باشد."
+
+
+def test_bounced_cheque_can_clear_later_but_event_dates_cannot_go_back(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    created = client.post(
+        "/api/v1/cheques",
+        json={
+            "cheque_type": "received",
+            "bank_name": "Mellat",
+            "cheque_number": "bounce-then-clear",
+            "amount_rial": 2_000_000,
+            "issue_jalali_date": "1405/06/01",
+            "due_jalali_date": "1405/06/10",
+            "local_time": "10:00",
+        },
+        headers=auth_headers,
+    ).json()
+    bounced = client.post(
+        f"/api/v1/cheques/{created['id']}/events",
+        json={"event_type": "bounced", "jalali_date": "1405/06/11", "local_time": "11:00"},
+        headers=auth_headers,
+    )
+    assert bounced.status_code == 200
+    assert bounced.json()["status"] == "bounced"
+
+    early_clear = client.post(
+        f"/api/v1/cheques/{created['id']}/events",
+        json={"event_type": "cleared", "jalali_date": "1405/06/10", "local_time": "12:00"},
+        headers=auth_headers,
+    )
+    assert early_clear.status_code == 422
+
+    same_day_early_time = client.post(
+        f"/api/v1/cheques/{created['id']}/events",
+        json={"event_type": "cleared", "jalali_date": "1405/06/11", "local_time": "10:59"},
+        headers=auth_headers,
+    )
+    assert same_day_early_time.status_code == 422
+
+    cleared = client.post(
+        f"/api/v1/cheques/{created['id']}/events",
+        json={"event_type": "cleared", "jalali_date": "1405/06/12", "local_time": "12:00"},
+        headers=auth_headers,
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["status"] == "cleared"
+    assert [item["event_type"] for item in cleared.json()["events"]] == ["created", "bounced", "cleared"]
 
 
 def test_dues_returns_open_ledger_and_pending_cheques_up_to_date(

@@ -1639,6 +1639,153 @@ button {
   }
 }
 
+/* Ledger and cheque management */
+.ledger-shell {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.34fr) minmax(0, 1fr);
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.ledger-people-panel,
+.ledger-form,
+.ledger-timeline-panel,
+.cheque-create-form,
+.dues-panel,
+.cheque-list-panel {
+  border: 1px solid #dce7e2;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(22, 56, 45, 0.065);
+}
+
+.ledger-people-panel {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 18px;
+}
+
+.ledger-section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.ledger-section-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.ledger-section-heading strong { color: #17332b; font-size: 1rem; }
+.ledger-section-heading small { color: #687a74; line-height: 1.7; }
+
+.ledger-person-list { display: grid; gap: 8px; max-height: 650px; overflow: auto; }
+.ledger-person-item {
+  width: 100%; min-height: 64px; display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 10px 12px; text-align: right; color: #17332b; background: #fbfdfc; border: 1px solid #e1ebe6; border-radius: 14px; cursor: pointer;
+}
+.ledger-person-item:hover { border-color: #8fb3a4; background: #f5faf7; }
+.ledger-person-item.active { border-color: #087f5b; background: #ebf7f1; box-shadow: inset 3px 0 #087f5b; }
+.ledger-person-item > span { display: grid; gap: 4px; min-width: 0; }
+.ledger-person-item small { color: #71817c; overflow: hidden; text-overflow: ellipsis; }
+
+.ledger-main { min-width: 0; display: grid; align-content: start; gap: 16px; }
+.ledger-welcome { min-height: 330px; }
+.ledger-balance-card {
+  display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 22px;
+  color: #fff; border-radius: 22px; background: linear-gradient(135deg, #116149, #087f5b); box-shadow: 0 14px 30px rgba(8, 127, 91, .2);
+}
+.ledger-balance-card.creditor { background: linear-gradient(135deg, #5b4a85, #7865a8); }
+.ledger-balance-card.settled { background: linear-gradient(135deg, #53645e, #74847e); }
+.ledger-balance-card > div:first-child { display: grid; gap: 5px; }
+.ledger-balance-card > div:first-child > strong { font-size: clamp(1.45rem, 3vw, 2.1rem); }
+.ledger-balance-card small, .ledger-balance-card span { color: rgba(255,255,255,.82); }
+.ledger-side-balances { display: grid; grid-template-columns: repeat(2, minmax(130px, 1fr)); gap: 8px; }
+.ledger-side-balances > span { display: grid; gap: 4px; padding: 11px 13px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.16); border-radius: 13px; }
+.ledger-side-balances strong { color: #fff; }
+.ledger-actions-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.ledger-form { display: grid; align-content: start; gap: 14px; padding: 18px; }
+.ledger-timeline-panel, .cheque-list-panel { padding: 20px; }
+.ledger-timeline { display: grid; gap: 10px; margin-top: 16px; }
+.ledger-entry-card { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; padding: 14px 18px 14px 14px; border: 1px solid #e3ebe7; border-radius: 15px; background: #fcfdfc; overflow: hidden; }
+.ledger-entry-mark { position: absolute; inset: 0 auto 0 0; width: 5px; background: #087f5b; }
+.ledger-entry-mark.credit { background: #7865a8; }
+.ledger-entry-title { display: flex; align-items: center; gap: 8px; }
+.ledger-entry-card small { color: #71817c; }
+.ledger-entry-card p { margin: 5px 0 0; color: #475a54; }
+.ledger-entry-amount { display: grid; align-content: center; justify-items: end; gap: 4px; white-space: nowrap; }
+.dialog-form { display: grid; gap: 16px; padding-top: 8px !important; }
+
+.cheque-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+.cheque-kpis > div { display: grid; gap: 5px; min-width: 0; padding: 16px; border: 1px solid #dce7e2; border-radius: 18px; background: #fff; box-shadow: 0 8px 24px rgba(22,56,45,.055); }
+.cheque-kpis > div.warning { border-color: #efd7a5; background: #fffbf1; }
+.cheque-kpis small, .cheque-kpis span { color: #71817c; }
+.cheque-kpis strong { color: #17332b; overflow-wrap: anywhere; }
+.cheque-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr); gap: 16px; }
+.cheque-create-form, .dues-panel { display: grid; align-content: start; gap: 16px; padding: 20px; }
+.cheque-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.dues-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; }
+.dues-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.dues-summary > div { display: grid; gap: 5px; padding: 14px; border: 1px solid #e0eae5; border-radius: 14px; background: #f8fbf9; }
+.dues-summary span, .dues-summary small { color: #71817c; }
+.cheque-list-panel { margin-top: 16px; }
+.cheque-filters { display: grid; grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(130px, .7fr)); gap: 10px; margin: 16px 0; }
+.cheque-cards { display: grid; gap: 11px; }
+.cheque-card { display: grid; grid-template-columns: minmax(270px, 1fr) minmax(150px, .4fr); gap: 14px; padding: 16px; border: 1px solid #e0e9e5; border-radius: 18px; background: #fcfdfc; }
+.cheque-card.status-bounced { border-color: #efc7c7; background: #fffafa; }
+.cheque-card.status-canceled { opacity: .76; }
+.cheque-card-main { display: grid; gap: 13px; min-width: 0; }
+.cheque-card-heading { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.cheque-card-heading > div { display: grid; gap: 3px; min-width: 0; }
+.cheque-card-heading small { color: #71817c; overflow-wrap: anywhere; }
+.cheque-bank-icon { display: grid; place-items: center; width: 44px; height: 44px; color: #087f5b; background: #eaf6f1; border-radius: 13px; }
+.cheque-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.cheque-meta > span { display: grid; gap: 3px; min-width: 0; padding: 9px 11px; background: #f4f8f6; border-radius: 11px; }
+.cheque-meta small, .cheque-card-amount small { color: #71817c; }
+.cheque-meta strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cheque-card-amount { display: grid; align-content: center; justify-items: end; gap: 5px; }
+.cheque-card-amount strong { color: #17332b; font-size: 1.1rem; }
+.cheque-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; padding-top: 11px; border-top: 1px solid #e7eeeb; }
+.cheque-actions .MuiButton-root { min-height: 44px; }
+.cheque-history { grid-column: 1 / -1; display: grid; gap: 9px; padding: 14px; border-radius: 14px; background: #f4f8f6; }
+.cheque-history > div { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 9px; }
+.cheque-history > div > span { width: 9px; height: 9px; margin-top: 7px; border-radius: 50%; background: #087f5b; }
+.cheque-history p { display: grid; gap: 2px; margin: 0; }
+.cheque-history small { color: #71817c; line-height: 1.8; }
+
+@media (max-width: 1050px) {
+  .ledger-shell, .cheque-layout { grid-template-columns: 1fr; }
+  .ledger-person-list { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: none; }
+  .cheque-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cheque-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px) {
+  .ledger-shell { gap: 14px; }
+  .ledger-people-panel, .ledger-form, .ledger-timeline-panel, .cheque-create-form, .dues-panel, .cheque-list-panel { padding: 15px; border-radius: 18px; }
+  .ledger-section-heading { align-items: stretch; flex-direction: column; }
+  .ledger-section-heading .MuiButton-root { min-height: 44px; }
+  .ledger-person-list, .ledger-actions-grid, .cheque-kpis, .cheque-form-grid, .cheque-filters, .dues-summary { grid-template-columns: 1fr; }
+  .ledger-balance-card { align-items: stretch; flex-direction: column; padding: 18px; }
+  .ledger-side-balances { grid-template-columns: 1fr 1fr; }
+  .ledger-entry-card { grid-template-columns: 1fr; }
+  .ledger-entry-amount { justify-items: start; }
+  .cheque-card { grid-template-columns: 1fr; padding: 14px; }
+  .cheque-card-amount { justify-items: start; }
+  .cheque-meta { grid-template-columns: 1fr 1fr; }
+  .cheque-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .cheque-actions .MuiButton-root { width: 100%; }
+  .dues-controls { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 400px) {
+  .ledger-side-balances, .cheque-meta, .cheque-actions { grid-template-columns: 1fr; }
+  .cheque-card-heading { grid-template-columns: auto minmax(0, 1fr); }
+  .cheque-card-heading .MuiChip-root { grid-column: 1 / -1; justify-self: start; }
+}
+
 /* Inventory control center */
 .purchase-workspace {
   display: grid;

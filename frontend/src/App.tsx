@@ -29,6 +29,7 @@ import Storefront from "./Storefront";
 import {
   api,
   type DailyJournal,
+  type Dues,
   type CashflowReport,
   type Category,
   type Cheque,
@@ -1851,88 +1852,112 @@ function LedgerView({ onBack }: { onBack: () => void }) {
   const [people, setPeople] = useState<Person[]>([]);
   const [selectedId, setSelectedId] = useState(0);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
-  const [message, setMessage] = useState("");
+  const [peopleStatus, setPeopleStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [ledgerStatus, setLedgerStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [search, setSearch] = useState("");
+  const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [personDialog, setPersonDialog] = useState(false);
+  const [personDialogError, setPersonDialogError] = useState("");
+  const [personName, setPersonName] = useState("");
+  const [personPhone, setPersonPhone] = useState("");
+  const [personType, setPersonType] = useState<Person["person_type"]>("customer");
+  const [personSaving, setPersonSaving] = useState(false);
+  const [entryType, setEntryType] = useState<"debit" | "credit">("debit");
+  const [entryAmount, setEntryAmount] = useState("");
+  const [entryDate, setEntryDate] = useState(DEFAULT_JALALI_DATE);
+  const [entryDescription, setEntryDescription] = useState("");
+  const [entrySaving, setEntrySaving] = useState(false);
+  const [settlementType, setSettlementType] = useState<"debit" | "credit">("debit");
+  const [settlementAmount, setSettlementAmount] = useState("");
+  const [settlementDate, setSettlementDate] = useState(DEFAULT_JALALI_DATE);
+  const [settlementNote, setSettlementNote] = useState("");
+  const [settlementSaving, setSettlementSaving] = useState(false);
   const selected = people.find((person) => person.id === selectedId);
-  const balance = entries.reduce((sum, entry) => sum + (entry.entry_type === "debit" ? entry.remaining_rial : -entry.remaining_rial), 0);
+  const debitOpen = entries.filter((entry) => entry.status === "open" && entry.entry_type === "debit").reduce((sum, entry) => sum + entry.remaining_rial, 0);
+  const creditOpen = entries.filter((entry) => entry.status === "open" && entry.entry_type === "credit").reduce((sum, entry) => sum + entry.remaining_rial, 0);
+  const balance = debitOpen - creditOpen;
+  const selectedSideBalance = settlementType === "debit" ? debitOpen : creditOpen;
+  const filteredPeople = people.filter((person) => `${person.name} ${person.phone ?? ""}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const sortedEntries = [...entries].sort((a, b) => `${b.jalali_date}${b.local_time}${b.id}`.localeCompare(`${a.jalali_date}${a.local_time}${a.id}`));
 
-  const loadPeople = () => api.persons().then(setPeople).catch((error) => setMessage(error instanceof Error ? error.message : "اشخاص دریافت نشدند."));
-  useEffect(() => {
-    loadPeople();
-  }, []);
-  useEffect(() => {
-    if (selectedId) api.personLedger(selectedId).then(setEntries).catch((error) => setMessage(error instanceof Error ? error.message : "دفتر حساب دریافت نشد."));
-  }, [selectedId]);
+  async function loadPeople() {
+    setPeopleStatus("loading");
+    try { setPeople(await api.persons()); setPeopleStatus("ready"); }
+    catch (error) { setPeopleStatus("error"); setNotice({ type: "error", text: error instanceof Error ? error.message : "اشخاص دریافت نشدند." }); }
+  }
+  async function loadLedger(personId: number) {
+    setLedgerStatus("loading");
+    try { setEntries(await api.personLedger(personId)); setLedgerStatus("ready"); }
+    catch (error) { setLedgerStatus("error"); setNotice({ type: "error", text: error instanceof Error ? error.message : "دفتر حساب دریافت نشد." }); }
+  }
+  useEffect(() => { loadPeople(); }, []);
+  useEffect(() => { if (selectedId) loadLedger(selectedId); else { setEntries([]); setLedgerStatus("idle"); } }, [selectedId]);
 
   async function submitPerson(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await api.createPerson({ name: String(form.get("name") ?? ""), phone: String(form.get("phone") ?? ""), person_type: String(form.get("type")) as Person["person_type"] });
-    event.currentTarget.reset();
-    setMessage("شخص ثبت شد.");
-    loadPeople();
+    if (!personName.trim()) { setPersonDialogError("نام شخص را وارد کنید."); return; }
+    setPersonSaving(true); setNotice(null); setPersonDialogError("");
+    try {
+      const created = await api.createPerson({ name: personName.trim(), phone: personPhone.trim() || undefined, person_type: personType });
+      setPersonName(""); setPersonPhone(""); setPersonDialog(false); setNotice({ type: "success", text: "شخص جدید ثبت شد." });
+      await loadPeople(); setSelectedId(created.id);
+    } catch (error) { setPersonDialogError(error instanceof Error ? error.message : "ثبت شخص انجام نشد."); }
+    finally { setPersonSaving(false); }
   }
 
   async function submitEntry(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await api.createManualEntry({
-      person_id: selectedId,
-      entry_type: String(form.get("entryType")) as "debit" | "credit",
-      amount_rial: normalizeMoney(form.get("amount")),
-      jalali_date: String(form.get("date") ?? DEFAULT_JALALI_DATE),
-      local_time: currentLocalTime(),
-      description: String(form.get("description") ?? ""),
-    });
-    event.currentTarget.reset();
-    setMessage("سند دستی ثبت شد.");
-    api.personLedger(selectedId).then(setEntries);
+    const amount = normalizeMoney(entryAmount);
+    if (!selectedId || amount <= 0) { setNotice({ type: "error", text: "شخص و مبلغ مثبت را مشخص کنید." }); return; }
+    setEntrySaving(true); setNotice(null);
+    try {
+      await api.createManualEntry({ person_id: selectedId, entry_type: entryType, amount_rial: amount, jalali_date: entryDate, local_time: currentLocalTime(), description: entryDescription.trim() || undefined });
+      setEntryAmount(""); setEntryDescription(""); setNotice({ type: "success", text: "سند دستی ثبت شد." }); await loadLedger(selectedId);
+    } catch (error) { setNotice({ type: "error", text: error instanceof Error ? error.message : "ثبت سند انجام نشد." }); }
+    finally { setEntrySaving(false); }
   }
 
   async function submitSettlement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await api.createSettlement({ person_id: selectedId, amount_rial: normalizeMoney(form.get("amount")), jalali_date: String(form.get("date") ?? DEFAULT_JALALI_DATE), local_time: currentLocalTime(), note: String(form.get("note") ?? "") });
-    event.currentTarget.reset();
-    setMessage("تسویه ثبت شد.");
-    api.personLedger(selectedId).then(setEntries);
+    const amount = normalizeMoney(settlementAmount);
+    if (!selectedId || amount <= 0) { setNotice({ type: "error", text: "مبلغ تسویه باید بیشتر از صفر باشد." }); return; }
+    if (amount > selectedSideBalance) { setNotice({ type: "error", text: `مبلغ تسویه از مانده ${settlementType === "debit" ? "بدهکار" : "بستانکار"} بیشتر است.` }); return; }
+    setSettlementSaving(true); setNotice(null);
+    try {
+      await api.createSettlement({ person_id: selectedId, entry_type: settlementType, amount_rial: amount, jalali_date: settlementDate, local_time: currentLocalTime(), note: settlementNote.trim() || undefined });
+      setSettlementAmount(""); setSettlementNote(""); setNotice({ type: "success", text: "تسویه با موفقیت ثبت شد." }); await loadLedger(selectedId);
+    } catch (error) { setNotice({ type: "error", text: error instanceof Error ? error.message : "ثبت تسویه انجام نشد." }); }
+    finally { setSettlementSaving(false); }
   }
 
   return (
     <CrudWorkspace title="دفتر حساب اشخاص" eyebrow="مشتری و تامین‌کننده" onBack={onBack}>
-      {message ? <p className="success-message">{message}</p> : null}
-      <div className="management-grid">
-        <form className="sale-panel compact-panel" onSubmit={submitPerson}>
-          <h3>شخص جدید</h3>
-          <input name="name" placeholder="نام شخص" required />
-          <input name="phone" placeholder="تلفن" />
-          <select name="type"><option value="customer">مشتری</option><option value="supplier">تامین‌کننده</option><option value="both">هر دو</option></select>
-          <button className="soft-button">ثبت شخص</button>
-        </form>
-        <section className="sale-panel compact-panel">
-          <h3>انتخاب حساب</h3>
-          <select value={selectedId} onChange={(event) => setSelectedId(Number(event.target.value))}>
-            <option value={0}>انتخاب شخص</option>
-            {people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
-          </select>
-          <strong>{selected ? `مانده: ${formatRial(Math.abs(balance))}` : "حسابی انتخاب نشده"}</strong>
-        </section>
-        <form className="sale-panel compact-panel" onSubmit={submitEntry}>
-          <h3>سند دستی</h3>
-          <select name="entryType"><option value="debit">بدهکار</option><option value="credit">بستانکار</option></select>
-          <input name="amount" inputMode="numeric" placeholder="مبلغ تومان" required />
-          <input name="date" defaultValue={DEFAULT_JALALI_DATE} />
-          <input name="description" placeholder="شرح" />
-          <button className="soft-button" disabled={!selectedId}>ثبت سند</button>
-        </form>
-        <form className="sale-panel compact-panel" onSubmit={submitSettlement}>
-          <h3>تسویه</h3>
-          <input name="amount" inputMode="numeric" placeholder="مبلغ تومان" required />
-          <input name="date" defaultValue={DEFAULT_JALALI_DATE} />
-          <input name="note" placeholder="یادداشت" />
-          <button className="soft-button" disabled={!selectedId}>ثبت تسویه</button>
-        </form>
+      {notice ? <Alert severity={notice.type} onClose={() => setNotice(null)}>{notice.text}</Alert> : null}
+      <div className="ledger-shell">
+        <aside className="ledger-people-panel sale-panel">
+          <div className="ledger-section-heading"><div><strong>اشخاص</strong><small>حساب موردنظر را انتخاب کنید</small></div><Button variant="contained" startIcon={<AddRounded />} onClick={() => { setPersonDialogError(""); setPersonDialog(true); }}>شخص جدید</Button></div>
+          <TextField size="small" label="جست‌وجوی نام یا تلفن" value={search} onChange={(event) => setSearch(event.target.value)} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} />
+          {peopleStatus === "loading" ? <div className="record-state"><CircularProgress size={26} /><span>در حال دریافت اشخاص…</span></div> : null}
+          {peopleStatus === "error" ? <div className="record-state record-state-error"><span>فهرست اشخاص دریافت نشد.</span><Button variant="outlined" startIcon={<RefreshRounded />} onClick={loadPeople}>تلاش دوباره</Button></div> : null}
+          {peopleStatus === "ready" && people.length === 0 ? <div className="record-state"><AccountBalanceWalletRounded /><strong>هنوز شخصی ثبت نشده است</strong><span>برای شروع، یک مشتری یا تأمین‌کننده بسازید.</span></div> : null}
+          {peopleStatus === "ready" && people.length > 0 && filteredPeople.length === 0 ? <div className="record-state"><SearchRounded /><strong>شخصی با این جست‌وجو پیدا نشد</strong></div> : null}
+          <div className="ledger-person-list">{filteredPeople.map((person) => <button type="button" className={`ledger-person-item ${selectedId === person.id ? "active" : ""}`} key={person.id} onClick={() => setSelectedId(person.id)}><span><strong>{person.name}</strong><small>{person.phone || "بدون شماره تماس"}</small></span><Chip size="small" label={person.person_type === "customer" ? "مشتری" : person.person_type === "supplier" ? "تأمین‌کننده" : "هر دو"} /></button>)}</div>
+        </aside>
+        <main className="ledger-main">
+          {!selected ? <div className="record-state ledger-welcome sale-panel"><AccountBalanceWalletRounded /><strong>یک حساب را انتخاب کنید</strong><span>مانده و گردش حساب شخص در این بخش نمایش داده می‌شود.</span></div> : <>
+            <section className={`ledger-balance-card ${balance > 0 ? "debtor" : balance < 0 ? "creditor" : "settled"}`}>
+              <div><small>مانده خالص {selected.name}</small><strong>{formatRial(Math.abs(balance))}</strong><span>{balance > 0 ? "این شخص به فروشگاه بدهکار است" : balance < 0 ? "فروشگاه به این شخص بدهکار است" : "حساب تسویه است"}</span></div>
+              <div className="ledger-side-balances"><span><small>مانده بدهکار</small><strong>{formatRial(debitOpen)}</strong></span><span><small>مانده بستانکار</small><strong>{formatRial(creditOpen)}</strong></span></div>
+            </section>
+            <div className="ledger-actions-grid">
+              <form className="sale-panel ledger-form" onSubmit={submitEntry} noValidate><div className="ledger-section-heading"><div><strong>سند دستی</strong><small>افزایش مانده بدهکار یا بستانکار</small></div></div><TextField select label="نوع سند" value={entryType} onChange={(event) => setEntryType(event.target.value as "debit" | "credit")} disabled={entrySaving}><MenuItem value="debit">بدهکار — شخص باید پرداخت کند</MenuItem><MenuItem value="credit">بستانکار — فروشگاه باید پرداخت کند</MenuItem></TextField><TextField label="مبلغ (تومان)" value={entryAmount} onChange={(event) => setEntryAmount(event.target.value)} inputMode="numeric" required disabled={entrySaving} /><JalaliDateField label="تاریخ سند" value={entryDate} onChange={setEntryDate} required /><TextField label="شرح (اختیاری)" value={entryDescription} onChange={(event) => setEntryDescription(event.target.value)} disabled={entrySaving} /><Button type="submit" size="large" variant="contained" disabled={entrySaving || normalizeMoney(entryAmount) <= 0} startIcon={entrySaving ? <CircularProgress size={18} color="inherit" /> : <AddRounded />}>{entrySaving ? "در حال ثبت…" : "ثبت سند"}</Button></form>
+              <form className="sale-panel ledger-form" onSubmit={submitSettlement} noValidate><div className="ledger-section-heading"><div><strong>ثبت تسویه</strong><small>فقط اسناد باز همان سمت، از قدیمی‌ترین تسویه می‌شوند</small></div></div><TextField select label="سمت حساب برای تسویه" value={settlementType} onChange={(event) => setSettlementType(event.target.value as "debit" | "credit")} disabled={settlementSaving}><MenuItem value="debit">مانده بدهکار ({formatRial(debitOpen)})</MenuItem><MenuItem value="credit">مانده بستانکار ({formatRial(creditOpen)})</MenuItem></TextField><TextField label="مبلغ تسویه (تومان)" value={settlementAmount} onChange={(event) => setSettlementAmount(event.target.value)} inputMode="numeric" required disabled={settlementSaving} error={normalizeMoney(settlementAmount) > selectedSideBalance} helperText={`حداکثر قابل تسویه: ${formatRial(selectedSideBalance)}`} /><JalaliDateField label="تاریخ تسویه" value={settlementDate} onChange={setSettlementDate} required /><TextField label="یادداشت (اختیاری)" value={settlementNote} onChange={(event) => setSettlementNote(event.target.value)} disabled={settlementSaving} /><Button type="submit" size="large" variant="contained" disabled={settlementSaving || normalizeMoney(settlementAmount) <= 0 || normalizeMoney(settlementAmount) > selectedSideBalance} startIcon={settlementSaving ? <CircularProgress size={18} color="inherit" /> : <PaymentsRounded />}>{settlementSaving ? "در حال ثبت…" : "ثبت تسویه"}</Button></form>
+            </div>
+            <section className="sale-panel ledger-timeline-panel"><div className="ledger-section-heading"><div><strong>گردش حساب</strong><small>جدیدترین تراکنش‌ها در ابتدای فهرست</small></div><Chip label={`${entries.length.toLocaleString("fa-IR")} سند`} variant="outlined" /></div>{ledgerStatus === "loading" ? <div className="record-state"><CircularProgress size={26} /><span>در حال دریافت گردش حساب…</span></div> : null}{ledgerStatus === "error" ? <div className="record-state record-state-error"><span>گردش حساب دریافت نشد.</span><Button variant="outlined" onClick={() => loadLedger(selectedId)}>تلاش دوباره</Button></div> : null}{ledgerStatus === "ready" && entries.length === 0 ? <div className="record-state"><HistoryRounded /><strong>هنوز سندی ثبت نشده است</strong></div> : null}<div className="ledger-timeline">{sortedEntries.map((entry) => <article className="ledger-entry-card" key={entry.id}><span className={`ledger-entry-mark ${entry.entry_type}`} /><div><div className="ledger-entry-title"><strong>{entry.entry_type === "debit" ? "بدهکار" : "بستانکار"}</strong><Chip size="small" color={entry.status === "settled" ? "success" : "default"} label={entry.status === "settled" ? "تسویه‌شده" : entry.status === "canceled" ? "لغوشده" : "باز"} /></div><small>{entry.jalali_date}، ساعت {entry.local_time} • {({ sale: "فروش", purchase: "خرید", settlement: "تسویه", cheque: "چک", manual: "سند دستی" } as Record<string, string>)[entry.source_type] ?? entry.source_type}</small><p>{entry.description || "بدون شرح"}</p></div><div className="ledger-entry-amount"><strong>{formatRial(entry.amount_rial)}</strong><small>مانده {formatRial(entry.remaining_rial)}</small></div></article>)}</div></section>
+          </>}
+        </main>
       </div>
-      <SimpleTable headers={["تاریخ", "نوع", "مبلغ", "مانده", "شرح"]} rows={entries.map((entry) => [entry.jalali_date, entry.entry_type === "debit" ? "بدهکار" : "بستانکار", formatRial(entry.amount_rial), formatRial(entry.remaining_rial), entry.description || entry.source_type])} />
+      <Dialog open={personDialog} onClose={() => { if (!personSaving) setPersonDialog(false); }} fullWidth maxWidth="xs"><form onSubmit={submitPerson} noValidate><DialogTitle>ثبت شخص جدید</DialogTitle><DialogContent className="dialog-form">{personDialogError ? <Alert severity="error">{personDialogError}</Alert> : null}<TextField autoFocus label="نام شخص" value={personName} onChange={(event) => { setPersonName(event.target.value); setPersonDialogError(""); }} required disabled={personSaving} error={personName.length > 0 && !personName.trim()} helperText={personName.length > 0 && !personName.trim() ? "نام نمی‌تواند فقط فاصله باشد." : ""} /><TextField label="شماره تماس (اختیاری)" value={personPhone} onChange={(event) => setPersonPhone(event.target.value)} inputMode="tel" disabled={personSaving} /><TextField select label="نوع شخص" value={personType} onChange={(event) => setPersonType(event.target.value as Person["person_type"])} disabled={personSaving}><MenuItem value="customer">مشتری</MenuItem><MenuItem value="supplier">تأمین‌کننده</MenuItem><MenuItem value="both">مشتری و تأمین‌کننده</MenuItem></TextField></DialogContent><DialogActions><Button size="large" onClick={() => setPersonDialog(false)} disabled={personSaving}>انصراف</Button><Button size="large" type="submit" variant="contained" disabled={personSaving || !personName.trim()} startIcon={personSaving ? <CircularProgress size={18} color="inherit" /> : <AddRounded />}>ثبت شخص</Button></DialogActions></form></Dialog>
     </CrudWorkspace>
   );
 }
@@ -1940,61 +1965,95 @@ function LedgerView({ onBack }: { onBack: () => void }) {
 function ChequesView({ onBack }: { onBack: () => void }) {
   const [people, setPeople] = useState<Person[]>([]);
   const [cheques, setCheques] = useState<Cheque[]>([]);
-  const [message, setMessage] = useState("");
-  const load = () => Promise.all([api.persons(), api.cheques()]).then(([nextPeople, nextCheques]) => { setPeople(nextPeople); setCheques(nextCheques); });
-  useEffect(() => { load().catch((error) => setMessage(error instanceof Error ? error.message : "چک‌ها دریافت نشدند.")); }, []);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"" | "received" | "paid">("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [dueFilter, setDueFilter] = useState<"all" | "due">("all");
+  const [chequeType, setChequeType] = useState<"received" | "paid">("received");
+  const [personId, setPersonId] = useState("");
+  const [bank, setBank] = useState("");
+  const [number, setNumber] = useState("");
+  const [amount, setAmount] = useState("");
+  const [issueDate, setIssueDate] = useState(DEFAULT_JALALI_DATE);
+  const [dueDate, setDueDate] = useState(DEFAULT_JALALI_DATE);
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [eventCheque, setEventCheque] = useState<Cheque | null>(null);
+  const [eventType, setEventType] = useState<"cleared" | "bounced" | "canceled">("cleared");
+  const [eventDate, setEventDate] = useState(DEFAULT_JALALI_DATE);
+  const [eventNote, setEventNote] = useState("");
+  const [eventSaving, setEventSaving] = useState(false);
+  const [eventDialogError, setEventDialogError] = useState("");
+  const [historyId, setHistoryId] = useState<number | null>(null);
+  const [duesDate, setDuesDate] = useState(DEFAULT_JALALI_DATE);
+  const [dues, setDues] = useState<Dues | null>(null);
+  const [duesStatus, setDuesStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  async function load() {
+    setStatus("loading");
+    try { const [nextPeople, nextCheques] = await Promise.all([api.persons(), api.cheques()]); setPeople(nextPeople); setCheques(nextCheques); setStatus("ready"); }
+    catch (error) { setStatus("error"); setNotice({ type: "error", text: error instanceof Error ? error.message : "چک‌ها دریافت نشدند." }); }
+  }
+  async function loadDues(date = duesDate) {
+    setDuesStatus("loading");
+    try { setDues(await api.dues(date)); setDuesStatus("ready"); }
+    catch (error) { setDuesStatus("error"); setNotice({ type: "error", text: error instanceof Error ? error.message : "سررسیدها دریافت نشدند." }); }
+  }
+  useEffect(() => { load(); loadDues(); }, []);
+
+  const pendingReceived = cheques.filter((cheque) => cheque.status === "pending" && cheque.cheque_type === "received");
+  const pendingPaid = cheques.filter((cheque) => cheque.status === "pending" && cheque.cheque_type === "paid");
+  const duePending = cheques.filter((cheque) => cheque.status === "pending" && cheque.due_jalali_date <= duesDate);
+  const pendingTotal = [...pendingReceived, ...pendingPaid].reduce((sum, cheque) => sum + cheque.amount_rial, 0);
+  const filteredCheques = cheques.filter((cheque) => {
+    const person = people.find((item) => item.id === cheque.person_id);
+    const matchesSearch = `${cheque.bank_name} ${cheque.cheque_number} ${person?.name ?? ""}`.toLowerCase().includes(search.trim().toLowerCase());
+    return matchesSearch && (!typeFilter || cheque.cheque_type === typeFilter) && (!statusFilter || cheque.status === statusFilter) && (dueFilter === "all" || (cheque.status === "pending" && cheque.due_jalali_date <= duesDate));
+  });
+  const duesDebitRial = dues?.open_ledger_entries.filter((item) => item.entry_type === "debit").reduce((sum, item) => sum + item.remaining_rial, 0) ?? 0;
+  const duesCreditRial = dues?.open_ledger_entries.filter((item) => item.entry_type === "credit").reduce((sum, item) => sum + item.remaining_rial, 0) ?? 0;
 
   async function submitCheque(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const personId = Number(form.get("personId"));
-    await api.createCheque({
-      cheque_type: String(form.get("chequeType")) as "received" | "paid",
-      person_id: personId || null,
-      bank_name: String(form.get("bank") ?? ""),
-      cheque_number: String(form.get("number") ?? ""),
-      amount_rial: normalizeMoney(form.get("amount")),
-      issue_jalali_date: String(form.get("issueDate") ?? DEFAULT_JALALI_DATE),
-      due_jalali_date: String(form.get("dueDate") ?? DEFAULT_JALALI_DATE),
-      local_time: currentLocalTime(),
-      note: String(form.get("note") ?? ""),
-    });
-    event.currentTarget.reset();
-    setMessage("چک ثبت شد.");
-    load();
+    const amountRial = normalizeMoney(amount);
+    if (!bank.trim() || !number.trim() || amountRial <= 0) { setNotice({ type: "error", text: "بانک، شماره چک و مبلغ مثبت الزامی هستند." }); return; }
+    if (dueDate < issueDate) { setNotice({ type: "error", text: "تاریخ سررسید نمی‌تواند پیش از تاریخ صدور باشد." }); return; }
+    setSaving(true); setNotice(null);
+    try {
+      await api.createCheque({ cheque_type: chequeType, person_id: Number(personId) || null, bank_name: bank.trim(), cheque_number: number.trim(), amount_rial: amountRial, issue_jalali_date: issueDate, due_jalali_date: dueDate, local_time: currentLocalTime(), note: note.trim() || undefined });
+      setBank(""); setNumber(""); setAmount(""); setNote(""); setPersonId(""); setNotice({ type: "success", text: "چک با موفقیت ثبت شد." }); await Promise.all([load(), loadDues()]);
+    } catch (error) { setNotice({ type: "error", text: error instanceof Error ? error.message : "ثبت چک انجام نشد." }); }
+    finally { setSaving(false); }
   }
 
-  async function markCheque(id: number, eventType: "cleared" | "bounced" | "canceled") {
-    await api.createChequeEvent(id, { event_type: eventType, jalali_date: DEFAULT_JALALI_DATE, local_time: currentLocalTime() });
-    setMessage("وضعیت چک ثبت شد.");
-    load();
+  function openEvent(cheque: Cheque, nextType: "cleared" | "bounced" | "canceled") {
+    setEventCheque(cheque); setEventType(nextType); setEventDate(DEFAULT_JALALI_DATE); setEventNote(""); setEventDialogError(""); setNotice(null);
+  }
+
+  async function submitEvent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!eventCheque) return;
+    const actionTime = currentLocalTime();
+    const latestMoment = eventCheque.events.reduce((latest, item) => `${item.jalali_date} ${item.local_time}` > latest ? `${item.jalali_date} ${item.local_time}` : latest, `${eventCheque.issue_jalali_date} 00:00`);
+    if (`${eventDate} ${actionTime}` < latestMoment) { setEventDialogError("زمان اقدام نمی‌تواند پیش از آخرین رویداد چک باشد."); return; }
+    setEventSaving(true);
+    try { await api.createChequeEvent(eventCheque.id, { event_type: eventType, jalali_date: eventDate, local_time: actionTime, note: eventNote.trim() || undefined }); setEventCheque(null); setNotice({ type: "success", text: "وضعیت چک ثبت شد." }); await Promise.all([load(), loadDues()]); }
+    catch (error) { setEventDialogError(error instanceof Error ? error.message : "ثبت وضعیت انجام نشد."); }
+    finally { setEventSaving(false); }
   }
 
   return (
     <CrudWorkspace title="دفتر چک‌ها و سررسیدها" eyebrow="دریافتی و پرداختی" onBack={onBack}>
-      {message ? <p className="success-message">{message}</p> : null}
-      <form className="sale-panel cheque-form" onSubmit={submitCheque}>
-        <select name="chequeType"><option value="received">دریافتی</option><option value="paid">پرداختی</option></select>
-        <select name="personId"><option value="">بدون شخص</option>{people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select>
-        <input name="bank" placeholder="بانک" required />
-        <input name="number" placeholder="شماره چک" required />
-        <input name="amount" inputMode="numeric" placeholder="مبلغ تومان" required />
-        <input name="issueDate" defaultValue={DEFAULT_JALALI_DATE} />
-        <input name="dueDate" defaultValue={DEFAULT_JALALI_DATE} />
-        <input name="note" placeholder="یادداشت" />
-        <button className="soft-button">ثبت چک</button>
-      </form>
-      <div className="table-list">
-        {cheques.map((cheque) => (
-          <article className="table-card" key={cheque.id}>
-            <div><strong>{cheque.bank_name} - {cheque.cheque_number}</strong><span>{cheque.cheque_type === "received" ? "دریافتی" : "پرداختی"} | سررسید {cheque.due_jalali_date}</span></div>
-            <strong>{formatRial(cheque.amount_rial)}</strong>
-            <span className="badge">{cheque.status}</span>
-            <button className="link-button" onClick={() => markCheque(cheque.id, "cleared")}>وصول/پاس</button>
-            <button className="link-button" onClick={() => markCheque(cheque.id, "bounced")}>برگشت</button>
-          </article>
-        ))}
+      {notice ? <Alert severity={notice.type} onClose={() => setNotice(null)}>{notice.text}</Alert> : null}
+      <div className="cheque-kpis"><div><small>دریافتی در انتظار</small><strong>{formatRial(pendingReceived.reduce((sum, item) => sum + item.amount_rial, 0))}</strong><span>{pendingReceived.length.toLocaleString("fa-IR")} فقره</span></div><div><small>پرداختی در انتظار</small><strong>{formatRial(pendingPaid.reduce((sum, item) => sum + item.amount_rial, 0))}</strong><span>{pendingPaid.length.toLocaleString("fa-IR")} فقره</span></div><div className="warning"><small>سررسید تا تاریخ پیگیری</small><strong>{duePending.length.toLocaleString("fa-IR")} فقره</strong><span>{toPersianDigits(duesDate)}</span></div><div><small>کل مبلغ در انتظار</small><strong>{formatRial(pendingTotal)}</strong><span>دریافتی و پرداختی</span></div></div>
+      <div className="cheque-layout">
+        <form className="sale-panel cheque-create-form" onSubmit={submitCheque} noValidate><div className="ledger-section-heading"><div><strong>ثبت چک جدید</strong><small>اطلاعات روی برگه چک را وارد کنید</small></div></div><div className="cheque-form-grid"><TextField select label="نوع چک" value={chequeType} onChange={(event) => setChequeType(event.target.value as "received" | "paid")} disabled={saving}><MenuItem value="received">دریافتی</MenuItem><MenuItem value="paid">پرداختی</MenuItem></TextField><TextField select label="شخص مرتبط (اختیاری)" value={personId} onChange={(event) => setPersonId(event.target.value)} disabled={saving}><MenuItem value="">بدون شخص</MenuItem>{people.map((person) => <MenuItem value={person.id} key={person.id}>{person.name}</MenuItem>)}</TextField><TextField label="نام بانک" value={bank} onChange={(event) => setBank(event.target.value)} required disabled={saving} error={bank.length > 0 && !bank.trim()} /><TextField label="شماره چک" value={number} onChange={(event) => setNumber(event.target.value)} required disabled={saving} slotProps={{ htmlInput: { dir: "ltr" } }} /><TextField label="مبلغ (تومان)" value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="numeric" required disabled={saving} /><JalaliDateField label="تاریخ صدور" value={issueDate} onChange={setIssueDate} required /><JalaliDateField label="تاریخ سررسید" value={dueDate} onChange={setDueDate} required /><TextField label="یادداشت (اختیاری)" value={note} onChange={(event) => setNote(event.target.value)} disabled={saving} /></div>{dueDate < issueDate ? <Alert severity="error">تاریخ سررسید نمی‌تواند پیش از تاریخ صدور باشد.</Alert> : null}<Button type="submit" variant="contained" size="large" disabled={saving || !bank.trim() || !number.trim() || normalizeMoney(amount) <= 0 || dueDate < issueDate} startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <AddRounded />}>{saving ? "در حال ثبت…" : "ثبت چک"}</Button></form>
+        <section className="sale-panel dues-panel"><div className="ledger-section-heading"><div><strong>سررسیدها</strong><small>تعهدهای باز تا تاریخ انتخابی</small></div></div><div className="dues-controls"><JalaliDateField label="تا تاریخ" value={duesDate} onChange={setDuesDate} /><Button variant="outlined" size="large" onClick={() => loadDues(duesDate)} disabled={duesStatus === "loading"}>{duesStatus === "loading" ? <CircularProgress size={18} /> : "به‌روزرسانی"}</Button></div>{duesStatus === "error" ? <div className="record-state record-state-error"><span>سررسیدها دریافت نشدند.</span><Button onClick={() => loadDues()}>تلاش دوباره</Button></div> : null}{duesStatus === "ready" && dues && dues.open_ledger_entries.length + dues.pending_cheques.length === 0 ? <div className="record-state"><FactCheckRounded /><strong>تعهد بازی تا این تاریخ نیست</strong></div> : null}{duesStatus === "ready" && dues ? <div className="dues-summary"><div><span>مانده بدهکار سررسیدشده</span><strong>{formatRial(duesDebitRial)}</strong><small>مطالبات فروشگاه</small></div><div><span>مانده بستانکار سررسیدشده</span><strong>{formatRial(duesCreditRial)}</strong><small>تعهد فروشگاه</small></div><div><span>خالص اسناد باز</span><strong>{formatRial(Math.abs(duesDebitRial - duesCreditRial))}</strong><small>{duesDebitRial > duesCreditRial ? "بدهکار" : duesCreditRial > duesDebitRial ? "بستانکار" : "تسویه"}</small></div><div><span>چک در انتظار</span><strong>{dues.pending_cheques.length.toLocaleString("fa-IR")} فقره</strong><small>{formatRial(dues.pending_cheques.reduce((sum, item) => sum + item.amount_rial, 0))}</small></div></div> : null}</section>
       </div>
+      <section className="sale-panel cheque-list-panel"><div className="ledger-section-heading"><div><strong>فهرست چک‌ها</strong><small>جست‌وجو، پیگیری و مشاهده تاریخچه</small></div><Chip label={`${filteredCheques.length.toLocaleString("fa-IR")} نتیجه`} variant="outlined" /></div><div className="cheque-filters"><TextField size="small" label="بانک، شماره یا شخص" value={search} onChange={(event) => setSearch(event.target.value)} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} /><TextField select size="small" label="نوع" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as typeof typeFilter)}><MenuItem value="">همه</MenuItem><MenuItem value="received">دریافتی</MenuItem><MenuItem value="paid">پرداختی</MenuItem></TextField><TextField select size="small" label="وضعیت" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><MenuItem value="">همه</MenuItem><MenuItem value="pending">در انتظار</MenuItem><MenuItem value="cleared">وصول/پاس‌شده</MenuItem><MenuItem value="bounced">برگشتی</MenuItem><MenuItem value="canceled">باطل‌شده</MenuItem></TextField><TextField select size="small" label="سررسید" value={dueFilter} onChange={(event) => setDueFilter(event.target.value as typeof dueFilter)}><MenuItem value="all">همه تاریخ‌ها</MenuItem><MenuItem value="due">تا تاریخ پیگیری</MenuItem></TextField></div>{status === "loading" ? <div className="record-state"><CircularProgress size={26} /><span>در حال دریافت چک‌ها…</span></div> : null}{status === "error" ? <div className="record-state record-state-error"><span>فهرست چک‌ها دریافت نشد.</span><Button variant="outlined" startIcon={<RefreshRounded />} onClick={load}>تلاش دوباره</Button></div> : null}{status === "ready" && cheques.length === 0 ? <div className="record-state"><PaymentsRounded /><strong>هنوز چکی ثبت نشده است</strong></div> : null}{status === "ready" && cheques.length > 0 && filteredCheques.length === 0 ? <div className="record-state"><SearchRounded /><strong>چکی با این فیلتر پیدا نشد</strong></div> : null}<div className="cheque-cards">{filteredCheques.map((cheque) => { const person = people.find((item) => item.id === cheque.person_id); const statusLabel = ({ pending: "در انتظار", cleared: cheque.cheque_type === "received" ? "وصول‌شده" : "پاس‌شده", bounced: "برگشتی", canceled: "باطل‌شده" } as const)[cheque.status]; const canClear = cheque.status === "pending" || cheque.status === "bounced"; const canBounce = cheque.status === "pending"; const canCancel = cheque.status === "pending" || cheque.status === "bounced"; return <article className={`cheque-card status-${cheque.status}`} key={cheque.id}><div className="cheque-card-main"><div className="cheque-card-heading"><span className="cheque-bank-icon"><PaymentsRounded /></span><div><strong>{cheque.bank_name}</strong><small>شماره {toPersianDigits(cheque.cheque_number)}</small></div><Chip size="small" label={statusLabel} color={cheque.status === "cleared" ? "success" : cheque.status === "bounced" ? "error" : cheque.status === "pending" ? "warning" : "default"} /></div><div className="cheque-meta"><span><small>نوع</small><strong>{cheque.cheque_type === "received" ? "دریافتی" : "پرداختی"}</strong></span><span><small>شخص</small><strong>{person?.name || "ثبت نشده"}</strong></span><span><small>سررسید</small><strong>{toPersianDigits(cheque.due_jalali_date)}</strong></span></div></div><div className="cheque-card-amount"><small>مبلغ چک</small><strong>{formatRial(cheque.amount_rial)}</strong></div><div className="cheque-actions"><Button size="large" variant="outlined" color="success" disabled={!canClear} onClick={() => openEvent(cheque, "cleared")}>{cheque.cheque_type === "received" ? "وصول" : "پاس"}</Button><Button size="large" variant="outlined" color="error" disabled={!canBounce} onClick={() => openEvent(cheque, "bounced")}>برگشت</Button><Button size="large" disabled={!canCancel} onClick={() => openEvent(cheque, "canceled")}>ابطال</Button><Button size="large" startIcon={<HistoryRounded />} onClick={() => setHistoryId(historyId === cheque.id ? null : cheque.id)}>تاریخچه</Button></div>{historyId === cheque.id ? <div className="cheque-history">{cheque.events.map((item) => <div key={item.id}><span /><p><strong>{({ created: "ثبت چک", cleared: "وصول/پاس", bounced: "برگشت", canceled: "ابطال" } as const)[item.event_type]}</strong><small>{toPersianDigits(item.jalali_date)}، ساعت {toPersianDigits(item.local_time)}{item.note ? ` • ${item.note}` : ""}</small></p></div>)}</div> : null}</article>; })}</div></section>
+      <Dialog open={eventCheque !== null} onClose={() => { if (!eventSaving) setEventCheque(null); }} fullWidth maxWidth="xs"><form onSubmit={submitEvent}><DialogTitle>{eventType === "cleared" ? (eventCheque?.cheque_type === "received" ? "ثبت وصول چک" : "ثبت پاس چک") : eventType === "bounced" ? "ثبت برگشت چک" : "ابطال چک"}</DialogTitle><DialogContent className="dialog-form"><Alert severity={eventType === "canceled" || eventType === "bounced" ? "warning" : "info"}>این اقدام در تاریخچه چک ثبت می‌شود. اطلاعات را پیش از تأیید بررسی کنید.</Alert>{eventDialogError ? <Alert severity="error">{eventDialogError}</Alert> : null}<JalaliDateField label="تاریخ اقدام" value={eventDate} onChange={(value) => { setEventDate(value); setEventDialogError(""); }} required /><TextField label="یادداشت (اختیاری)" value={eventNote} onChange={(event) => setEventNote(event.target.value)} multiline minRows={2} disabled={eventSaving} /></DialogContent><DialogActions><Button size="large" onClick={() => setEventCheque(null)} disabled={eventSaving}>انصراف</Button><Button size="large" type="submit" variant="contained" color={eventType === "cleared" ? "success" : "error"} disabled={eventSaving} startIcon={eventSaving ? <CircularProgress size={18} color="inherit" /> : <FactCheckRounded />}>تأیید و ثبت</Button></DialogActions></form></Dialog>
     </CrudWorkspace>
   );
 }

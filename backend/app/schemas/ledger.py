@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.time import validate_jalali_date, validate_local_time
 
@@ -17,6 +17,14 @@ class PersonCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     phone: str | None = Field(default=None, max_length=40)
     person_type: PersonType
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("نام شخص الزامی است.")
+        return value
 
 
 class PersonRead(PersonCreate):
@@ -66,6 +74,7 @@ class LedgerEntryRead(BaseModel):
 
 class SettlementCreate(BaseModel):
     person_id: int
+    entry_type: LedgerEntryType = "debit"
     amount_rial: int = Field(gt=0)
     jalali_date: str
     local_time: str
@@ -87,6 +96,7 @@ class SettlementRead(BaseModel):
 
     id: int
     person_id: int
+    entry_type: LedgerEntryType
     amount_rial: int
     jalali_date: str
     local_time: str
@@ -104,6 +114,14 @@ class ChequeCreate(BaseModel):
     local_time: str
     note: str | None = None
 
+    @field_validator("bank_name", "cheque_number")
+    @classmethod
+    def required_text_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("این فیلد الزامی است.")
+        return value
+
     @field_validator("issue_jalali_date", "due_jalali_date")
     @classmethod
     def jalali_date_format(cls, value: str) -> str:
@@ -113,6 +131,12 @@ class ChequeCreate(BaseModel):
     @classmethod
     def local_time_format(cls, value: str) -> str:
         return validate_local_time(value)
+
+    @model_validator(mode="after")
+    def due_date_not_before_issue_date(self) -> "ChequeCreate":
+        if self.due_jalali_date < self.issue_jalali_date:
+            raise ValueError("تاریخ سررسید نمی‌تواند پیش از تاریخ صدور باشد.")
+        return self
 
 
 class ChequeEventCreate(BaseModel):
