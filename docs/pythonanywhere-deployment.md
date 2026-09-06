@@ -61,6 +61,8 @@ set +a
 
 اگر پیام‌ها در `getUpdates` دیده می‌شوند اما هیچ درخواست ورودی از بله در access log ثبت نمی‌شود، شبکه بله به دامنه PythonAnywhere دسترسی ندارد. در این حالت `BALE_POLLING_FALLBACK=true` را در `~/.store.env` قرار دهید و فرمان تنظیم بالا را دوباره اجرا کنید؛ اسکریپت webhook را غیرفعال می‌کند و worker polling با اجرای وب‌اپ شروع می‌شود.
 
+اسکریپت `deploy/pythonanywhere_start.sh` پراکسی خروجی استاندارد PythonAnywhere را در صورت نبود متغیرهای محیطی ASGI تنظیم می‌کند. این تنظیم برای دسترسی worker به `tapi.bale.ai` لازم است و شامل هیچ توکن یا اطلاعات حساب نیست.
+
 ## ساخت وب‌اپ ASGI
 
 ابتدا در Account → API token یک token بسازید. سپس در Bash console:

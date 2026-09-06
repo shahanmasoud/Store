@@ -14,6 +14,11 @@ set -a
 source "${ENV_FILE}"
 set +a
 
+# PythonAnywhere Bash consoles provide these automatically, while the ASGI
+# launcher may not. urllib needs them to reach the allowlisted outbound proxy.
+export http_proxy="${http_proxy:-http://proxy.server:3128}"
+export https_proxy="${https_proxy:-http://proxy.server:3128}"
+
 exec "${HOME}/.virtualenvs/store/bin/uvicorn" \
   --app-dir "${HOME}/Store/backend" \
   --uds "${DOMAIN_SOCKET}" \
