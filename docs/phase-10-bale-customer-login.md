@@ -127,12 +127,15 @@ BALE_BOT_TOKEN=
 BALE_BOT_USERNAME=
 BALE_WEBHOOK_SECRET=
 BALE_LOGIN_TTL_SECONDS=120
+BALE_POLLING_FALLBACK=false
 PUBLIC_BASE_URL=https://example.pythonanywhere.com
 ```
 
 در نبود تنظیمات واقعی بازو، ساخت challenge با خطای سرویس پیکربندی‌نشده پاسخ می‌دهد؛ تست‌ها از gateway جعلی استفاده می‌کنند و به شبکه بله وابسته نیستند.
 
 روی PythonAnywhere باید دسترسی خروجی سرور به `tapi.bale.ai` نیز با اجرای اسکریپت تنظیم Webhook بررسی شود. اگر سرویس میزبانی اتصال را محدود کرد، فعال‌شدن ورود واقعی منوط به مجازشدن این دامنه یا استفاده از پلن دارای دسترسی خروجی است.
+
+اگر شبکه بله نتواند دامنه PythonAnywhere را مستقیماً فراخوانی کند، مقدار `BALE_POLLING_FALLBACK=true` فعال می‌شود. در این حالت webhook بله حذف و یک worker سبک داخل وب‌اپ updateها را با long polling دریافت می‌کند؛ همان endpoint و قواعد امنیتی پردازش حفظ می‌شوند. این حالت برای میزبانی فعلی پروژه در نظر گرفته شده و نباید هم‌زمان با webhook فعال باشد.
 
 ## راه‌اندازی Webhook
 

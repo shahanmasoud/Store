@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -9,10 +10,21 @@ from sqlalchemy import text
 from app.api.v1.api import api_router
 from app.core.config import get_settings
 from app.db.session import engine
+from app.services.bale_poller import start_bale_poller, stop_bale_poller
 
 settings = get_settings()
 
-app = FastAPI(title=settings.app_name)
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    start_bale_poller()
+    try:
+        yield
+    finally:
+        stop_bale_poller()
+
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

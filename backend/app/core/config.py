@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     bale_bot_username: str = ""
     bale_webhook_secret: str = ""
     bale_login_ttl_seconds: int = Field(default=120, ge=30, le=300)
+    bale_polling_fallback: bool = False
     public_base_url: str = "http://localhost:5173"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")

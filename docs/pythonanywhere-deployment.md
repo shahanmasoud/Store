@@ -33,6 +33,7 @@ BALE_BOT_TOKEN=YOUR_PRIVATE_BALE_BOT_TOKEN
 BALE_BOT_USERNAME=YOUR_BALE_BOT_USERNAME_WITHOUT_AT_SIGN
 BALE_WEBHOOK_SECRET=YOUR_RANDOM_WEBHOOK_SECRET
 BALE_LOGIN_TTL_SECONDS=120
+BALE_POLLING_FALLBACK=false
 PUBLIC_BASE_URL=https://YOUR_USERNAME.pythonanywhere.com
 EOF
 chmod 600 ~/.store.env
@@ -57,6 +58,8 @@ set +a
 این اسکریپت توکن یا secret را چاپ نمی‌کند. اطلاعات طراحی، امنیت و تست این قابلیت در `docs/phase-10-bale-customer-login.md` ثبت شده است.
 
 اجرای موفق همین فرمان، آزمون اولیه دسترسی خروجی PythonAnywhere به `tapi.bale.ai` نیز هست. اگر خطای اتصال دریافت شد، پیش از فعال‌سازی ورود باید امکان دسترسی این دامنه را در حساب میزبانی بررسی کنید.
+
+اگر پیام‌ها در `getUpdates` دیده می‌شوند اما هیچ درخواست ورودی از بله در access log ثبت نمی‌شود، شبکه بله به دامنه PythonAnywhere دسترسی ندارد. در این حالت `BALE_POLLING_FALLBACK=true` را در `~/.store.env` قرار دهید و فرمان تنظیم بالا را دوباره اجرا کنید؛ اسکریپت webhook را غیرفعال می‌کند و worker polling با اجرای وب‌اپ شروع می‌شود.
 
 ## ساخت وب‌اپ ASGI
 

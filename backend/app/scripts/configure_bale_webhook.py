@@ -47,6 +47,11 @@ def main() -> None:
     if actual_username and actual_username.casefold() != username.casefold():
         raise RuntimeError("BALE_BOT_USERNAME does not match the supplied bot token")
 
+    if settings.bale_polling_fallback:
+        call_bale("setWebhook", {"url": ""})
+        print(f"Bale polling fallback configured for @{username}")
+        return
+
     webhook_url = f"{base_url}/api/v1/auth/bale/webhook/{secret}"
     call_bale("setWebhook", {"url": webhook_url})
     print(f"Bale webhook configured for @{username} on {base_url}")

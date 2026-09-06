@@ -237,9 +237,13 @@ class BaleBotGateway:
         )
         try:
             with request.urlopen(req, timeout=8) as response:
-                response.read()
+                result = json.loads(response.read().decode("utf-8"))
         except (error.URLError, TimeoutError, OSError) as exc:
             logger.warning("Bale Bot API request failed for %s: %s", method, type(exc).__name__)
+            raise BaleLoginError("ارتباط با سرویس بله موقتاً برقرار نشد.") from exc
+        if not result.get("ok"):
+            logger.warning("Bale Bot API rejected %s", method)
+            raise BaleLoginError("سرویس بله درخواست بازو را نپذیرفت.")
 
     def send_confirmation(self, *, chat_id: str, code: str) -> None:
         self.call(
