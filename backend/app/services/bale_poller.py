@@ -39,13 +39,15 @@ class BalePollingWorker:
                     update_id = update_payload.get("update_id")
                     if isinstance(update_id, int):
                         self.offset = update_id + 1
+                if not updates:
+                    self.stop_event.wait(2)
             except Exception as exc:  # worker must survive transient provider/network failures
                 logger.warning("Bale polling cycle failed: %s", type(exc).__name__)
                 self.stop_event.wait(3)
 
     def fetch_updates(self) -> list[dict]:
         settings = get_settings()
-        payload: dict[str, int] = {"timeout": 20, "limit": 50}
+        payload: dict[str, int] = {"timeout": 0, "limit": 50}
         if self.offset is not None:
             payload["offset"] = self.offset
         req = request.Request(
@@ -54,7 +56,7 @@ class BalePollingWorker:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with request.urlopen(req, timeout=25) as response:
+        with request.urlopen(req, timeout=10) as response:
             result = json.loads(response.read().decode("utf-8"))
         if not result.get("ok") or not isinstance(result.get("result"), list):
             raise RuntimeError("Bale getUpdates rejected the polling request")

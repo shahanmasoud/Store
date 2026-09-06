@@ -46,8 +46,8 @@ def test_fetch_updates_uses_offset_and_long_poll(monkeypatch) -> None:
 
     assert worker.fetch_updates() == [{"update_id": 42}]
     assert captured["url"].endswith("/getUpdates")
-    assert captured["payload"] == {"timeout": 20, "limit": 50, "offset": 42}
-    assert captured["timeout"] == 25
+    assert captured["payload"] == {"timeout": 0, "limit": 50, "offset": 42}
+    assert captured["timeout"] == 10
 
 
 def test_deliver_update_retries_network_failure(monkeypatch) -> None:
