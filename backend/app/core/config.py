@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     default_admin_username: str = "admin"
     default_admin_password: str = "admin123"
     default_admin_full_name: str = "مدیر سیستم"
+    bale_bot_token: str = ""
+    bale_bot_username: str = ""
+    bale_webhook_secret: str = ""
+    bale_login_ttl_seconds: int = Field(default=120, ge=30, le=300)
+    public_base_url: str = "http://localhost:5173"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

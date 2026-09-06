@@ -1,4 +1,5 @@
 from app.models.catalog import Category, PriceList, PriceRule, Product, ProductVariant, Unit
+from app.models.bale_auth import BaleLoginChallenge, CustomerAccount
 from app.models.ledger import Cheque, ChequeEvent, LedgerEntry, Person, Settlement
 from app.models.online import OnlineChannel, OnlineOrder, OnlineOrderItem, OnlinePriceRule, StockReservation
 from app.models.purchases import (
@@ -14,8 +15,10 @@ from app.models.user import User
 
 __all__ = [
     "Category",
+    "BaleLoginChallenge",
     "Cheque",
     "ChequeEvent",
+    "CustomerAccount",
     "InventoryItem",
     "InventoryTransaction",
     "LedgerEntry",

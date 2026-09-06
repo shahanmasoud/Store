@@ -23,6 +23,39 @@ export type ProductVariant = {
   min_wholesale_quantity?: string | number | null;
   is_active: boolean;
 };
+
+export type BaleLoginChallengeStatus = "pending" | "approved" | "consumed" | "expired";
+
+export type BaleLoginChallenge = {
+  id: string;
+  code: string;
+  status: BaleLoginChallengeStatus;
+  expires_at_utc: string;
+  expires_in_seconds: number;
+  bot_url: string;
+  poll_after_seconds: number;
+};
+
+export type BaleLoginChallengeState = {
+  id: string;
+  status: BaleLoginChallengeStatus;
+  expires_at_utc: string;
+  expires_in_seconds: number;
+  poll_after_seconds: number;
+};
+
+export type BaleCustomer = {
+  id: number | string;
+  display_name?: string | null;
+  provider: "bale";
+};
+
+export type BaleLoginExchange = {
+  access_token: string;
+  token_type: string;
+  return_path: string;
+  customer: BaleCustomer;
+};
 export type PriceType = "retail" | "wholesale" | "online";
 export type PriceList = {
   id: number;
@@ -356,7 +389,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers.set("Content-Type", "application/json");
   }
 
-  if (token) {
+  if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
@@ -392,6 +425,25 @@ export const api = {
   },
   me() {
     return request<User>("/auth/me");
+  },
+  createBaleLoginChallenge(returnPath = "/") {
+    return request<BaleLoginChallenge>("/auth/bale/challenges", {
+      method: "POST",
+      body: JSON.stringify({ return_path: returnPath }),
+    });
+  },
+  baleLoginChallenge(id: string) {
+    return request<BaleLoginChallengeState>(`/auth/bale/challenges/${encodeURIComponent(id)}`);
+  },
+  exchangeBaleLoginChallenge(id: string) {
+    return request<BaleLoginExchange>(`/auth/bale/challenges/${encodeURIComponent(id)}/exchange`, {
+      method: "POST",
+    });
+  },
+  baleCustomerMe(token: string) {
+    return request<BaleCustomer>("/auth/bale/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
   },
   productVariants() {
     return request<ProductVariant[]>("/product-variants");

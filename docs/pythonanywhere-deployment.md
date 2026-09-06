@@ -29,6 +29,11 @@ DATABASE_URL=sqlite:////home/YOUR_USERNAME/store-data/store.db
 SECRET_KEY=YOUR_RANDOM_SECRET
 DEFAULT_ADMIN_USERNAME=YOUR_ADMIN_USERNAME
 DEFAULT_ADMIN_PASSWORD=YOUR_STRONG_ADMIN_PASSWORD
+BALE_BOT_TOKEN=YOUR_PRIVATE_BALE_BOT_TOKEN
+BALE_BOT_USERNAME=YOUR_BALE_BOT_USERNAME_WITHOUT_AT_SIGN
+BALE_WEBHOOK_SECRET=YOUR_RANDOM_WEBHOOK_SECRET
+BALE_LOGIN_TTL_SECONDS=120
+PUBLIC_BASE_URL=https://YOUR_USERNAME.pythonanywhere.com
 EOF
 chmod 600 ~/.store.env
 set -a
@@ -38,6 +43,20 @@ cd ~/Store/backend
 ~/.virtualenvs/store/bin/alembic upgrade head
 ~/.virtualenvs/store/bin/python -m app.scripts.seed_admin
 ```
+
+اگر ورود مشتری با بله فعال است، بعد از بالا آمدن سایت Webhook را تنظیم کنید:
+
+```bash
+cd ~/Store/backend
+set -a
+source ~/.store.env
+set +a
+~/.virtualenvs/store/bin/python -m app.scripts.configure_bale_webhook
+```
+
+این اسکریپت توکن یا secret را چاپ نمی‌کند. اطلاعات طراحی، امنیت و تست این قابلیت در `docs/phase-10-bale-customer-login.md` ثبت شده است.
+
+اجرای موفق همین فرمان، آزمون اولیه دسترسی خروجی PythonAnywhere به `tapi.bale.ai` نیز هست. اگر خطای اتصال دریافت شد، پیش از فعال‌سازی ورود باید امکان دسترسی این دامنه را در حساب میزبانی بررسی کنید.
 
 ## ساخت وب‌اپ ASGI
 

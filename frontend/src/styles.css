@@ -5449,6 +5449,265 @@ select,
   border-bottom: 1px solid #edf1ef;
 }
 
+/* Customer login with Bale */
+.storefront-actions {
+  align-items: center;
+  min-width: max-content;
+}
+
+.storefront-actions .MuiIconButton-root,
+.bale-login-trigger {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.bale-login-trigger {
+  padding-inline: 18px !important;
+  background: linear-gradient(135deg, #087f5b, #0d9488);
+  box-shadow: 0 9px 22px rgba(8, 127, 91, 0.2);
+}
+
+.bale-login-trigger.MuiButton-outlined {
+  background: #f0faf6;
+  box-shadow: none;
+}
+
+.bale-login-dialog .MuiDialog-paper {
+  overflow: hidden;
+  border: 1px solid #d5e7df;
+  border-radius: 20px;
+  background: #fbfdfc;
+  box-shadow: 0 32px 84px rgba(17, 51, 42, 0.24);
+}
+
+.bale-login-dialog .MuiDialogTitle-root {
+  padding: 22px 24px 18px;
+  background: linear-gradient(145deg, #fff 30%, #edf9f4);
+}
+
+.bale-mark {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  color: #fff;
+  background: linear-gradient(145deg, #087f5b, #0d9488);
+  border-radius: 14px;
+  box-shadow: 0 10px 24px rgba(8, 127, 91, 0.23);
+}
+
+.bale-login-content {
+  min-height: 390px;
+  padding: 24px !important;
+  overflow-x: hidden;
+}
+
+.bale-pending-layout {
+  display: grid;
+  grid-template-columns: minmax(218px, 0.82fr) minmax(0, 1.18fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.bale-qr-panel {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  padding: 14px;
+  text-align: center;
+  background: #fff;
+  border: 1px solid #dbeae4;
+  border-radius: 18px;
+}
+
+.bale-qr-frame {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 8px;
+  overflow: hidden;
+  background: #fff;
+  border-radius: 12px;
+}
+
+.bale-qr-frame svg {
+  width: 100%;
+  height: auto;
+  max-width: 196px;
+}
+
+.bale-login-details {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.bale-timer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  color: #36554c;
+}
+
+.bale-timer h5 {
+  direction: ltr;
+  color: #087f5b;
+  font-weight: 950;
+  font-variant-numeric: tabular-nums;
+}
+
+.bale-login-details .MuiLinearProgress-root {
+  height: 7px;
+  border-radius: 999px;
+  background: #dceee6;
+}
+
+.bale-code-box {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 10px;
+  align-items: center;
+  padding: 13px 15px;
+  background: #f0f8f5;
+  border: 1px solid #d2e8de;
+  border-radius: 14px;
+}
+
+.bale-code-box > span,
+.bale-code-box > p {
+  grid-column: 1;
+}
+
+.bale-code-box .MuiButton-root {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  min-height: 44px;
+}
+
+.bale-login-code {
+  overflow-wrap: anywhere;
+  color: #173d32;
+  font-size: clamp(1.45rem, 3vw, 1.8rem) !important;
+  font-weight: 950 !important;
+  letter-spacing: 0.15em !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.bale-login-steps {
+  display: grid;
+  gap: 9px;
+  margin: 2px 0;
+  padding: 0 22px 0 0;
+  color: #405b53;
+  line-height: 1.75;
+}
+
+.bale-login-steps li::marker {
+  color: #087f5b;
+  font-weight: 900;
+}
+
+.bale-centered-state {
+  display: grid;
+  gap: 14px;
+  min-height: 330px;
+  justify-items: center;
+  align-content: center;
+  padding: 24px;
+  text-align: center;
+}
+
+.bale-centered-state > p {
+  max-width: 390px;
+  line-height: 1.9;
+}
+
+.bale-centered-state .MuiButton-root {
+  min-height: 48px;
+  margin-top: 6px;
+}
+
+.bale-centered-state .MuiAlert-root {
+  max-width: 420px;
+}
+
+.bale-success-icon,
+.bale-expired-icon {
+  width: 68px !important;
+  height: 68px !important;
+}
+
+.bale-success-icon { color: #0b8a61; }
+.bale-expired-icon { color: #d97706; }
+
+.bale-dialog-actions {
+  min-height: 62px;
+  padding: 8px 20px !important;
+  background: #fff;
+}
+
+.bale-dialog-actions .MuiButton-root {
+  min-height: 44px;
+}
+
+@media (max-width: 680px) {
+  .storefront-actions {
+    gap: 4px !important;
+  }
+
+  .storefront-actions .bale-login-trigger {
+    width: auto;
+    max-width: 152px;
+    padding-inline: 12px !important;
+    font-size: 0.82rem !important;
+  }
+
+  .storefront-actions .bale-login-trigger .MuiButton-startIcon {
+    margin-left: 5px;
+    margin-right: -2px;
+  }
+
+  .storefront-brand > div:last-child {
+    display: none;
+  }
+
+  .bale-login-dialog .MuiDialog-paper {
+    border: 0;
+    border-radius: 0;
+  }
+
+  .bale-login-dialog .MuiDialogTitle-root {
+    padding: max(16px, env(safe-area-inset-top)) 18px 14px;
+  }
+
+  .bale-login-content {
+    min-height: 0;
+    padding: 20px 18px !important;
+  }
+
+  .bale-pending-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bale-login-details {
+    max-width: 460px;
+    width: 100%;
+    margin-inline: auto;
+  }
+
+  .bale-login-code {
+    font-size: 1.45rem !important;
+  }
+
+  .bale-dialog-actions {
+    padding-bottom: max(8px, env(safe-area-inset-bottom)) !important;
+  }
+}
+
 /* Admin shell */
 .app-layout {
   display: grid;

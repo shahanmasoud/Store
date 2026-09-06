@@ -87,3 +87,8 @@ $env:STORE_BASE_URL="http://127.0.0.1:8003"
 
 راهنمای استقرار تک‌دامنه React و FastAPI روی PythonAnywhere در
 [`docs/pythonanywhere-deployment.md`](docs/pythonanywhere-deployment.md) قرار دارد.
+
+## ورود مشتری با بله
+
+قرارداد API، جریان موبایل و دسکتاپ، قواعد امنیتی، تنظیم Webhook، سناریوهای تست و محدوده فازهای بعدی در
+[`docs/phase-10-bale-customer-login.md`](docs/phase-10-bale-customer-login.md) مستند شده است.

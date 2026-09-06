@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1 import auth
+from app.api.v1 import bale_auth
 from app.api.v1 import catalog
 from app.api.v1 import ledger
 from app.api.v1 import online
@@ -10,6 +11,7 @@ from app.api.v1 import sales
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(bale_auth.router, prefix="/auth/bale", tags=["bale-auth"])
 api_router.include_router(catalog.router, tags=["catalog"])
 api_router.include_router(ledger.router, tags=["ledger"])
 api_router.include_router(online.router, tags=["online"])
