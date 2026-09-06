@@ -426,6 +426,12 @@ export const api = {
   me() {
     return request<User>("/auth/me");
   },
+  changePassword(payload: { current_password: string; new_password: string; confirm_password: string }) {
+    return request<{ message: string }>("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
   createBaleLoginChallenge(returnPath = "/") {
     return request<BaleLoginChallenge>("/auth/bale/challenges", {
       method: "POST",

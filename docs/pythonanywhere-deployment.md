@@ -104,4 +104,12 @@ cd backend
 pa website reload --domain <USERNAME>.pythonanywhere.com
 ```
 
-پیش از هر به‌روزرسانی از `~/store-data/store.db` نسخه پشتیبان بگیرید.
+پیش از هر به‌روزرسانی از دیتابیس نسخه پشتیبان سازگار و بررسی‌شده بگیرید:
+
+```bash
+cd ~/Store/backend
+~/.virtualenvs/store/bin/python -m app.scripts.sqlite_backup backup
+```
+
+راهنمای زمان‌بندی، نگهداری، اعتبارسنجی و بازیابی امن در
+[`sqlite-backup.md`](sqlite-backup.md) قرار دارد. بکاپ‌ها در `~/store-backups` و خارج از Git ذخیره می‌شوند.

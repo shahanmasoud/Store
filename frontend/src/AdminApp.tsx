@@ -25,7 +25,10 @@ import SearchRounded from "@mui/icons-material/SearchRounded";
 import StraightenRounded from "@mui/icons-material/StraightenRounded";
 import HistoryRounded from "@mui/icons-material/HistoryRounded";
 import LocalOfferRounded from "@mui/icons-material/LocalOfferRounded";
+import LockResetRounded from "@mui/icons-material/LockResetRounded";
 import MenuRounded from "@mui/icons-material/MenuRounded";
+import VisibilityRounded from "@mui/icons-material/VisibilityRounded";
+import VisibilityOffRounded from "@mui/icons-material/VisibilityOffRounded";
 import {
   api,
   type DailyJournal,
@@ -376,6 +379,11 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
   const [user, setUser] = useState<User | null>(null);
   const [loginError, setLoginError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSuccess, setPasswordSuccess] = useState("");
+  const [visiblePasswords, setVisiblePasswords] = useState({ current: false, next: false, confirm: false });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const sectionHeadingRef = useRef<HTMLHeadingElement>(null);
 
@@ -440,6 +448,66 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
     setUser(null);
     setView("dashboard");
     setStatus("guest");
+  }
+
+  function openPasswordDialog() {
+    setPasswordError("");
+    setPasswordSuccess("");
+    setVisiblePasswords({ current: false, next: false, confirm: false });
+    setPasswordDialogOpen(true);
+  }
+
+  function passwordVisibilityControl(field: keyof typeof visiblePasswords, label: string) {
+    const visible = visiblePasswords[field];
+    return (
+      <InputAdornment position="start" sx={{ ml: 0, mr: 0.5 }}>
+        <IconButton
+          edge="end"
+          aria-label={`${visible ? "پنهان کردن" : "نمایش"} ${label}`}
+          onClick={() => setVisiblePasswords((current) => ({ ...current, [field]: !current[field] }))}
+          disabled={passwordSubmitting || Boolean(passwordSuccess)}
+          sx={{ minWidth: 44, minHeight: 44 }}
+        >
+          {visible ? <VisibilityOffRounded /> : <VisibilityRounded />}
+        </IconButton>
+      </InputAdornment>
+    );
+  }
+
+  async function handleChangePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPasswordError("");
+    setPasswordSuccess("");
+    const form = new FormData(event.currentTarget);
+    const currentPassword = String(form.get("current-password") ?? "");
+    const newPassword = String(form.get("new-password") ?? "");
+    const confirmPassword = String(form.get("confirm-password") ?? "");
+    if (newPassword.length < 8) {
+      setPasswordError("رمز عبور جدید باید حداقل ۸ کاراکتر باشد.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("تکرار رمز عبور جدید با رمز جدید یکسان نیست.");
+      return;
+    }
+    if (currentPassword === newPassword) {
+      setPasswordError("رمز عبور جدید باید با رمز فعلی متفاوت باشد.");
+      return;
+    }
+    setPasswordSubmitting(true);
+    try {
+      const result = await api.changePassword({
+        current_password: currentPassword,
+        new_password: newPassword,
+        confirm_password: confirmPassword,
+      });
+      setPasswordSuccess(result.message);
+      window.setTimeout(handleLogout, 1600);
+    } catch (error) {
+      setPasswordError(error instanceof Error ? error.message : "تغییر رمز عبور انجام نشد.");
+    } finally {
+      setPasswordSubmitting(false);
+    }
   }
 
   function renderNavigation() {
@@ -564,9 +632,39 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
         <div className="topbar-actions">
           <IconButton className="mobile-nav-trigger" aria-label="باز کردن منوی بخش‌های مدیریت" aria-expanded={mobileNavOpen} onClick={() => setMobileNavOpen(true)}><MenuRounded /></IconButton>
           <Button variant="outlined" startIcon={<StorefrontRounded />} onClick={onOpenStore}>مشاهده فروشگاه</Button>
+          <Button variant="outlined" startIcon={<LockResetRounded />} onClick={openPasswordDialog}>تغییر رمز</Button>
           <button className="ghost-button" type="button" onClick={handleLogout}>خروج</button>
         </div>
       </header>
+
+      <Dialog
+        open={passwordDialogOpen}
+        onClose={() => { if (!passwordSubmitting && !passwordSuccess) setPasswordDialogOpen(false); }}
+        fullWidth
+        maxWidth="xs"
+        aria-labelledby="change-password-title"
+        slotProps={{ paper: { sx: { borderRadius: { xs: 3, sm: 4 }, m: { xs: 2, sm: 4 } } } }}
+      >
+        <Box component="form" onSubmit={handleChangePassword} dir="rtl">
+          <DialogTitle id="change-password-title" sx={{ fontWeight: 900 }}>تغییر رمز عبور</DialogTitle>
+          <DialogContent>
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <Typography variant="body2" color="text.secondary">برای امنیت حساب، ابتدا رمز فعلی را وارد کنید. بعد از تغییر رمز باید دوباره وارد شوید.</Typography>
+              <TextField name="current-password" label="رمز عبور فعلی" type={visiblePasswords.current ? "text" : "password"} autoComplete="current-password" required fullWidth slotProps={{ input: { endAdornment: passwordVisibilityControl("current", "رمز عبور فعلی") } }} disabled={passwordSubmitting || Boolean(passwordSuccess)} />
+              <TextField name="new-password" label="رمز عبور جدید" type={visiblePasswords.next ? "text" : "password"} autoComplete="new-password" required fullWidth helperText="حداقل ۸ کاراکتر و متفاوت از رمز فعلی" slotProps={{ htmlInput: { minLength: 8, maxLength: 128 }, input: { endAdornment: passwordVisibilityControl("next", "رمز عبور جدید") } }} disabled={passwordSubmitting || Boolean(passwordSuccess)} />
+              <TextField name="confirm-password" label="تکرار رمز عبور جدید" type={visiblePasswords.confirm ? "text" : "password"} autoComplete="new-password" required fullWidth slotProps={{ htmlInput: { minLength: 8, maxLength: 128 }, input: { endAdornment: passwordVisibilityControl("confirm", "تکرار رمز عبور جدید") } }} disabled={passwordSubmitting || Boolean(passwordSuccess)} />
+              {passwordError ? <Alert severity="error" role="alert">{passwordError}</Alert> : null}
+              {passwordSuccess ? <Alert severity="success" role="status">{passwordSuccess}</Alert> : null}
+            </Stack>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 3, gap: 1, flexWrap: "wrap" }}>
+            <Button onClick={() => setPasswordDialogOpen(false)} disabled={passwordSubmitting || Boolean(passwordSuccess)}>انصراف</Button>
+            <Button type="submit" variant="contained" disabled={passwordSubmitting || Boolean(passwordSuccess)} sx={{ minHeight: 44, minWidth: 140 }}>
+              {passwordSubmitting ? <Box sx={{ display: "inline-flex", alignItems: "center", gap: 1 }}><CircularProgress size={18} color="inherit" /><span>در حال تغییر...</span></Box> : "تغییر رمز عبور"}
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
 
       {view !== "dashboard" ? (
         <aside className="admin-guide" aria-label="راهنمای این بخش">

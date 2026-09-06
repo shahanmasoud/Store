@@ -88,7 +88,15 @@ $env:STORE_BASE_URL="http://127.0.0.1:8003"
 راهنمای استقرار تک‌دامنه React و FastAPI روی PythonAnywhere در
 [`docs/pythonanywhere-deployment.md`](docs/pythonanywhere-deployment.md) قرار دارد.
 
+راهنمای پشتیبان‌گیری و بازیابی امن اطلاعات SQLite در
+[`docs/sqlite-backup.md`](docs/sqlite-backup.md) قرار دارد.
+
 ## ورود مشتری با بله
 
 قرارداد API، جریان موبایل و دسکتاپ، قواعد امنیتی، تنظیم Webhook، سناریوهای تست و محدوده فازهای بعدی در
 [`docs/phase-10-bale-customer-login.md`](docs/phase-10-bale-customer-login.md) مستند شده است.
+
+## امنیت حساب مدیریت
+
+قرارداد تغییر رمز، ابطال نشست‌های قبلی و سناریوهای تست دستی و خودکار در
+[`docs/phase-11-admin-password-change.md`](docs/phase-11-admin-password-change.md) مستند شده است.
