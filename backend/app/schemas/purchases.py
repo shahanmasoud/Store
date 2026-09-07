@@ -7,6 +7,7 @@ from app.core.time import validate_jalali_date, validate_local_time
 from app.core.numbers import normalize_identifier, normalize_localized_decimal, normalize_localized_integer
 
 PurchaseStatus = Literal["active", "canceled"]
+InventoryAdjustmentType = Literal["increase", "decrease", "initial"]
 
 
 def money_from_quantity(quantity: Decimal, unit_cost_rial: int) -> int:
@@ -132,6 +133,50 @@ class InventoryUpdate(BaseModel):
         return normalize_localized_decimal(value)
 
 
+class InventoryAdjustmentCreate(BaseModel):
+    variant_id: int
+    adjustment_type: InventoryAdjustmentType
+    quantity: Decimal = Field(gt=0)
+    unit_cost_rial: int | None = Field(default=None, ge=0)
+    reason: str = Field(min_length=1, max_length=1000)
+    jalali_date: str
+    local_time: str
+
+    @field_validator("variant_id", "unit_cost_rial", mode="before")
+    @classmethod
+    def localized_integers(cls, value):
+        return normalize_localized_integer(value)
+
+    @field_validator("quantity", mode="before")
+    @classmethod
+    def localized_quantity(cls, value):
+        return normalize_localized_decimal(value)
+
+    @field_validator("reason")
+    @classmethod
+    def non_blank_reason(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("علت تعدیل موجودی الزامی است.")
+        return value
+
+    @field_validator("jalali_date")
+    @classmethod
+    def jalali_date_format(cls, value: str) -> str:
+        return validate_jalali_date(value)
+
+    @field_validator("local_time")
+    @classmethod
+    def local_time_format(cls, value: str) -> str:
+        return validate_local_time(value)
+
+    @model_validator(mode="after")
+    def require_inbound_cost(self) -> "InventoryAdjustmentCreate":
+        if self.adjustment_type in {"increase", "initial"} and self.unit_cost_rial is None:
+            raise ValueError("قیمت خرید برای ورود یا موجودی اولیه الزامی است.")
+        return self
+
+
 class InventoryTransactionRead(BaseModel):
     id: int
     variant_id: int
@@ -141,9 +186,17 @@ class InventoryTransactionRead(BaseModel):
     sale_invoice_id: int | None
     sale_invoice_item_id: int | None
     transaction_type: str
+    adjustment_type: InventoryAdjustmentType | None
+    actor_user_id: int | None
+    actor_username: str | None
+    actor_full_name: str | None
     quantity_delta: Decimal
     balance_after: Decimal
+    quantity_balance_after: Decimal | None
     unit_cost_rial: int | None
+    weighted_average_cost_after_rial: int | None
     jalali_date: str
     local_time: str
     note: str | None
+    reason: str | None
+    occurred_at_utc: str

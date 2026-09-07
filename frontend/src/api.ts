@@ -242,6 +242,28 @@ export type InventoryTransaction = {
   jalali_date: string;
   local_time: string;
   note?: string | null;
+  adjustment_type?: InventoryAdjustmentType | null;
+  adjustment_reason?: string | null;
+  reason?: string | null;
+  actor_user_id?: number | null;
+  actor_name?: string | null;
+  actor_username?: string | null;
+  actor_full_name?: string | null;
+  quantity_balance_after?: number | string | null;
+  weighted_average_cost_after_rial?: number | null;
+  occurred_at_utc?: string;
+};
+
+export type InventoryAdjustmentType = "initial" | "increase" | "decrease";
+
+export type InventoryAdjustmentCreate = {
+  variant_id: number;
+  adjustment_type: InventoryAdjustmentType;
+  quantity: number;
+  unit_cost_rial?: number;
+  reason: string;
+  jalali_date: string;
+  local_time: string;
 };
 
 export type Unit = { id: number; name: string; symbol: string; is_active: boolean };
@@ -497,6 +519,12 @@ export const api = {
   updateInventory(id: number, payload: { reorder_level: number | null }) {
     return request<InventoryItem>(`/inventory/${id}`, {
       method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  },
+  createInventoryAdjustment(payload: InventoryAdjustmentCreate) {
+    return request<InventoryTransaction>("/inventory/adjustments", {
+      method: "POST",
       body: JSON.stringify(payload),
     });
   },

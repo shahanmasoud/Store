@@ -1,7 +1,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.time import utc_now
@@ -14,7 +14,9 @@ from app.models.purchases import (
     PurchaseLot,
     Supplier,
 )
+from app.models.user import User
 from app.schemas.purchases import (
+    InventoryAdjustmentCreate,
     InventoryRead,
     InventoryTransactionRead,
     InventoryUpdate,
@@ -164,22 +166,66 @@ def cancel_purchase(db: Session, invoice_id: int) -> PurchaseInvoice:
     if invoice.status == "canceled":
         return invoice
 
+    variant_totals: dict[int, dict[str, Decimal]] = {}
     for item in invoice.items:
-        inventory = _inventory_for_update(db, item.variant_id)
-        if Decimal(inventory.quantity_on_hand) < Decimal(item.quantity):
+        totals = variant_totals.setdefault(item.variant_id, {"quantity": Decimal("0"), "cost": Decimal("0")})
+        totals["quantity"] += Decimal(item.quantity)
+        totals["cost"] += Decimal(item.line_total_rial)
+
+    inventories: dict[int, InventoryItem] = {}
+    for variant_id, totals in variant_totals.items():
+        inventory = _inventory_for_update(db, variant_id)
+        inventories[variant_id] = inventory
+        if Decimal(inventory.quantity_on_hand) < totals["quantity"]:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="موجودی برای لغو این خرید کافی نیست.",
             )
 
-    for item in invoice.items:
-        inventory = _inventory_for_update(db, item.variant_id)
+        last_invoice_transaction_id = db.scalar(
+            select(func.max(InventoryTransaction.id)).where(
+                InventoryTransaction.variant_id == variant_id,
+                InventoryTransaction.purchase_invoice_id == invoice.id,
+                InventoryTransaction.transaction_type == "purchase_in",
+            )
+        )
+        has_later_movement = last_invoice_transaction_id is not None and db.scalar(
+            select(InventoryTransaction.id).where(
+                InventoryTransaction.variant_id == variant_id,
+                InventoryTransaction.id > last_invoice_transaction_id,
+            ).limit(1)
+        )
+        if has_later_movement is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="برای این کالا پس از خرید گردش دیگری ثبت شده است؛ برای حفظ صحت بهای انبار، به‌جای لغو از اصلاح موجودی استفاده کنید.",
+            )
+
+    final_costs: dict[int, int] = {}
+    running_balances: dict[int, Decimal] = {}
+    cancellation_plan: dict[int, tuple[Decimal, int]] = {}
+    for variant_id, totals in variant_totals.items():
+        inventory = inventories[variant_id]
         old_qty = Decimal(inventory.quantity_on_hand)
-        remaining_qty = old_qty - Decimal(item.quantity)
+        remaining_qty = old_qty - totals["quantity"]
         old_total_cost = old_qty * Decimal(inventory.weighted_average_cost_rial)
-        removed_cost = Decimal(item.line_total_rial)
-        inventory.quantity_on_hand = remaining_qty
-        inventory.weighted_average_cost_rial = _round_rial((old_total_cost - removed_cost) / remaining_qty) if remaining_qty > 0 else 0
+        remaining_cost = old_total_cost - totals["cost"]
+        if remaining_cost < 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="لغو این خرید ارزش انبار را منفی می‌کند؛ از اصلاح موجودی استفاده کنید.",
+            )
+        next_cost = _round_rial(remaining_cost / remaining_qty) if remaining_qty > 0 else 0
+        cancellation_plan[variant_id] = (remaining_qty, next_cost)
+        final_costs[variant_id] = next_cost
+        running_balances[variant_id] = old_qty
+
+    for variant_id, (remaining_qty, next_cost) in cancellation_plan.items():
+        inventories[variant_id].quantity_on_hand = remaining_qty
+        inventories[variant_id].weighted_average_cost_rial = next_cost
+
+    for item in invoice.items:
+        running_balances[item.variant_id] -= Decimal(item.quantity)
         db.add(
             InventoryTransaction(
                 variant_id=item.variant_id,
@@ -187,7 +233,9 @@ def cancel_purchase(db: Session, invoice_id: int) -> PurchaseInvoice:
                 purchase_invoice_item_id=item.id,
                 transaction_type="cancel_purchase",
                 quantity_delta=-Decimal(item.quantity),
+                quantity_balance_after=running_balances[item.variant_id],
                 unit_cost_rial=item.unit_cost_rial,
+                weighted_average_cost_after_rial=final_costs[item.variant_id],
                 jalali_date=invoice.jalali_date,
                 local_time=invoice.local_time,
                 note=f"لغو فاکتور {invoice.invoice_number}",
@@ -247,6 +295,114 @@ def update_inventory(db: Session, inventory_id: int, payload: InventoryUpdate) -
     )
 
 
+def create_inventory_adjustment(
+    db: Session,
+    payload: InventoryAdjustmentCreate,
+    *,
+    actor: User,
+) -> InventoryTransactionRead:
+    variant = db.scalar(
+        select(ProductVariant).where(
+            ProductVariant.id == payload.variant_id,
+            ProductVariant.is_active.is_(True),
+        )
+    )
+    if variant is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="کالای فعال پیدا نشد.")
+
+    inventory = db.scalar(
+        select(InventoryItem).where(InventoryItem.variant_id == payload.variant_id).with_for_update()
+    )
+    current_quantity = Decimal(inventory.quantity_on_hand) if inventory else Decimal("0")
+
+    if payload.adjustment_type == "initial":
+        has_history = db.scalar(
+            select(InventoryTransaction.id).where(InventoryTransaction.variant_id == payload.variant_id).limit(1)
+        )
+        if current_quantity != 0 or has_history is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="موجودی اولیه فقط برای کالای بدون موجودی و بدون سابقه گردش قابل ثبت است.",
+            )
+
+    if payload.adjustment_type == "decrease" and payload.quantity > current_quantity:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="موجودی برای این کاهش کافی نیست.")
+
+    if inventory is None:
+        inventory = InventoryItem(
+            variant_id=payload.variant_id,
+            quantity_on_hand=Decimal("0"),
+            weighted_average_cost_rial=0,
+        )
+        db.add(inventory)
+        db.flush()
+
+    old_cost = inventory.weighted_average_cost_rial
+    if payload.adjustment_type in {"increase", "initial"}:
+        next_quantity = current_quantity + payload.quantity
+        inbound_cost = Decimal(payload.unit_cost_rial or 0)
+        inventory.weighted_average_cost_rial = _round_rial(
+            ((current_quantity * Decimal(old_cost)) + (payload.quantity * inbound_cost)) / next_quantity
+        )
+        quantity_delta = payload.quantity
+    else:
+        next_quantity = current_quantity - payload.quantity
+        quantity_delta = -payload.quantity
+        # A stock decrease removes units at the current weighted-average cost.
+        # The per-unit average remains unchanged while stock exists.
+        if next_quantity == 0:
+            inventory.weighted_average_cost_rial = 0
+
+    inventory.quantity_on_hand = next_quantity
+    transaction = InventoryTransaction(
+        variant_id=payload.variant_id,
+        transaction_type=f"adjustment_{payload.adjustment_type}",
+        adjustment_type=payload.adjustment_type,
+        actor_user_id=actor.id,
+        actor_username=actor.username,
+        actor_full_name=actor.full_name,
+        quantity_delta=quantity_delta,
+        quantity_balance_after=next_quantity,
+        unit_cost_rial=(payload.unit_cost_rial if payload.adjustment_type != "decrease" else old_cost),
+        weighted_average_cost_after_rial=inventory.weighted_average_cost_rial,
+        jalali_date=payload.jalali_date,
+        local_time=payload.local_time,
+        note=payload.reason,
+        reason=payload.reason,
+    )
+    db.add(transaction)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(transaction)
+    return InventoryTransactionRead(
+        id=transaction.id,
+        variant_id=transaction.variant_id,
+        variant_name=variant.name,
+        purchase_invoice_id=None,
+        purchase_invoice_item_id=None,
+        sale_invoice_id=None,
+        sale_invoice_item_id=None,
+        transaction_type=transaction.transaction_type,
+        adjustment_type=transaction.adjustment_type,
+        actor_user_id=transaction.actor_user_id,
+        actor_username=transaction.actor_username,
+        actor_full_name=transaction.actor_full_name,
+        quantity_delta=transaction.quantity_delta,
+        balance_after=next_quantity,
+        quantity_balance_after=transaction.quantity_balance_after,
+        unit_cost_rial=transaction.unit_cost_rial,
+        weighted_average_cost_after_rial=transaction.weighted_average_cost_after_rial,
+        jalali_date=transaction.jalali_date,
+        local_time=transaction.local_time,
+        note=transaction.note,
+        reason=transaction.reason,
+        occurred_at_utc=transaction.occurred_at_utc.isoformat(),
+    )
+
+
 def list_inventory_transactions(
     db: Session,
     *,
@@ -264,6 +420,11 @@ def list_inventory_transactions(
     for transaction, variant in rows:
         balance = balances.get(transaction.variant_id, Decimal("0")) + Decimal(transaction.quantity_delta)
         balances[transaction.variant_id] = balance
+        displayed_balance = (
+            Decimal(transaction.quantity_balance_after)
+            if transaction.quantity_balance_after is not None
+            else balance
+        )
         if variant_id is not None and transaction.variant_id != variant_id:
             continue
         result.append(
@@ -276,12 +437,20 @@ def list_inventory_transactions(
                 sale_invoice_id=transaction.sale_invoice_id,
                 sale_invoice_item_id=transaction.sale_invoice_item_id,
                 transaction_type=transaction.transaction_type,
+                adjustment_type=transaction.adjustment_type,
+                actor_user_id=transaction.actor_user_id,
+                actor_username=transaction.actor_username,
+                actor_full_name=transaction.actor_full_name,
                 quantity_delta=transaction.quantity_delta,
-                balance_after=balance,
+                balance_after=displayed_balance,
+                quantity_balance_after=transaction.quantity_balance_after,
                 unit_cost_rial=transaction.unit_cost_rial,
+                weighted_average_cost_after_rial=transaction.weighted_average_cost_after_rial,
                 jalali_date=transaction.jalali_date,
                 local_time=transaction.local_time,
                 note=transaction.note,
+                reason=transaction.reason,
+                occurred_at_utc=transaction.occurred_at_utc.isoformat(),
             )
         )
     return list(reversed(result[-limit:]))

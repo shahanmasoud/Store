@@ -1,15 +1,17 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import get_current_user
+from app.api.v1.auth import get_current_user, require_superuser
 from app.db.session import get_db
 from app.schemas.purchases import (
+    InventoryAdjustmentCreate,
     InventoryRead,
     InventoryTransactionRead,
     InventoryUpdate,
     PurchaseInvoiceCreate,
     PurchaseInvoiceRead,
 )
+from app.models.user import User
 from app.services import purchases as purchase_service
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -47,6 +49,15 @@ def update_inventory(
     db: Session = Depends(get_db),
 ) -> InventoryRead:
     return purchase_service.update_inventory(db, inventory_id, payload)
+
+
+@router.post("/inventory/adjustments", response_model=InventoryTransactionRead, status_code=status.HTTP_201_CREATED)
+def create_inventory_adjustment(
+    payload: InventoryAdjustmentCreate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_superuser),
+) -> InventoryTransactionRead:
+    return purchase_service.create_inventory_adjustment(db, payload, actor=actor)
 
 
 @router.get("/inventory-transactions", response_model=list[InventoryTransactionRead])

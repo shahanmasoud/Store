@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
-import { Alert, Autocomplete, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, InputAdornment, LinearProgress, MenuItem, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
+import { Alert, Autocomplete, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, InputAdornment, LinearProgress, MenuItem, Stack, Tab, Tabs, TextField, Typography, useMediaQuery, useTheme } from "@mui/material";
 import AccountBalanceWalletRounded from "@mui/icons-material/AccountBalanceWalletRounded";
 import AdminPanelSettingsRounded from "@mui/icons-material/AdminPanelSettingsRounded";
 import AnalyticsRounded from "@mui/icons-material/AnalyticsRounded";
@@ -26,6 +26,7 @@ import StraightenRounded from "@mui/icons-material/StraightenRounded";
 import HistoryRounded from "@mui/icons-material/HistoryRounded";
 import LocalOfferRounded from "@mui/icons-material/LocalOfferRounded";
 import LockResetRounded from "@mui/icons-material/LockResetRounded";
+import RemoveRounded from "@mui/icons-material/RemoveRounded";
 import MenuRounded from "@mui/icons-material/MenuRounded";
 import VisibilityRounded from "@mui/icons-material/VisibilityRounded";
 import VisibilityOffRounded from "@mui/icons-material/VisibilityOffRounded";
@@ -40,6 +41,7 @@ import {
   type Cheque,
   type CustomerDebtsReport,
   type InventoryItem,
+  type InventoryAdjustmentType,
   type InventoryTransaction,
   type InventoryReport,
   type LedgerEntry,
@@ -1025,6 +1027,8 @@ function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenI
 }
 
 function InventoryView({ onBack }: { onBack: () => void }) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [transactions, setTransactions] = useState<InventoryTransaction[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -1037,6 +1041,14 @@ function InventoryView({ onBack }: { onBack: () => void }) {
   const [reorderError, setReorderError] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [adjustingItem, setAdjustingItem] = useState<InventoryItem | null>(null);
+  const [adjustmentType, setAdjustmentType] = useState<InventoryAdjustmentType>("increase");
+  const [adjustmentQuantity, setAdjustmentQuantity] = useState("");
+  const [adjustmentCostRial, setAdjustmentCostRial] = useState(0);
+  const [adjustmentReason, setAdjustmentReason] = useState("");
+  const [adjustmentDate, setAdjustmentDate] = useState(currentJalaliDate);
+  const [adjustmentError, setAdjustmentError] = useState("");
+  const [adjustmentSaving, setAdjustmentSaving] = useState(false);
 
   const load = async () => {
     setStatus("loading");
@@ -1094,13 +1106,80 @@ function InventoryView({ onBack }: { onBack: () => void }) {
     }
   }
 
+  function openAdjustmentDialog(item: InventoryItem) {
+    const initial = Number(item.quantity_on_hand) === 0;
+    setAdjustingItem(item);
+    setAdjustmentType(initial ? "initial" : "increase");
+    setAdjustmentQuantity("");
+    setAdjustmentCostRial(initial ? 0 : item.weighted_average_cost_rial);
+    setAdjustmentReason("");
+    setAdjustmentDate(currentJalaliDate());
+    setAdjustmentError("");
+    setNotice("");
+  }
+
+  function changeAdjustmentType(nextType: InventoryAdjustmentType) {
+    setAdjustmentType(nextType);
+    setAdjustmentError("");
+    if (nextType === "decrease") setAdjustmentCostRial(0);
+    else if (adjustmentCostRial <= 0 && adjustingItem) setAdjustmentCostRial(adjustingItem.weighted_average_cost_rial);
+  }
+
+  async function submitAdjustment(event: FormEvent) {
+    event.preventDefault();
+    if (!adjustingItem) return;
+    const quantity = normalizeDecimal(adjustmentQuantity);
+    if (quantity <= 0) {
+      setAdjustmentError("مقدار اصلاح باید بزرگ‌تر از صفر باشد.");
+      return;
+    }
+    if (adjustmentType === "decrease" && quantity > Number(adjustingItem.quantity_on_hand)) {
+      setAdjustmentError(`حداکثر مقدار قابل کاهش ${formatDecimal(adjustingItem.quantity_on_hand)} است.`);
+      return;
+    }
+    if (!adjustmentReason.trim()) {
+      setAdjustmentError("دلیل اصلاح را بنویسید تا سابقه انبار قابل پیگیری باشد.");
+      return;
+    }
+    setAdjustmentSaving(true);
+    setAdjustmentError("");
+    try {
+      await api.createInventoryAdjustment({
+        variant_id: adjustingItem.variant_id,
+        adjustment_type: adjustmentType,
+        quantity,
+        ...(adjustmentType === "decrease" ? {} : { unit_cost_rial: adjustmentCostRial }),
+        reason: adjustmentReason.trim(),
+        jalali_date: adjustmentDate,
+        local_time: currentLocalTime(),
+      });
+      const itemName = adjustingItem.variant_name;
+      setAdjustingItem(null);
+      await load();
+      setNotice(`اصلاح موجودی «${itemName}» ثبت شد و مانده انبار به‌روز شد.`);
+    } catch (err) {
+      setAdjustmentError(err instanceof Error ? err.message : "اصلاح موجودی ثبت نشد. دوباره تلاش کنید.");
+    } finally {
+      setAdjustmentSaving(false);
+    }
+  }
+
+  const adjustmentQuantityValue = normalizeDecimal(adjustmentQuantity);
+  const adjustmentExceedsStock = Boolean(
+    adjustingItem && adjustmentType === "decrease" && adjustmentQuantityValue > Number(adjustingItem.quantity_on_hand),
+  );
+  const projectedBalance = adjustingItem
+    ? Number(adjustingItem.quantity_on_hand) + (adjustmentType === "decrease" ? -adjustmentQuantityValue : adjustmentQuantityValue)
+    : 0;
+  const adjustmentTypeLabel = adjustmentType === "initial" ? "موجودی اولیه" : adjustmentType === "increase" ? "افزایش موجودی" : "کاهش موجودی";
+
   return (
     <section className="sales-workspace inventory-workspace" aria-label="انبار">
       <div className="sales-header">
         <div>
           <p className="eyebrow">کنترل انبار</p>
           <h2>موجودی و گردش کالاها</h2>
-          <p className="inventory-guide">موجودی از ثبت و لغو خرید محاسبه می‌شود؛ فقط نقطه سفارش را برای هشدار کمبود تنظیم کنید.</p>
+          <p className="inventory-guide">موجودی از خرید، فروش و اصلاح‌های ثبت‌شده محاسبه می‌شود. هر اصلاح با دلیل و نام ثبت‌کننده در تاریخچه می‌ماند.</p>
         </div>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1} className="inventory-header-actions">
           <Button variant="outlined" startIcon={<RefreshRounded />} onClick={() => void load()} disabled={status === "loading"}>به‌روزرسانی</Button>
@@ -1141,7 +1220,10 @@ function InventoryView({ onBack }: { onBack: () => void }) {
                       <div><span>میانگین بها</span><strong>{formatRial(item.weighted_average_cost_rial)}</strong></div>
                       <div><span>نقطه سفارش</span><strong>{item.reorder_level == null ? "تنظیم نشده" : formatDecimal(item.reorder_level)}</strong></div>
                     </div>
-                    <Button fullWidth variant="outlined" startIcon={<EditRounded />} onClick={() => openReorderDialog(item)}>تنظیم نقطه سفارش</Button>
+                    <div className="inventory-stock-actions">
+                      <Button fullWidth variant="contained" startIcon={<Inventory2Rounded />} onClick={() => openAdjustmentDialog(item)}>اصلاح موجودی</Button>
+                      <Button fullWidth variant="outlined" startIcon={<EditRounded />} onClick={() => openReorderDialog(item)}>نقطه سفارش</Button>
+                    </div>
                   </article>
                 );
               })}
@@ -1149,7 +1231,7 @@ function InventoryView({ onBack }: { onBack: () => void }) {
           </section>
 
           <section className="sale-panel inventory-panel" aria-labelledby="inventory-transactions-heading">
-            <div className="inventory-section-heading"><div><h3 id="inventory-transactions-heading">آخرین گردش‌ها</h3><p>ورود و برگشت کالا به ترتیب جدیدترین رخداد.</p></div><HistoryRounded /></div>
+            <div className="inventory-section-heading"><div><h3 id="inventory-transactions-heading">آخرین گردش‌ها</h3><p>خرید، فروش و اصلاح‌ها به ترتیب جدیدترین رخداد.</p></div><HistoryRounded /></div>
             <TextField select fullWidth label="فیلتر بر اساس گونه" value={transactionVariantId} onChange={(event) => setTransactionVariantId(event.target.value)}>
               <MenuItem value="">همه گونه‌ها</MenuItem>
               {items.map((item) => <MenuItem value={String(item.variant_id)} key={item.variant_id}>{item.variant_name}</MenuItem>)}
@@ -1161,7 +1243,7 @@ function InventoryView({ onBack }: { onBack: () => void }) {
                 return (
                   <article className="inventory-transaction" key={transaction.id}>
                     <div className={`inventory-transaction-sign ${isIncoming ? "is-in" : "is-out"}`}>{isIncoming ? "+" : "−"}</div>
-                    <div className="inventory-transaction-main"><strong>{transaction.variant_name}</strong><span>{transaction.transaction_type === "purchase_in" ? "ورود خرید" : transaction.transaction_type === "cancel_purchase" ? "لغو خرید" : transaction.transaction_type === "sale_out" ? "خروج فروش" : transaction.transaction_type === "cancel_sale" ? "لغو فروش" : transaction.transaction_type}</span><small>{transaction.note ?? (transaction.purchase_invoice_id ? `فاکتور خرید ${transaction.purchase_invoice_id}` : "گردش انبار")}</small></div>
+                    <div className="inventory-transaction-main"><strong>{transaction.variant_name}</strong><span>{transaction.transaction_type === "purchase_in" ? "ورود خرید" : transaction.transaction_type === "cancel_purchase" ? "لغو خرید" : transaction.transaction_type === "sale_out" ? "خروج فروش" : transaction.transaction_type === "cancel_sale" ? "لغو فروش" : transaction.transaction_type === "opening_reconciliation" ? "تطبیق مانده قدیمی" : transaction.transaction_type === "adjustment_initial" || transaction.transaction_type === "initial" || transaction.transaction_type === "initial_stock" ? "موجودی اولیه" : transaction.transaction_type === "adjustment_increase" || transaction.transaction_type === "increase" || transaction.transaction_type === "adjustment_in" ? "افزایش اصلاحی" : transaction.transaction_type === "adjustment_decrease" || transaction.transaction_type === "decrease" || transaction.transaction_type === "adjustment_out" ? "کاهش اصلاحی" : transaction.transaction_type}</span><small>{transaction.reason ?? transaction.adjustment_reason ?? transaction.note ?? (transaction.purchase_invoice_id ? `فاکتور خرید ${toPersianDigits(transaction.purchase_invoice_id)}` : "گردش انبار")}</small>{transaction.actor_full_name || transaction.actor_name || transaction.actor_username || transaction.actor_user_id ? <small className="inventory-transaction-actor">ثبت‌کننده: {transaction.actor_full_name ?? transaction.actor_name ?? transaction.actor_username ?? `کاربر ${toPersianDigits(transaction.actor_user_id ?? "")}`}</small> : null}{transaction.weighted_average_cost_after_rial != null ? <small>میانگین بها پس از ثبت: {formatRial(transaction.weighted_average_cost_after_rial)}</small> : null}</div>
                     <div className="inventory-transaction-numbers"><strong className={isIncoming ? "is-in" : "is-out"}>{isIncoming ? "+" : ""}{formatDecimal(transaction.quantity_delta)}</strong><span>مانده: {formatDecimal(transaction.balance_after)}</span><small>{toPersianDigits(transaction.jalali_date)} · {toPersianDigits(transaction.local_time)}</small></div>
                   </article>
                 );
@@ -1175,6 +1257,43 @@ function InventoryView({ onBack }: { onBack: () => void }) {
         <DialogTitle>تنظیم نقطه سفارش</DialogTitle>
         <DialogContent><Stack spacing={2} sx={{ pt: 1 }}><Typography color="text.secondary">{editingItem?.variant_name}</Typography><TextField autoFocus label="نقطه سفارش" value={reorderLevel} onChange={(event) => setReorderLevel(event.target.value)} error={Boolean(reorderError)} helperText={reorderError || "عدد صفر یا بیشتر؛ برای حذف هشدار، خالی بگذارید."} slotProps={{ htmlInput: { inputMode: "decimal" } }} /></Stack></DialogContent>
         <DialogActions><Button onClick={() => setEditingItem(null)} disabled={saving}>انصراف</Button><Button variant="contained" onClick={() => void saveReorderLevel()} disabled={saving}>{saving ? "در حال ذخیره..." : "ذخیره"}</Button></DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(adjustingItem)} onClose={() => !adjustmentSaving && setAdjustingItem(null)} fullWidth maxWidth="sm" fullScreen={isMobile} slotProps={{ paper: { className: "inventory-adjustment-dialog" } }}>
+        <form onSubmit={submitAdjustment} noValidate>
+          <DialogTitle className="inventory-adjustment-title">
+            <div><span>اصلاح موجودی</span><small>{adjustingItem?.variant_name}</small></div>
+            <IconButton aria-label="بستن" onClick={() => setAdjustingItem(null)} disabled={adjustmentSaving}><CloseRounded /></IconButton>
+          </DialogTitle>
+          <DialogContent className="inventory-adjustment-content">
+            <Alert severity="info">این عملیات حذف‌شدنی نیست و برای حفظ سابقه مالی به‌صورت گردش جدید ثبت می‌شود.</Alert>
+            {adjustmentError ? <Alert severity="error" onClose={() => setAdjustmentError("")}>{adjustmentError}</Alert> : null}
+            <div className="inventory-adjustment-types" role="group" aria-label="نوع اصلاح موجودی">
+              <Button variant={adjustmentType === "initial" ? "contained" : "outlined"} color="info" onClick={() => changeAdjustmentType("initial")} disabled={adjustmentSaving || Number(adjustingItem?.quantity_on_hand ?? 0) !== 0} startIcon={<Inventory2Rounded />}>موجودی اولیه</Button>
+              <Button variant={adjustmentType === "increase" ? "contained" : "outlined"} color="success" onClick={() => changeAdjustmentType("increase")} disabled={adjustmentSaving} startIcon={<AddRounded />}>افزایش</Button>
+              <Button variant={adjustmentType === "decrease" ? "contained" : "outlined"} color="error" onClick={() => changeAdjustmentType("decrease")} disabled={adjustmentSaving || Number(adjustingItem?.quantity_on_hand ?? 0) <= 0} startIcon={<RemoveRounded />}>کاهش</Button>
+            </div>
+            {Number(adjustingItem?.quantity_on_hand ?? 0) !== 0 ? <Typography variant="caption" color="text.secondary">موجودی اولیه فقط برای کالایی با مانده صفر قابل ثبت است.</Typography> : null}
+            <div className="inventory-adjustment-fields">
+              <TextField autoFocus label="مقدار" value={toPersianDigits(adjustmentQuantity)} onChange={(event) => { setAdjustmentQuantity(toEnglishDigits(event.target.value)); setAdjustmentError(""); }} required disabled={adjustmentSaving} error={adjustmentQuantity.length > 0 && (adjustmentQuantityValue <= 0 || adjustmentExceedsStock)} helperText={adjustmentExceedsStock ? `مقدار واردشده از مانده ${formatDecimal(adjustingItem?.quantity_on_hand ?? 0)} بیشتر است.` : adjustmentType === "decrease" ? `حداکثر قابل کاهش: ${formatDecimal(adjustingItem?.quantity_on_hand ?? 0)}` : "عدد صحیح یا اعشاری؛ مثلاً ۱۲٫۵"} slotProps={{ htmlInput: { inputMode: "decimal", dir: "ltr" } }} />
+              {adjustmentType !== "decrease" ? <MoneyField label="قیمت خرید هر واحد (تومان)" valueRial={adjustmentCostRial} onValueRialChange={(value) => { setAdjustmentCostRial(value); setAdjustmentError(""); }} required disabled={adjustmentSaving} helperText="برای محاسبه میانگین بها؛ کالای رایگان را صفر بگذارید." /> : <Alert severity="info">کاهش موجودی با میانگین بهای فعلی، یعنی {formatRial(adjustingItem?.weighted_average_cost_rial ?? 0)}، ارزش‌گذاری می‌شود.</Alert>}
+              <JalaliDateField label="تاریخ اصلاح" value={adjustmentDate} onChange={setAdjustmentDate} required />
+              <TextField label="دلیل اصلاح" value={adjustmentReason} onChange={(event) => { setAdjustmentReason(event.target.value); setAdjustmentError(""); }} required disabled={adjustmentSaving} multiline minRows={2} error={adjustmentReason.length > 0 && !adjustmentReason.trim()} helperText="مثلاً شمارش موجودی، کالای آسیب‌دیده یا موجودی ابتدای دوره" />
+            </div>
+            <section className="inventory-adjustment-summary" aria-label="خلاصه اصلاح">
+              <strong>پیش‌نمایش قبل از ثبت</strong>
+              <div><span>نوع عملیات</span><b>{adjustmentTypeLabel}</b></div>
+              <div><span>مانده فعلی</span><b>{formatDecimal(adjustingItem?.quantity_on_hand ?? 0)}</b></div>
+              <div><span>تغییر</span><b className={adjustmentType === "decrease" ? "is-out" : "is-in"}>{adjustmentType === "decrease" ? "−" : "+"}{formatDecimal(adjustmentQuantityValue)}</b></div>
+              <div><span>مانده پس از ثبت</span><b>{formatDecimal(projectedBalance)}</b></div>
+              {adjustmentType !== "decrease" ? <div><span>قیمت خرید واحد</span><b>{formatRial(adjustmentCostRial)}</b></div> : null}
+            </section>
+          </DialogContent>
+          <DialogActions className="inventory-adjustment-actions">
+            <Button size="large" onClick={() => setAdjustingItem(null)} disabled={adjustmentSaving}>انصراف</Button>
+            <Button size="large" type="submit" variant="contained" color={adjustmentType === "decrease" ? "error" : "success"} disabled={adjustmentSaving || adjustmentQuantityValue <= 0 || !adjustmentReason.trim() || adjustmentExceedsStock} startIcon={adjustmentSaving ? <CircularProgress size={18} color="inherit" /> : <FactCheckRounded />}>{adjustmentSaving ? "در حال ثبت…" : "تأیید و ثبت اصلاح"}</Button>
+          </DialogActions>
+        </form>
       </Dialog>
     </section>
   );
