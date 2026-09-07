@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.core.time import validate_jalali_date, validate_local_time
 
 PersonType = Literal["customer", "supplier", "both"]
+CreditStatus = Literal["good", "normal", "watch"]
 LedgerEntryType = Literal["debit", "credit"]
 LedgerSourceType = Literal["sale", "purchase", "settlement", "cheque", "manual"]
 LedgerStatus = Literal["open", "settled", "canceled"]
@@ -17,6 +18,8 @@ class PersonCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     phone: str | None = Field(default=None, max_length=40)
     person_type: PersonType
+    note: str | None = Field(default=None, max_length=2000)
+    credit_status: CreditStatus = "normal"
 
     @field_validator("name")
     @classmethod
@@ -26,12 +29,84 @@ class PersonCreate(BaseModel):
             raise ValueError("نام شخص الزامی است.")
         return value
 
+    @field_validator("phone", "note")
+    @classmethod
+    def optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+    @field_validator("person_type", mode="before")
+    @classmethod
+    def valid_person_type(cls, value: str) -> str:
+        if value not in {"customer", "supplier", "both"}:
+            raise ValueError("نوع شخص باید مشتری، تأمین‌کننده یا هر دو باشد.")
+        return value
+
+    @field_validator("credit_status", mode="before")
+    @classmethod
+    def valid_credit_status(cls, value: str) -> str:
+        if value not in {"good", "normal", "watch"}:
+            raise ValueError("وضعیت خوش‌حسابی باید خوب، عادی یا نیازمند بررسی باشد.")
+        return value
+
+
+class PersonUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    phone: str | None = Field(default=None, max_length=40)
+    person_type: PersonType | None = None
+    note: str | None = Field(default=None, max_length=2000)
+    credit_status: CreditStatus | None = None
+
+    @field_validator("name")
+    @classmethod
+    def update_name_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            raise ValueError("نام شخص نمی‌تواند خالی باشد.")
+        value = value.strip()
+        if not value:
+            raise ValueError("نام شخص نمی‌تواند خالی باشد.")
+        return value
+
+    @field_validator("phone", "note")
+    @classmethod
+    def update_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+    @field_validator("person_type", mode="before")
+    @classmethod
+    def update_person_type(cls, value: str | None) -> str | None:
+        if value is None or value not in {"customer", "supplier", "both"}:
+            raise ValueError("نوع شخص باید مشتری، تأمین‌کننده یا هر دو باشد.")
+        return value
+
+    @field_validator("credit_status", mode="before")
+    @classmethod
+    def update_credit_status(cls, value: str | None) -> str | None:
+        if value is None or value not in {"good", "normal", "watch"}:
+            raise ValueError("وضعیت خوش‌حسابی باید خوب، عادی یا نیازمند بررسی باشد.")
+        return value
+
 
 class PersonRead(PersonCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     is_active: bool
+
+
+class PersonAccountSummary(BaseModel):
+    person_id: int
+    debit_open_rial: int = Field(description="جمع مانده باز بدهی‌های فعال شخص")
+    credit_open_rial: int = Field(description="جمع مانده باز بستانکاری‌های فعال شخص")
+    net_balance_rial: int = Field(
+        description="بدهی باز منهای بستانکاری باز؛ مثبت یعنی شخص به فروشگاه بدهکار و منفی یعنی فروشگاه به شخص بدهکار است"
+    )
+    open_entries_count: int
 
 
 class LedgerEntryCreate(BaseModel):

@@ -38,6 +38,15 @@ def get_current_user(
     return user
 
 
+def require_superuser(current_user: User = Depends(get_current_user)) -> User:
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="فقط مدیر اصلی اجازه انجام این عملیات را دارد.",
+        )
+    return current_user
+
+
 @router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse:
     user = authenticate_user(db, username=payload.username, password=payload.password)

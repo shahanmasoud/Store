@@ -96,7 +96,6 @@ def _ledger_components(db: Session, jalali_date_to: str) -> tuple[int, int]:
             LedgerEntry.remaining_rial > 0,
             LedgerEntry.jalali_date <= jalali_date_to,
             LedgerEntry.is_active.is_(True),
-            Person.is_active.is_(True),
         )
     ).all()
     balances: dict[int, int] = {}
@@ -238,7 +237,6 @@ def customer_debts(db: Session) -> CustomerDebtReportRead:
             LedgerEntry.status == "open",
             LedgerEntry.remaining_rial > 0,
             LedgerEntry.is_active.is_(True),
-            Person.is_active.is_(True),
             Person.person_type.in_(["customer", "both"]),
         )
         .order_by(Person.name)

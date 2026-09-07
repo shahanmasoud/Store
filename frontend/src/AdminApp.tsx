@@ -52,6 +52,7 @@ import {
   type PriceRule,
   type PriceType,
   type Person,
+  type PersonSummary,
   type Product,
   type ProductVariant,
   type ProfitLossReport,
@@ -2039,7 +2040,15 @@ function LedgerView({ onBack }: { onBack: () => void }) {
   const [personName, setPersonName] = useState("");
   const [personPhone, setPersonPhone] = useState("");
   const [personType, setPersonType] = useState<Person["person_type"]>("customer");
+  const [personNote, setPersonNote] = useState("");
+  const [personCreditStatus, setPersonCreditStatus] = useState<Person["credit_status"]>("normal");
+  const [editingPersonId, setEditingPersonId] = useState<number | null>(null);
   const [personSaving, setPersonSaving] = useState(false);
+  const [summaryPerson, setSummaryPerson] = useState<Person | null>(null);
+  const [personSummary, setPersonSummary] = useState<PersonSummary | null>(null);
+  const [summaryStatus, setSummaryStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [pendingDeactivatePerson, setPendingDeactivatePerson] = useState<Person | null>(null);
+  const [personDeactivating, setPersonDeactivating] = useState(false);
   const [entryType, setEntryType] = useState<"debit" | "credit">("debit");
   const [entryAmount, setEntryAmount] = useState("");
   const [entryDate, setEntryDate] = useState(currentJalaliDate);
@@ -2071,16 +2080,42 @@ function LedgerView({ onBack }: { onBack: () => void }) {
   useEffect(() => { loadPeople(); }, []);
   useEffect(() => { if (selectedId) loadLedger(selectedId); else { setEntries([]); setLedgerStatus("idle"); } }, [selectedId]);
 
+  function openCreatePerson() {
+    setEditingPersonId(null); setPersonName(""); setPersonPhone(""); setPersonType("customer"); setPersonNote(""); setPersonCreditStatus("normal"); setPersonDialogError(""); setPersonDialog(true);
+  }
+
+  function openEditPerson(person: Person) {
+    setEditingPersonId(person.id); setPersonName(person.name); setPersonPhone(person.phone ?? ""); setPersonType(person.person_type); setPersonNote(person.note ?? ""); setPersonCreditStatus(person.credit_status ?? "normal"); setPersonDialogError(""); setSummaryPerson(null); setPersonDialog(true);
+  }
+
+  async function openPersonSummary(person: Person) {
+    setSummaryPerson(person); setPersonSummary(null); setSummaryStatus("loading");
+    try { setPersonSummary(await api.personSummary(person.id)); setSummaryStatus("ready"); }
+    catch { setSummaryStatus("error"); }
+  }
+
   async function submitPerson(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!personName.trim()) { setPersonDialogError("نام شخص را وارد کنید."); return; }
     setPersonSaving(true); setNotice(null); setPersonDialogError("");
     try {
-      const created = await api.createPerson({ name: personName.trim(), phone: personPhone.trim() || undefined, person_type: personType });
-      setPersonName(""); setPersonPhone(""); setPersonDialog(false); setNotice({ type: "success", text: "شخص جدید ثبت شد." });
-      await loadPeople(); setSelectedId(created.id);
+      const payload = { name: personName.trim(), phone: personPhone.trim() || undefined, person_type: personType, note: personNote.trim() || undefined, credit_status: personCreditStatus };
+      const saved = editingPersonId ? await api.updatePerson(editingPersonId, { ...payload, phone: payload.phone ?? null, note: payload.note ?? null }) : await api.createPerson(payload);
+      setPersonDialog(false); setNotice({ type: "success", text: editingPersonId ? "اطلاعات شخص ویرایش شد." : "شخص جدید ثبت شد." });
+      await loadPeople(); setSelectedId(saved.id);
     } catch (error) { setPersonDialogError(error instanceof Error ? error.message : "ثبت شخص انجام نشد."); }
     finally { setPersonSaving(false); }
+  }
+
+  async function deactivatePerson() {
+    if (!pendingDeactivatePerson) return;
+    setPersonDeactivating(true); setNotice(null);
+    try {
+      await api.deactivatePerson(pendingDeactivatePerson.id);
+      if (selectedId === pendingDeactivatePerson.id) setSelectedId(0);
+      setSummaryPerson(null); setPendingDeactivatePerson(null); setNotice({ type: "success", text: "شخص غیرفعال شد؛ سوابق مالی او محفوظ است." }); await loadPeople();
+    } catch (error) { setNotice({ type: "error", text: error instanceof Error ? error.message : "غیرفعال‌کردن شخص انجام نشد." }); }
+    finally { setPersonDeactivating(false); }
   }
 
   async function submitEntry(event: FormEvent<HTMLFormElement>) {
@@ -2113,13 +2148,13 @@ function LedgerView({ onBack }: { onBack: () => void }) {
       {notice ? <Alert severity={notice.type} onClose={() => setNotice(null)}>{notice.text}</Alert> : null}
       <div className="ledger-shell">
         <aside className="ledger-people-panel sale-panel">
-          <div className="ledger-section-heading"><div><strong>اشخاص</strong><small>حساب موردنظر را انتخاب کنید</small></div><Button variant="contained" startIcon={<AddRounded />} onClick={() => { setPersonDialogError(""); setPersonDialog(true); }}>شخص جدید</Button></div>
+          <div className="ledger-section-heading"><div><strong>اشخاص</strong><small>برای مشاهده خلاصه حساب روی شخص بزنید</small></div><Button variant="contained" startIcon={<AddRounded />} onClick={openCreatePerson}>شخص جدید</Button></div>
           <TextField size="small" label="جست‌وجوی نام یا تلفن" value={search} onChange={(event) => setSearch(event.target.value)} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} />
           {peopleStatus === "loading" ? <div className="record-state"><CircularProgress size={26} /><span>در حال دریافت اشخاص…</span></div> : null}
           {peopleStatus === "error" ? <div className="record-state record-state-error"><span>فهرست اشخاص دریافت نشد.</span><Button variant="outlined" startIcon={<RefreshRounded />} onClick={loadPeople}>تلاش دوباره</Button></div> : null}
           {peopleStatus === "ready" && people.length === 0 ? <div className="record-state"><AccountBalanceWalletRounded /><strong>هنوز شخصی ثبت نشده است</strong><span>برای شروع، یک مشتری یا تأمین‌کننده بسازید.</span></div> : null}
           {peopleStatus === "ready" && people.length > 0 && filteredPeople.length === 0 ? <div className="record-state"><SearchRounded /><strong>شخصی با این جست‌وجو پیدا نشد</strong></div> : null}
-          <div className="ledger-person-list">{filteredPeople.map((person) => <button type="button" className={`ledger-person-item ${selectedId === person.id ? "active" : ""}`} key={person.id} onClick={() => setSelectedId(person.id)}><span><strong>{person.name}</strong><small>{person.phone || "بدون شماره تماس"}</small></span><Chip size="small" label={person.person_type === "customer" ? "مشتری" : person.person_type === "supplier" ? "تأمین‌کننده" : "هر دو"} /></button>)}</div>
+          <div className="ledger-person-list">{filteredPeople.map((person) => <button type="button" className={`ledger-person-item ${selectedId === person.id ? "active" : ""}`} key={person.id} onClick={() => openPersonSummary(person)}><span><strong>{person.name}</strong><small>{person.phone ? toPersianDigits(person.phone) : "بدون شماره تماس"}</small></span><span className="ledger-person-badges"><Chip size="small" color={person.credit_status === "good" ? "success" : person.credit_status === "watch" ? "warning" : "default"} label={person.credit_status === "good" ? "خوش‌حساب" : person.credit_status === "watch" ? "نیازمند توجه" : "عادی"} /><Chip size="small" variant="outlined" label={person.person_type === "customer" ? "مشتری" : person.person_type === "supplier" ? "تأمین‌کننده" : "هر دو"} /></span></button>)}</div>
         </aside>
         <main className="ledger-main">
           {!selected ? <div className="record-state ledger-welcome sale-panel"><AccountBalanceWalletRounded /><strong>یک حساب را انتخاب کنید</strong><span>مانده و گردش حساب شخص در این بخش نمایش داده می‌شود.</span></div> : <>
@@ -2135,7 +2170,11 @@ function LedgerView({ onBack }: { onBack: () => void }) {
           </>}
         </main>
       </div>
-      <Dialog open={personDialog} onClose={() => { if (!personSaving) setPersonDialog(false); }} fullWidth maxWidth="xs"><form onSubmit={submitPerson} noValidate><DialogTitle>ثبت شخص جدید</DialogTitle><DialogContent className="dialog-form">{personDialogError ? <Alert severity="error">{personDialogError}</Alert> : null}<TextField autoFocus label="نام شخص" value={personName} onChange={(event) => { setPersonName(event.target.value); setPersonDialogError(""); }} required disabled={personSaving} error={personName.length > 0 && !personName.trim()} helperText={personName.length > 0 && !personName.trim() ? "نام نمی‌تواند فقط فاصله باشد." : ""} /><TextField label="شماره تماس (اختیاری)" value={personPhone} onChange={(event) => setPersonPhone(event.target.value)} inputMode="tel" disabled={personSaving} /><TextField select label="نوع شخص" value={personType} onChange={(event) => setPersonType(event.target.value as Person["person_type"])} disabled={personSaving}><MenuItem value="customer">مشتری</MenuItem><MenuItem value="supplier">تأمین‌کننده</MenuItem><MenuItem value="both">مشتری و تأمین‌کننده</MenuItem></TextField></DialogContent><DialogActions><Button size="large" onClick={() => setPersonDialog(false)} disabled={personSaving}>انصراف</Button><Button size="large" type="submit" variant="contained" disabled={personSaving || !personName.trim()} startIcon={personSaving ? <CircularProgress size={18} color="inherit" /> : <AddRounded />}>ثبت شخص</Button></DialogActions></form></Dialog>
+      <Dialog open={personDialog} onClose={() => { if (!personSaving) setPersonDialog(false); }} fullWidth maxWidth="sm" className="person-responsive-dialog"><form onSubmit={submitPerson} noValidate><DialogTitle>{editingPersonId ? "ویرایش اطلاعات شخص" : "ثبت شخص جدید"}</DialogTitle><DialogContent className="dialog-form">{personDialogError ? <Alert severity="error">{personDialogError}</Alert> : null}<TextField autoFocus label="نام شخص" value={personName} onChange={(event) => { setPersonName(event.target.value); setPersonDialogError(""); }} required disabled={personSaving} error={personName.length > 0 && !personName.trim()} helperText={personName.length > 0 && !personName.trim() ? "نام نمی‌تواند فقط فاصله باشد." : ""} /><TextField label="شماره تماس (اختیاری)" value={personPhone} onChange={(event) => setPersonPhone(event.target.value)} inputMode="tel" disabled={personSaving} /><TextField select label="نوع شخص" value={personType} onChange={(event) => setPersonType(event.target.value as Person["person_type"])} disabled={personSaving}><MenuItem value="customer">مشتری</MenuItem><MenuItem value="supplier">تأمین‌کننده</MenuItem><MenuItem value="both">مشتری و تأمین‌کننده</MenuItem></TextField><TextField select label="وضعیت خوش‌حسابی" value={personCreditStatus} onChange={(event) => setPersonCreditStatus(event.target.value as Person["credit_status"])} disabled={personSaving} helperText="این نشان هنگام ثبت فاکتور به تصمیم‌گیری کمک می‌کند."><MenuItem value="good">خوش‌حساب</MenuItem><MenuItem value="normal">عادی</MenuItem><MenuItem value="watch">نیازمند توجه</MenuItem></TextField><TextField label="توضیحات (اختیاری)" value={personNote} onChange={(event) => setPersonNote(event.target.value)} multiline minRows={3} disabled={personSaving} /></DialogContent><DialogActions><Button size="large" onClick={() => setPersonDialog(false)} disabled={personSaving}>انصراف</Button><Button size="large" type="submit" variant="contained" disabled={personSaving || !personName.trim()} startIcon={personSaving ? <CircularProgress size={18} color="inherit" /> : editingPersonId ? <EditRounded /> : <AddRounded />}>{editingPersonId ? "ذخیره تغییرات" : "ثبت شخص"}</Button></DialogActions></form></Dialog>
+
+      <Dialog open={summaryPerson !== null} onClose={() => setSummaryPerson(null)} fullWidth maxWidth="sm" className="person-responsive-dialog"><DialogTitle>خلاصه حساب {summaryPerson?.name}</DialogTitle><DialogContent className="person-summary-content">{summaryStatus === "loading" ? <div className="record-state"><CircularProgress size={28} /><span>در حال محاسبه خلاصه حساب…</span></div> : null}{summaryStatus === "error" ? <div className="record-state record-state-error"><strong>خلاصه حساب دریافت نشد</strong><Button variant="outlined" onClick={() => summaryPerson && openPersonSummary(summaryPerson)}>تلاش دوباره</Button></div> : null}{summaryStatus === "ready" && personSummary ? <><div className="person-summary-grid"><div><small>مانده بدهکار</small><strong>{formatRial(personSummary.debit_open_rial)}</strong></div><div><small>مانده بستانکار</small><strong>{formatRial(personSummary.credit_open_rial)}</strong></div><div className="person-summary-net"><small>مانده خالص</small><strong>{formatRial(Math.abs(personSummary.net_balance_rial))}</strong><span>{personSummary.net_balance_rial > 0 ? "شخص به فروشگاه بدهکار است" : personSummary.net_balance_rial < 0 ? "فروشگاه به شخص بدهکار است" : "حساب تسویه است"}</span></div></div>{personSummary.open_entries_count === 0 ? <Alert severity="success">این شخص سند باز ندارد.</Alert> : <Alert severity="info">{personSummary.open_entries_count.toLocaleString("fa-IR")} سند باز در این حساب وجود دارد.</Alert>}<div className="person-profile-details"><span><small>تلفن</small><strong>{summaryPerson?.phone ? toPersianDigits(summaryPerson.phone) : "ثبت نشده"}</strong></span><span><small>وضعیت خوش‌حسابی</small><strong>{summaryPerson?.credit_status === "good" ? "خوش‌حساب" : summaryPerson?.credit_status === "watch" ? "نیازمند توجه" : "عادی"}</strong></span>{summaryPerson?.note ? <span className="wide"><small>توضیحات</small><strong>{summaryPerson.note}</strong></span> : null}</div></> : null}</DialogContent><DialogActions className="person-summary-actions"><Button color="error" startIcon={<DeleteOutlineRounded />} onClick={() => summaryPerson && setPendingDeactivatePerson(summaryPerson)}>غیرفعال‌کردن</Button><Button startIcon={<EditRounded />} onClick={() => summaryPerson && openEditPerson(summaryPerson)}>ویرایش</Button><Button variant="contained" startIcon={<HistoryRounded />} disabled={summaryStatus !== "ready"} onClick={() => { if (summaryPerson) setSelectedId(summaryPerson.id); setSummaryPerson(null); }}>مشاهده گردش کامل</Button></DialogActions></Dialog>
+
+      <Dialog open={pendingDeactivatePerson !== null} onClose={() => { if (!personDeactivating) setPendingDeactivatePerson(null); }} fullWidth maxWidth="xs"><DialogTitle>غیرفعال‌کردن شخص</DialogTitle><DialogContent><p>«{pendingDeactivatePerson?.name}» از انتخاب‌های جدید پنهان می‌شود، اما تمام فاکتورها و سوابق مالی او محفوظ می‌ماند.</p><Alert severity="warning">این کار حذف دائمی اطلاعات نیست.</Alert></DialogContent><DialogActions><Button size="large" onClick={() => setPendingDeactivatePerson(null)} disabled={personDeactivating}>انصراف</Button><Button size="large" color="error" variant="contained" onClick={deactivatePerson} disabled={personDeactivating} startIcon={personDeactivating ? <CircularProgress size={18} color="inherit" /> : <DeleteOutlineRounded />}>غیرفعال شود</Button></DialogActions></Dialog>
     </CrudWorkspace>
   );
 }

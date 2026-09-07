@@ -12,6 +12,8 @@ class Person(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
     phone: Mapped[str | None] = mapped_column(String(40))
     person_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    note: Mapped[str | None] = mapped_column(Text)
+    credit_status: Mapped[str] = mapped_column(String(20), default="normal", nullable=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     ledger_entries: Mapped[list["LedgerEntry"]] = relationship(back_populates="person")

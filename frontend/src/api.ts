@@ -246,7 +246,15 @@ export type Unit = { id: number; name: string; symbol: string; is_active: boolea
 export type Category = { id: number; name: string; parent_id?: number | null; is_active: boolean };
 export type Product = { id: number; name: string; description?: string | null; category_id?: number | null; is_active: boolean };
 export type PersonType = "customer" | "supplier" | "both";
-export type Person = { id: number; name: string; phone?: string | null; person_type: PersonType; is_active: boolean };
+export type CreditStatus = "good" | "normal" | "watch";
+export type Person = { id: number; name: string; phone?: string | null; person_type: PersonType; note?: string | null; credit_status: CreditStatus; is_active: boolean };
+export type PersonSummary = {
+  person_id: number;
+  debit_open_rial: number;
+  credit_open_rial: number;
+  net_balance_rial: number;
+  open_entries_count: number;
+};
 export type LedgerEntry = {
   id: number;
   person_id: number;
@@ -413,6 +421,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new Error(message);
   }
 
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
@@ -583,8 +592,17 @@ export const api = {
   persons() {
     return request<Person[]>("/persons");
   },
-  createPerson(payload: { name: string; phone?: string; person_type: PersonType }) {
+  createPerson(payload: { name: string; phone?: string; person_type: PersonType; note?: string; credit_status?: CreditStatus }) {
     return request<Person>("/persons", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updatePerson(id: number, payload: Partial<{ name: string; phone: string | null; person_type: PersonType; note: string | null; credit_status: CreditStatus }>) {
+    return request<Person>(`/persons/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+  },
+  deactivatePerson(id: number) {
+    return request<void>(`/persons/${id}`, { method: "DELETE" });
+  },
+  personSummary(personId: number) {
+    return request<PersonSummary>(`/ledger/persons/${personId}/summary`);
   },
   personLedger(personId: number) {
     return request<LedgerEntry[]>(`/ledger/persons/${personId}`);

@@ -107,6 +107,27 @@ def test_person_and_manual_debit_credit_entries(client: TestClient, auth_headers
     assert [entry["id"] for entry in ledger.json()] == [debit["id"], credit["id"]]
 
 
+def test_create_person_persists_note_and_credit_status(client: TestClient, auth_headers: dict[str, str]) -> None:
+    response = client.post(
+        "/api/v1/persons",
+        json={
+            "name": "مشتری خوش‌حساب",
+            "phone": "09120000001",
+            "person_type": "customer",
+            "note": "  پرداخت‌ها را همیشه به‌موقع انجام می‌دهد.  ",
+            "credit_status": "good",
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 201
+    assert response.json()["note"] == "پرداخت‌ها را همیشه به‌موقع انجام می‌دهد."
+    assert response.json()["credit_status"] == "good"
+    listed = client.get("/api/v1/persons", headers=auth_headers).json()
+    assert listed[0]["note"] == "پرداخت‌ها را همیشه به‌موقع انجام می‌دهد."
+    assert listed[0]["credit_status"] == "good"
+
+
 def test_settlement_reduces_oldest_open_entries_and_marks_settled(
     client: TestClient,
     auth_headers: dict[str, str],
@@ -373,3 +394,125 @@ def test_dues_returns_open_ledger_and_pending_cheques_up_to_date(
     data = response.json()
     assert [entry["id"] for entry in data["open_ledger_entries"]] == [due_entry["id"]]
     assert [item["id"] for item in data["pending_cheques"]] == [cheque["id"]]
+
+
+def test_person_update_validation_and_soft_delete_preserve_financial_history(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    person = create_person(client, auth_headers)
+    debit = create_entry(client, auth_headers, person["id"], 1_200_000, "1405/06/01", "debit")
+    create_entry(client, auth_headers, person["id"], 250_000, "1405/06/02", "credit")
+
+    updated = client.patch(
+        f"/api/v1/persons/{person['id']}",
+        json={"name": "  مشتری نمونه  ", "note": "  پرداخت منظم  ", "credit_status": "good"},
+        headers=auth_headers,
+    )
+    assert updated.status_code == 200
+    assert {
+        key: updated.json()[key] for key in ("name", "note", "credit_status", "is_active")
+    } == {"name": "مشتری نمونه", "note": "پرداخت منظم", "credit_status": "good", "is_active": True}
+
+    invalid = client.patch(
+        f"/api/v1/persons/{person['id']}",
+        json={"credit_status": "unknown"},
+        headers=auth_headers,
+    )
+    assert invalid.status_code == 422
+    assert "وضعیت" in invalid.json()["detail"][0]["msg"]
+    assert client.patch(
+        f"/api/v1/persons/{person['id']}", json={"name": None}, headers=auth_headers
+    ).status_code == 422
+
+    before = client.get(f"/api/v1/ledger/persons/{person['id']}/summary", headers=auth_headers)
+    reports_before = (
+        client.get("/api/v1/reports/cashflow?jalali_date_to=1405/06/30", headers=auth_headers).json(),
+        client.get("/api/v1/reports/customer-debts", headers=auth_headers).json(),
+    )
+    assert before.status_code == 200
+    assert before.json() == {
+        "person_id": person["id"],
+        "debit_open_rial": 1_200_000,
+        "credit_open_rial": 250_000,
+        "net_balance_rial": 950_000,
+        "open_entries_count": 2,
+    }
+
+    deleted = client.delete(f"/api/v1/persons/{person['id']}", headers=auth_headers)
+    deleted_again = client.delete(f"/api/v1/persons/{person['id']}", headers=auth_headers)
+    assert deleted.status_code == 204
+    assert deleted_again.status_code == 204
+    assert client.get("/api/v1/persons", headers=auth_headers).json() == []
+    inactive = client.get("/api/v1/persons?include_inactive=true", headers=auth_headers).json()
+    assert inactive[0]["is_active"] is False
+
+    ledger = client.get(f"/api/v1/ledger/persons/{person['id']}", headers=auth_headers)
+    after = client.get(f"/api/v1/ledger/persons/{person['id']}/summary", headers=auth_headers)
+    assert ledger.status_code == 200
+    assert ledger.json()[0]["id"] == debit["id"]
+    assert after.json() == before.json()
+    reports_after = (
+        client.get("/api/v1/reports/cashflow?jalali_date_to=1405/06/30", headers=auth_headers).json(),
+        client.get("/api/v1/reports/customer-debts", headers=auth_headers).json(),
+    )
+    assert reports_after == reports_before
+
+    assert client.patch(
+        f"/api/v1/persons/{person['id']}", json={"name": "ویرایش"}, headers=auth_headers
+    ).status_code == 404
+    assert client.post(
+        "/api/v1/ledger/manual-entry",
+        json={
+            "person_id": person["id"],
+            "entry_type": "debit",
+            "amount_rial": 100,
+            "jalali_date": "1405/06/03",
+            "local_time": "10:00",
+        },
+        headers=auth_headers,
+    ).status_code == 404
+
+
+def test_person_and_ledger_routes_require_admin_auth(client: TestClient, auth_headers: dict[str, str]) -> None:
+    person = create_person(client, auth_headers)
+    requests = [
+        client.get("/api/v1/persons"),
+        client.post("/api/v1/persons", json={"name": "الف", "person_type": "customer"}),
+        client.patch(f"/api/v1/persons/{person['id']}", json={"name": "ب"}),
+        client.delete(f"/api/v1/persons/{person['id']}"),
+        client.get(f"/api/v1/ledger/persons/{person['id']}/summary"),
+        client.get(f"/api/v1/ledger/persons/{person['id']}"),
+        client.post("/api/v1/ledger/manual-entry", json={}),
+    ]
+    assert all(response.status_code == 401 for response in requests)
+
+
+def test_only_superuser_can_update_or_deactivate_person(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    db_session: Session,
+) -> None:
+    person = create_person(client, auth_headers)
+    db_session.add(
+        User(
+            username="operator",
+            full_name="کاربر عادی",
+            hashed_password=get_password_hash("operator123"),
+            is_active=True,
+            is_superuser=False,
+        )
+    )
+    db_session.commit()
+    login = client.post("/api/v1/auth/login", json={"username": "operator", "password": "operator123"})
+    operator_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    patch_response = client.patch(
+        f"/api/v1/persons/{person['id']}", json={"name": "نام جدید"}, headers=operator_headers
+    )
+    delete_response = client.delete(f"/api/v1/persons/{person['id']}", headers=operator_headers)
+
+    assert patch_response.status_code == 403
+    assert delete_response.status_code == 403
+    assert patch_response.json()["detail"] == "فقط مدیر اصلی اجازه انجام این عملیات را دارد."
+    assert delete_response.json()["detail"] == "فقط مدیر اصلی اجازه انجام این عملیات را دارد."

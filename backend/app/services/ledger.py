@@ -1,5 +1,5 @@
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.ledger import Cheque, ChequeEvent, LedgerEntry, Person, Settlement
@@ -9,6 +9,7 @@ from app.schemas.ledger import (
     DuesRead,
     LedgerEntryCreate,
     PersonCreate,
+    PersonUpdate,
     SettlementCreate,
 )
 
@@ -32,15 +33,81 @@ def _cheque_or_404(db: Session, cheque_id: int) -> Cheque:
 
 
 def create_person(db: Session, payload: PersonCreate) -> Person:
-    person = Person(name=payload.name, phone=payload.phone, person_type=payload.person_type)
+    person = Person(
+        name=payload.name,
+        phone=payload.phone,
+        person_type=payload.person_type,
+        note=payload.note,
+        credit_status=payload.credit_status,
+    )
     db.add(person)
     db.commit()
     db.refresh(person)
     return person
 
 
-def list_persons(db: Session) -> list[Person]:
-    return list(db.scalars(select(Person).where(Person.is_active.is_(True)).order_by(Person.name, Person.id)))
+def list_persons(db: Session, *, include_inactive: bool = False) -> list[Person]:
+    statement = select(Person)
+    if not include_inactive:
+        statement = statement.where(Person.is_active.is_(True))
+    return list(db.scalars(statement.order_by(Person.name, Person.id)))
+
+
+def update_person(db: Session, person_id: int, payload: PersonUpdate) -> Person:
+    person = _person_or_404(db, person_id)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(person, field, value)
+    db.commit()
+    db.refresh(person)
+    return person
+
+
+def deactivate_person(db: Session, person_id: int) -> None:
+    person = db.get(Person, person_id)
+    if not person:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="شخص پیدا نشد.")
+    if person.is_active:
+        person.is_active = False
+        db.commit()
+
+
+def get_person_account_summary(db: Session, person_id: int) -> dict[str, int]:
+    person = db.get(Person, person_id)
+    if not person:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="شخص پیدا نشد.")
+    totals = dict(
+        db.execute(
+            select(LedgerEntry.entry_type, func.coalesce(func.sum(LedgerEntry.remaining_rial), 0))
+            .where(
+                LedgerEntry.person_id == person_id,
+                LedgerEntry.is_active.is_(True),
+                LedgerEntry.status == "open",
+                LedgerEntry.remaining_rial > 0,
+            )
+            .group_by(LedgerEntry.entry_type)
+        ).all()
+    )
+    debit = int(totals.get("debit", 0))
+    credit = int(totals.get("credit", 0))
+    net = debit - credit
+    open_entries_count = int(
+        db.scalar(
+            select(func.count(LedgerEntry.id)).where(
+                LedgerEntry.person_id == person_id,
+                LedgerEntry.is_active.is_(True),
+                LedgerEntry.status == "open",
+                LedgerEntry.remaining_rial > 0,
+            )
+        )
+        or 0
+    )
+    return {
+        "person_id": person_id,
+        "debit_open_rial": debit,
+        "credit_open_rial": credit,
+        "net_balance_rial": net,
+        "open_entries_count": open_entries_count,
+    }
 
 
 def create_manual_entry(db: Session, payload: LedgerEntryCreate) -> LedgerEntry:
@@ -63,7 +130,8 @@ def create_manual_entry(db: Session, payload: LedgerEntryCreate) -> LedgerEntry:
 
 
 def get_person_ledger(db: Session, person_id: int) -> list[LedgerEntry]:
-    _person_or_404(db, person_id)
+    if not db.get(Person, person_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="شخص پیدا نشد.")
     return list(
         db.scalars(
             select(LedgerEntry)

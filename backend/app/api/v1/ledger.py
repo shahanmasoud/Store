@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import get_current_user
+from app.api.v1.auth import get_current_user, require_superuser
 from app.core.time import validate_jalali_date
 from app.db.session import get_db
 from app.schemas.ledger import (
@@ -12,7 +12,9 @@ from app.schemas.ledger import (
     LedgerEntryCreate,
     LedgerEntryRead,
     PersonCreate,
+    PersonAccountSummary,
     PersonRead,
+    PersonUpdate,
     SettlementCreate,
     SettlementRead,
 )
@@ -27,8 +29,32 @@ def create_person(payload: PersonCreate, db: Session = Depends(get_db)) -> Perso
 
 
 @router.get("/persons", response_model=list[PersonRead])
-def persons(db: Session = Depends(get_db)) -> list[PersonRead]:
-    return ledger_service.list_persons(db)
+def persons(include_inactive: bool = Query(False), db: Session = Depends(get_db)) -> list[PersonRead]:
+    return ledger_service.list_persons(db, include_inactive=include_inactive)
+
+
+@router.patch("/persons/{person_id}", response_model=PersonRead)
+def update_person(
+    person_id: int,
+    payload: PersonUpdate,
+    db: Session = Depends(get_db),
+    _admin: object = Depends(require_superuser),
+) -> PersonRead:
+    return ledger_service.update_person(db, person_id, payload)
+
+
+@router.delete("/persons/{person_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_person(
+    person_id: int,
+    db: Session = Depends(get_db),
+    _admin: object = Depends(require_superuser),
+) -> None:
+    ledger_service.deactivate_person(db, person_id)
+
+
+@router.get("/ledger/persons/{person_id}/summary", response_model=PersonAccountSummary)
+def person_account_summary(person_id: int, db: Session = Depends(get_db)) -> PersonAccountSummary:
+    return ledger_service.get_person_account_summary(db, person_id)
 
 
 @router.get("/ledger/persons/{person_id}", response_model=list[LedgerEntryRead])
