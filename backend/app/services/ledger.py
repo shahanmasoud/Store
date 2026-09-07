@@ -2,11 +2,15 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.ledger import Cheque, ChequeEvent, LedgerDueAudit, LedgerEntry, Person, Settlement
+from datetime import datetime, timezone
+
+from app.core.time import utc_now
+from app.models.ledger import Cheque, ChequeAudit, ChequeEvent, LedgerDueAudit, LedgerEntry, Person, Settlement
 from app.models.user import User
 from app.schemas.ledger import (
     ChequeCreate,
     ChequeEventCreate,
+    ChequeUpdate,
     DuesRead,
     LedgerEntryCreate,
     LedgerDueDateUpdate,
@@ -247,9 +251,56 @@ def create_settlement(db: Session, payload: SettlementCreate) -> Settlement:
     return settlement
 
 
-def create_cheque(db: Session, payload: ChequeCreate) -> Cheque:
+def _cheque_snapshot(cheque: Cheque) -> dict:
+    return {
+        "id": cheque.id,
+        "cheque_type": cheque.cheque_type,
+        "person_id": cheque.person_id,
+        "bank_name": cheque.bank_name,
+        "cheque_number": cheque.cheque_number,
+        "amount_rial": cheque.amount_rial,
+        "issue_jalali_date": cheque.issue_jalali_date,
+        "due_jalali_date": cheque.due_jalali_date,
+        "status": cheque.status,
+        "note": cheque.note,
+        "is_active": cheque.is_active,
+    }
+
+
+def _audit_cheque(
+    db: Session,
+    cheque: Cheque,
+    *,
+    action: str,
+    actor: User,
+    before: dict | None,
+    after: dict | None,
+    reason: str,
+) -> None:
+    db.add(
+        ChequeAudit(
+            cheque_id=cheque.id,
+            action=action,
+            actor_user_id=actor.id,
+            actor_username=actor.username,
+            actor_full_name=actor.full_name,
+            before_json=before,
+            after_json=after,
+            reason=reason,
+        )
+    )
+
+
+def _normalized_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def create_cheque(db: Session, payload: ChequeCreate, actor: User) -> Cheque:
     if payload.person_id is not None:
         _person_or_404(db, payload.person_id)
+    now = utc_now()
     cheque = Cheque(
         cheque_type=payload.cheque_type,
         person_id=payload.person_id,
@@ -259,6 +310,7 @@ def create_cheque(db: Session, payload: ChequeCreate) -> Cheque:
         issue_jalali_date=payload.issue_jalali_date,
         due_jalali_date=payload.due_jalali_date,
         note=payload.note,
+        updated_at_utc=now,
     )
     db.add(cheque)
     db.flush()
@@ -271,11 +323,68 @@ def create_cheque(db: Session, payload: ChequeCreate) -> Cheque:
             note=payload.note,
         )
     )
+    _audit_cheque(
+        db,
+        cheque,
+        action="create",
+        actor=actor,
+        before=None,
+        after=_cheque_snapshot(cheque),
+        reason="ثبت اولیه چک",
+    )
     db.commit()
     return _cheque_or_404(db, cheque.id)
 
 
-def add_cheque_event(db: Session, cheque_id: int, payload: ChequeEventCreate) -> Cheque:
+def update_cheque(db: Session, cheque_id: int, payload: ChequeUpdate, actor: User) -> Cheque:
+    cheque = _cheque_or_404(db, cheque_id)
+    if not cheque.is_active or cheque.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="فقط چک فعال و در انتظار قابل ویرایش است.",
+        )
+    if cheque.updated_at_utc is None or _normalized_utc(cheque.updated_at_utc) != _normalized_utc(payload.expected_updated_at):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="این چک پس از باز شدن فرم تغییر کرده است؛ اطلاعات را دوباره دریافت کنید.",
+        )
+
+    changes = payload.model_dump(
+        exclude_unset=True,
+        exclude={"reason", "expected_updated_at"},
+    )
+    if "person_id" in changes and changes["person_id"] is not None:
+        _person_or_404(db, changes["person_id"])
+    final_issue_date = changes.get("issue_jalali_date", cheque.issue_jalali_date)
+    final_due_date = changes.get("due_jalali_date", cheque.due_jalali_date)
+    if final_issue_date is None or final_due_date is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="تاریخ صدور و سررسید الزامی است.")
+    if final_due_date < final_issue_date:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="تاریخ سررسید نمی‌تواند پیش از تاریخ صدور باشد.",
+        )
+    if not changes or all(getattr(cheque, field) == value for field, value in changes.items()):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="هیچ تغییری برای ثبت وجود ندارد.")
+
+    before = _cheque_snapshot(cheque)
+    for field, value in changes.items():
+        setattr(cheque, field, value)
+    cheque.updated_at_utc = utc_now()
+    _audit_cheque(
+        db,
+        cheque,
+        action="update",
+        actor=actor,
+        before=before,
+        after=_cheque_snapshot(cheque),
+        reason=payload.reason,
+    )
+    db.commit()
+    return _cheque_or_404(db, cheque.id)
+
+
+def add_cheque_event(db: Session, cheque_id: int, payload: ChequeEventCreate, actor: User) -> Cheque:
     cheque = _cheque_or_404(db, cheque_id)
     allowed_transitions = {
         "pending": {"cleared", "bounced", "canceled"},
@@ -292,6 +401,7 @@ def add_cheque_event(db: Session, cheque_id: int, payload: ChequeEventCreate) ->
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="تاریخ اقدام نمی‌تواند پیش از آخرین رویداد چک باشد.",
         )
+    before = _cheque_snapshot(cheque)
     cheque.status = payload.event_type
     if payload.event_type == "canceled":
         cheque.is_active = False
@@ -304,8 +414,29 @@ def add_cheque_event(db: Session, cheque_id: int, payload: ChequeEventCreate) ->
             note=payload.note,
         )
     )
+    cheque.updated_at_utc = utc_now()
+    _audit_cheque(
+        db,
+        cheque,
+        action="event",
+        actor=actor,
+        before=before,
+        after=_cheque_snapshot(cheque),
+        reason=(payload.note.strip() if payload.note and payload.note.strip() else f"ثبت رویداد {payload.event_type}"),
+    )
     db.commit()
     return _cheque_or_404(db, cheque.id)
+
+
+def list_cheque_audits(db: Session, cheque_id: int) -> list[ChequeAudit]:
+    _cheque_or_404(db, cheque_id)
+    return list(
+        db.scalars(
+            select(ChequeAudit)
+            .where(ChequeAudit.cheque_id == cheque_id)
+            .order_by(ChequeAudit.occurred_at_utc, ChequeAudit.id)
+        )
+    )
 
 
 def list_cheques(db: Session) -> list[Cheque]:

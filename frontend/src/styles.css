@@ -2240,6 +2240,21 @@ button {
 .cheque-history > div > span { width: 9px; height: 9px; margin-top: 7px; border-radius: 50%; background: #087f5b; }
 .cheque-history p { display: grid; gap: 2px; margin: 0; }
 .cheque-history small { color: #71817c; line-height: 1.8; }
+.cheque-edit-dialog-form { display: flex; min-height: 100%; flex-direction: column; }
+.cheque-edit-dialog-content { flex: 1; align-content: start; overflow-x: hidden; }
+.cheque-edit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.cheque-edit-grid .wide { grid-column: 1 / -1; }
+.cheque-audit-section { display: grid; gap: 12px; padding-top: 6px; }
+.cheque-audit-list { display: grid; gap: 10px; }
+.cheque-audit-list article { display: grid; gap: 10px; min-width: 0; padding: 13px; border: 1px solid #e0eae5; border-radius: 14px; background: #f9fcfa; }
+.cheque-audit-list header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; }
+.cheque-audit-list header small, .cheque-audit-list div small { color: #687a74; }
+.cheque-audit-list article > div { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; }
+.cheque-audit-list article > div > span { display: grid; min-width: 0; gap: 3px; }
+.cheque-audit-list article > div strong { overflow-wrap: anywhere; }
+.cheque-audit-list p { margin: 0; padding-top: 8px; color: #475a54; border-top: 1px solid #e4ece8; overflow-wrap: anywhere; }
+.cheque-edit-dialog-actions { gap: 8px; flex-wrap: wrap; padding: 14px 24px 20px !important; border-top: 1px solid #e2ebe7; background: #fff; }
+.cheque-edit-dialog-actions .MuiButton-root { min-height: 44px; }
 
 @media (max-width: 1050px) {
   .ledger-shell, .cheque-layout { grid-template-columns: 1fr; }
@@ -2267,6 +2282,10 @@ button {
   .cheque-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .cheque-actions .MuiButton-root { width: 100%; }
   .dues-controls { grid-template-columns: 1fr; }
+  .cheque-edit-grid { grid-template-columns: 1fr; }
+  .cheque-edit-grid .wide { grid-column: auto; }
+  .cheque-edit-dialog-actions { position: sticky; bottom: 0; display: grid; grid-template-columns: 1fr 1fr; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)) !important; z-index: 2; }
+  .cheque-edit-dialog-actions .MuiButton-root { width: 100%; }
 }
 
 @media (max-width: 400px) {
@@ -2274,6 +2293,8 @@ button {
   .ledger-due-dialog-actions { grid-template-columns: 1fr; }
   .cheque-card-heading { grid-template-columns: auto minmax(0, 1fr); }
   .cheque-card-heading .MuiChip-root { grid-column: 1 / -1; justify-self: start; }
+  .cheque-audit-list article > div, .cheque-edit-dialog-actions { grid-template-columns: 1fr; }
+  .cheque-audit-list article > div > svg { transform: rotate(-90deg); justify-self: center; }
 }
 
 /* Inventory control center */

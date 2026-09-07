@@ -6,8 +6,10 @@ from app.core.time import validate_jalali_date
 from app.db.session import get_db
 from app.schemas.ledger import (
     ChequeCreate,
+    ChequeAuditRead,
     ChequeEventCreate,
     ChequeRead,
+    ChequeUpdate,
     DuesRead,
     LedgerEntryCreate,
     LedgerEntryRead,
@@ -103,13 +105,41 @@ def dues(jalali_date_to: str = Query(...), db: Session = Depends(get_db)) -> Due
 
 
 @router.post("/cheques", response_model=ChequeRead, status_code=status.HTTP_201_CREATED)
-def create_cheque(payload: ChequeCreate, db: Session = Depends(get_db)) -> ChequeRead:
-    return ledger_service.create_cheque(db, payload)
+def create_cheque(
+    payload: ChequeCreate,
+    db: Session = Depends(get_db),
+    admin=Depends(require_superuser),
+) -> ChequeRead:
+    return ledger_service.create_cheque(db, payload, admin)
+
+
+@router.patch("/cheques/{cheque_id}", response_model=ChequeRead)
+def update_cheque(
+    cheque_id: int,
+    payload: ChequeUpdate,
+    db: Session = Depends(get_db),
+    admin=Depends(require_superuser),
+) -> ChequeRead:
+    return ledger_service.update_cheque(db, cheque_id, payload, admin)
 
 
 @router.post("/cheques/{cheque_id}/events", response_model=ChequeRead)
-def create_cheque_event(cheque_id: int, payload: ChequeEventCreate, db: Session = Depends(get_db)) -> ChequeRead:
-    return ledger_service.add_cheque_event(db, cheque_id, payload)
+def create_cheque_event(
+    cheque_id: int,
+    payload: ChequeEventCreate,
+    db: Session = Depends(get_db),
+    admin=Depends(require_superuser),
+) -> ChequeRead:
+    return ledger_service.add_cheque_event(db, cheque_id, payload, admin)
+
+
+@router.get("/cheques/{cheque_id}/audits", response_model=list[ChequeAuditRead])
+def cheque_audits(
+    cheque_id: int,
+    db: Session = Depends(get_db),
+    _admin: object = Depends(require_superuser),
+) -> list[ChequeAuditRead]:
+    return ledger_service.list_cheque_audits(db, cheque_id)
 
 
 @router.get("/cheques", response_model=list[ChequeRead])

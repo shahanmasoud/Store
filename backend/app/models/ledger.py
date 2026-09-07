@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -95,7 +95,15 @@ class Cheque(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     person: Mapped[Person | None] = relationship(back_populates="cheques")
-    events: Mapped[list["ChequeEvent"]] = relationship(back_populates="cheque", cascade="all, delete-orphan")
+    events: Mapped[list["ChequeEvent"]] = relationship(
+        back_populates="cheque",
+        cascade="all, delete-orphan",
+        order_by=lambda: (ChequeEvent.jalali_date, ChequeEvent.local_time, ChequeEvent.id),
+    )
+    audits: Mapped[list["ChequeAudit"]] = relationship(
+        back_populates="cheque",
+        order_by=lambda: (ChequeAudit.occurred_at_utc, ChequeAudit.id),
+    )
 
 
 class ChequeEvent(Base, TimestampMixin):
@@ -109,3 +117,20 @@ class ChequeEvent(Base, TimestampMixin):
     note: Mapped[str | None] = mapped_column(Text)
 
     cheque: Mapped[Cheque] = relationship(back_populates="events")
+
+
+class ChequeAudit(Base):
+    __tablename__ = "cheque_audits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    cheque_id: Mapped[int] = mapped_column(ForeignKey("cheques.id"), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    actor_username: Mapped[str | None] = mapped_column(String(50))
+    actor_full_name: Mapped[str | None] = mapped_column(String(120))
+    before_json: Mapped[dict | None] = mapped_column(JSON)
+    after_json: Mapped[dict | None] = mapped_column(JSON)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    occurred_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    cheque: Mapped[Cheque] = relationship(back_populates="audits")

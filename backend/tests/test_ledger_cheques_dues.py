@@ -1,8 +1,12 @@
 from collections.abc import Generator
+from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -10,7 +14,8 @@ from app.core.security import get_password_hash
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.ledger import LedgerEntry
+from app.core.config import get_settings
+from app.models.ledger import Cheque, ChequeEvent, LedgerEntry
 from app.models.user import User
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -581,6 +586,270 @@ def test_ledger_due_date_routes_require_superuser(
     )
     assert forbidden_patch.status_code == 403
     assert forbidden_history.status_code == 403
+
+
+def test_cheque_update_is_optimistic_and_audited(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    person = create_person(client, auth_headers)
+    created = client.post(
+        "/api/v1/cheques",
+        json={
+            "cheque_type": "received",
+            "person_id": person["id"],
+            "bank_name": "ملی",
+            "cheque_number": "۱۲۳۴۵۶",
+            "amount_rial": "۲٬۰۰۰٬۰۰۰",
+            "issue_jalali_date": "۱۴۰۵/۰۶/۰۱",
+            "due_jalali_date": "۱۴۰۵/۰۶/۲۰",
+            "local_time": "۱۰:۰۰",
+            "note": "نسخه اولیه",
+        },
+        headers=auth_headers,
+    )
+    assert created.status_code == 201
+    cheque = created.json()
+    assert cheque["cheque_number"] == "123456"
+    assert cheque["amount_rial"] == 2_000_000
+    assert cheque["updated_at_utc"]
+
+    updated = client.patch(
+        f"/api/v1/cheques/{cheque['id']}",
+        json={
+            "bank_name": "ملت",
+            "amount_rial": "۲٬۵۰۰٬۰۰۰",
+            "due_jalali_date": "۱۴۰۵/۰۶/۲۵",
+            "note": None,
+            "reason": "اصلاح اطلاعات روی برگه",
+            "expected_updated_at": cheque["updated_at_utc"],
+        },
+        headers=auth_headers,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["bank_name"] == "ملت"
+    assert updated.json()["amount_rial"] == 2_500_000
+    assert updated.json()["due_jalali_date"] == "1405/06/25"
+    assert updated.json()["note"] is None
+    assert updated.json()["updated_at_utc"] != cheque["updated_at_utc"]
+
+    stale = client.patch(
+        f"/api/v1/cheques/{cheque['id']}",
+        json={
+            "bank_name": "تجارت",
+            "reason": "فرم قدیمی",
+            "expected_updated_at": cheque["updated_at_utc"],
+        },
+        headers=auth_headers,
+    )
+    assert stale.status_code == 409
+    assert "دوباره دریافت" in stale.json()["detail"]
+
+    audits = client.get(f"/api/v1/cheques/{cheque['id']}/audits", headers=auth_headers)
+    assert audits.status_code == 200
+    assert [item["action"] for item in audits.json()] == ["create", "update"]
+    assert audits.json()[0]["before_json"] is None
+    assert audits.json()[0]["after_json"]["bank_name"] == "ملی"
+    assert audits.json()[1]["before_json"]["amount_rial"] == 2_000_000
+    assert audits.json()[1]["after_json"]["amount_rial"] == 2_500_000
+    assert audits.json()[1]["reason"] == "اصلاح اطلاعات روی برگه"
+    assert all(item["actor_username"] == "admin" for item in audits.json())
+    assert all(item["actor_full_name"] == "System Admin" for item in audits.json())
+
+
+def test_cheque_update_rejects_noop_invalid_person_dates_and_non_pending(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    created = client.post(
+        "/api/v1/cheques",
+        json={
+            "cheque_type": "paid",
+            "bank_name": "ملی",
+            "cheque_number": "update-rules",
+            "amount_rial": 1_000_000,
+            "issue_jalali_date": "1405/06/10",
+            "due_jalali_date": "1405/06/20",
+            "local_time": "10:00",
+        },
+        headers=auth_headers,
+    ).json()
+    base = {
+        "reason": "اصلاح",
+        "expected_updated_at": created["updated_at_utc"],
+    }
+    no_op = client.patch(
+        f"/api/v1/cheques/{created['id']}", json={**base, "bank_name": "ملی"}, headers=auth_headers
+    )
+    invalid_dates = client.patch(
+        f"/api/v1/cheques/{created['id']}",
+        json={**base, "issue_jalali_date": "1405/07/01"},
+        headers=auth_headers,
+    )
+    missing_person = client.patch(
+        f"/api/v1/cheques/{created['id']}", json={**base, "person_id": 99999}, headers=auth_headers
+    )
+    inactive_person = create_person(client, auth_headers)
+    assert client.delete(f"/api/v1/persons/{inactive_person['id']}", headers=auth_headers).status_code == 204
+    inactive_person_response = client.patch(
+        f"/api/v1/cheques/{created['id']}",
+        json={**base, "person_id": inactive_person["id"]},
+        headers=auth_headers,
+    )
+    blank_reason = client.patch(
+        f"/api/v1/cheques/{created['id']}",
+        json={**base, "bank_name": "ملت", "reason": "   "},
+        headers=auth_headers,
+    )
+    assert no_op.status_code == 409
+    assert invalid_dates.status_code == 422
+    assert missing_person.status_code == 404
+    assert inactive_person_response.status_code == 404
+    assert blank_reason.status_code == 422
+
+    canceled = client.post(
+        f"/api/v1/cheques/{created['id']}/events",
+        json={"event_type": "canceled", "jalali_date": "1405/06/21", "local_time": "10:00", "note": "ابطال"},
+        headers=auth_headers,
+    )
+    assert canceled.status_code == 200
+    assert canceled.json()["is_active"] is False
+    rejected = client.patch(
+        f"/api/v1/cheques/{created['id']}",
+        json={
+            "bank_name": "ملت",
+            "reason": "پس از ابطال",
+            "expected_updated_at": canceled.json()["updated_at_utc"],
+        },
+        headers=auth_headers,
+    )
+    assert rejected.status_code == 409
+    listed = client.get("/api/v1/cheques", headers=auth_headers).json()
+    assert any(item["id"] == created["id"] and item["status"] == "canceled" for item in listed)
+    audits = client.get(f"/api/v1/cheques/{created['id']}/audits", headers=auth_headers).json()
+    assert [item["action"] for item in audits] == ["create", "event"]
+    assert audits[-1]["before_json"]["status"] == "pending"
+    assert audits[-1]["after_json"]["status"] == "canceled"
+    assert audits[-1]["after_json"]["is_active"] is False
+    assert audits[-1]["actor_username"] == "admin"
+
+
+def test_cheque_mutations_and_audits_require_superuser(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    db_session: Session,
+) -> None:
+    payload = {
+        "cheque_type": "received",
+        "bank_name": "ملی",
+        "cheque_number": "role-check",
+        "amount_rial": 1000,
+        "issue_jalali_date": "1405/06/01",
+        "due_jalali_date": "1405/06/20",
+        "local_time": "10:00",
+    }
+    assert client.post("/api/v1/cheques", json=payload).status_code == 401
+    created = client.post("/api/v1/cheques", json=payload, headers=auth_headers).json()
+    db_session.add(
+        User(
+            username="cheque-operator",
+            full_name="کاربر چک",
+            hashed_password=get_password_hash("operator123"),
+            is_active=True,
+            is_superuser=False,
+        )
+    )
+    db_session.commit()
+    login = client.post("/api/v1/auth/login", json={"username": "cheque-operator", "password": "operator123"})
+    operator_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    assert client.post("/api/v1/cheques", json=payload, headers=operator_headers).status_code == 403
+    assert client.patch(
+        f"/api/v1/cheques/{created['id']}",
+        json={"bank_name": "ملت", "reason": "اصلاح", "expected_updated_at": created["updated_at_utc"]},
+        headers=operator_headers,
+    ).status_code == 403
+    assert client.post(
+        f"/api/v1/cheques/{created['id']}/events",
+        json={"event_type": "cleared", "jalali_date": "1405/06/21", "local_time": "10:00"},
+        headers=operator_headers,
+    ).status_code == 403
+    assert client.get(f"/api/v1/cheques/{created['id']}/audits", headers=operator_headers).status_code == 403
+
+
+def test_cheque_events_have_deterministic_business_order(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    db_session: Session,
+) -> None:
+    created = client.post(
+        "/api/v1/cheques",
+        json={
+            "cheque_type": "received",
+            "bank_name": "ملی",
+            "cheque_number": "ordered-events",
+            "amount_rial": 1000,
+            "issue_jalali_date": "1405/06/01",
+            "due_jalali_date": "1405/06/20",
+            "local_time": "10:00",
+        },
+        headers=auth_headers,
+    ).json()
+    db_session.add_all(
+        [
+            ChequeEvent(cheque_id=created["id"], event_type="bounced", jalali_date="1405/06/12", local_time="09:00"),
+            ChequeEvent(cheque_id=created["id"], event_type="cleared", jalali_date="1405/06/11", local_time="11:00"),
+        ]
+    )
+    db_session.commit()
+    db_session.expire_all()
+    item = next(item for item in client.get("/api/v1/cheques", headers=auth_headers).json() if item["id"] == created["id"])
+    assert [(event["jalali_date"], event["local_time"]) for event in item["events"]] == [
+        ("1405/06/01", "10:00"),
+        ("1405/06/11", "11:00"),
+        ("1405/06/12", "09:00"),
+    ]
+
+
+def test_0015_migration_backfills_legacy_snapshot_without_changing_cheque(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_path = tmp_path / "legacy-cheque.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path.as_posix()}")
+    get_settings.cache_clear()
+    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    command.upgrade(config, "0014_ledger_due_dates")
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}")
+    timestamp = "2026-09-01 08:00:00.000000"
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO cheques
+                    (id, cheque_type, person_id, bank_name, cheque_number, amount_rial,
+                     issue_jalali_date, due_jalali_date, status, note, is_active,
+                     created_at_utc, updated_at_utc)
+                VALUES
+                    (77, 'received', NULL, 'ملی', 'legacy-77', 123000,
+                     '1405/05/01', '1405/06/01', 'pending', 'قدیمی', 1,
+                     :timestamp, NULL)
+                """
+            ),
+            {"timestamp": timestamp},
+        )
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        cheque = connection.execute(text("SELECT * FROM cheques WHERE id = 77")).mappings().one()
+        audit = connection.execute(text("SELECT * FROM cheque_audits WHERE cheque_id = 77")).mappings().one()
+        integrity = connection.execute(text("PRAGMA integrity_check")).scalar_one()
+    assert integrity == "ok"
+    assert cheque["amount_rial"] == 123000
+    assert cheque["status"] == "pending"
+    assert cheque["updated_at_utc"] == timestamp
+    assert audit["action"] == "legacy_snapshot"
+    assert audit["actor_user_id"] is None
+    assert '"cheque_number": "legacy-77"' in audit["after_json"]
+    get_settings.cache_clear()
 
 
 def test_person_update_validation_and_soft_delete_preserve_financial_history(

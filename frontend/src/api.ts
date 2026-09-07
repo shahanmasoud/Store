@@ -345,7 +345,31 @@ export type Cheque = {
   note?: string | null;
   status: ChequeStatus;
   is_active: boolean;
+  created_at_utc: string;
+  updated_at_utc: string;
   events: ChequeEvent[];
+};
+export type ChequeAuditSnapshot = {
+  cheque_type: ChequeType;
+  person_id?: number | null;
+  bank_name: string;
+  cheque_number: string;
+  amount_rial: number;
+  issue_jalali_date: string;
+  due_jalali_date: string;
+  note?: string | null;
+};
+export type ChequeAudit = {
+  id: number;
+  cheque_id: number;
+  actor_user_id?: number | string | null;
+  actor_username?: string | null;
+  actor_full_name?: string | null;
+  action: string;
+  before_json?: Partial<ChequeAuditSnapshot> | null;
+  after_json?: Partial<ChequeAuditSnapshot> | null;
+  reason: string;
+  occurred_at_utc: string;
 };
 export type Dues = { jalali_date_to: string; open_ledger_entries: LedgerEntry[]; pending_cheques: Cheque[] };
 export type SalesSummaryReport = {
@@ -449,6 +473,10 @@ export function apiAssetUrl(path?: string | null) {
   return new URL(path, apiOrigin).toString();
 }
 
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) { super(message); this.name = "ApiError"; }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem("store_auth_token");
   const headers = new Headers(options.headers);
@@ -479,7 +507,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       message =
         response.status === 401 ? "نام کاربری یا رمز عبور درست نیست." : message;
     }
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
 
   if (response.status === 204) return undefined as T;
@@ -715,6 +743,12 @@ export const api = {
     note?: string;
   }) {
     return request<Cheque>("/cheques", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updateCheque(id: number, payload: Omit<ChequeAuditSnapshot, "cheque_type"> & { reason: string; expected_updated_at: string }) {
+    return request<Cheque>(`/cheques/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+  },
+  chequeAudits(id: number) {
+    return request<ChequeAudit[]>(`/cheques/${id}/audits`);
   },
   createChequeEvent(id: number, payload: { event_type: "cleared" | "bounced" | "canceled"; jalali_date: string; local_time: string; note?: string }) {
     return request<Cheque>(`/cheques/${id}/events`, { method: "POST", body: JSON.stringify(payload) });

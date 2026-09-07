@@ -14,6 +14,7 @@ LedgerStatus = Literal["open", "settled", "canceled"]
 ChequeType = Literal["received", "paid"]
 ChequeStatus = Literal["pending", "cleared", "bounced", "canceled"]
 ChequeEventType = Literal["created", "cleared", "bounced", "canceled"]
+ChequeAuditAction = Literal["create", "update", "event", "legacy_snapshot"]
 
 
 class PersonCreate(BaseModel):
@@ -296,6 +297,67 @@ class ChequeEventCreate(BaseModel):
         return validate_local_time(value)
 
 
+class ChequeUpdate(BaseModel):
+    person_id: int | None = None
+    bank_name: str | None = Field(default=None, min_length=1, max_length=120)
+    cheque_number: str | None = Field(default=None, min_length=1, max_length=80)
+    amount_rial: int | None = Field(default=None, gt=0)
+    issue_jalali_date: str | None = None
+    due_jalali_date: str | None = None
+    note: str | None = Field(default=None, max_length=2000)
+    reason: str = Field(min_length=1, max_length=2000)
+    expected_updated_at: datetime
+
+    @field_validator("person_id", "amount_rial", mode="before")
+    @classmethod
+    def localized_integers(cls, value):
+        return normalize_localized_integer(value)
+
+    @field_validator("cheque_number", mode="before")
+    @classmethod
+    def normalize_cheque_number(cls, value):
+        return normalize_identifier(value)
+
+    @field_validator("bank_name", "cheque_number")
+    @classmethod
+    def required_text_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            raise ValueError("این فیلد نمی‌تواند خالی باشد.")
+        value = value.strip()
+        if not value:
+            raise ValueError("این فیلد نمی‌تواند خالی باشد.")
+        return value
+
+    @field_validator("issue_jalali_date", "due_jalali_date")
+    @classmethod
+    def jalali_date_format(cls, value: str | None) -> str | None:
+        if value is None:
+            raise ValueError("تاریخ نمی‌تواند خالی باشد.")
+        return validate_jalali_date(value)
+
+    @field_validator("amount_rial")
+    @classmethod
+    def amount_not_null(cls, value: int | None) -> int:
+        if value is None:
+            raise ValueError("مبلغ نمی‌تواند خالی باشد.")
+        return value
+
+    @field_validator("note")
+    @classmethod
+    def normalize_note(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @field_validator("reason")
+    @classmethod
+    def reason_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("دلیل ویرایش چک الزامی است.")
+        return value
+
+
 class ChequeEventRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -321,7 +383,24 @@ class ChequeRead(BaseModel):
     status: ChequeStatus
     note: str | None
     is_active: bool
+    created_at_utc: datetime
+    updated_at_utc: datetime
     events: list[ChequeEventRead]
+
+
+class ChequeAuditRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    cheque_id: int
+    action: ChequeAuditAction
+    actor_user_id: int | None
+    actor_username: str | None
+    actor_full_name: str | None
+    before_json: dict | None
+    after_json: dict | None
+    reason: str
+    occurred_at_utc: datetime
 
 
 class DuesRead(BaseModel):
