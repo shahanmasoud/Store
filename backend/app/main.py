@@ -37,6 +37,10 @@ app.add_middleware(
 
 app.include_router(api_router, prefix=settings.api_v1_prefix)
 
+media_root = settings.media_root.expanduser().resolve()
+media_root.mkdir(parents=True, exist_ok=True)
+app.mount(settings.media_url_prefix, StaticFiles(directory=media_root), name="media")
+
 frontend_dir = Path(__file__).resolve().parent / "frontend"
 frontend_index = frontend_dir / "index.html"
 frontend_assets = frontend_dir / "assets"

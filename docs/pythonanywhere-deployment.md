@@ -18,7 +18,7 @@ git clone https://github.com/shahanmasoud/Store.git
 cd Store
 python3.13 -m venv ~/.virtualenvs/store
 ~/.virtualenvs/store/bin/pip install -r backend/requirements.txt
-mkdir -p ~/store-data
+mkdir -p ~/store-data/media/products
 ```
 
 یک secret تصادفی و رمز مدیر قوی بسازید و متغیرهای محیطی را فقط در فرمان‌های خصوصی حساب تنظیم کنید:
@@ -35,6 +35,9 @@ BALE_WEBHOOK_SECRET=YOUR_RANDOM_WEBHOOK_SECRET
 BALE_LOGIN_TTL_SECONDS=120
 BALE_POLLING_FALLBACK=false
 PUBLIC_BASE_URL=https://YOUR_USERNAME.pythonanywhere.com
+MEDIA_ROOT=/home/YOUR_USERNAME/store-data/media
+MEDIA_URL_PREFIX=/media
+PRODUCT_IMAGE_MAX_BYTES=5242880
 EOF
 chmod 600 ~/.store.env
 set -a
@@ -110,6 +113,8 @@ pa website reload --domain <USERNAME>.pythonanywhere.com
 cd ~/Store/backend
 ~/.virtualenvs/store/bin/python -m app.scripts.sqlite_backup backup
 ```
+
+پس از فعال‌شدن تصویر کالا، پوشه `~/store-data/media` نیز بخشی از داده عملیاتی است. آن را همراه همان snapshot دیتابیس و خارج از Git آرشیو کنید؛ بکاپ فقط-دیتابیس برای بازیابی کامل فروشگاه کافی نیست.
 
 راهنمای زمان‌بندی، نگهداری، اعتبارسنجی و بازیابی امن در
 [`sqlite-backup.md`](sqlite-backup.md) قرار دارد. بکاپ‌ها در `~/store-backups` و خارج از Git ذخیره می‌شوند.

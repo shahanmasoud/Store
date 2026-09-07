@@ -105,6 +105,29 @@ class ProductRead(ProductCreate):
 
     id: int
     is_active: bool
+    image_url: str | None = None
+
+
+class ProductImageRead(BaseModel):
+    product_id: int
+    image_url: str | None
+
+
+class StorefrontCatalogItem(BaseModel):
+    variant_id: int
+    variant_name: str
+    sku: str | None
+    product_id: int
+    product_name: str
+    description: str | None
+    category_id: int | None
+    category_name: str | None
+    unit_id: int
+    unit_name: str
+    unit_symbol: str
+    retail_price_rial: int
+    available_quantity: Decimal
+    image_url: str | None
 
 
 class ProductVariantCreate(BaseModel):

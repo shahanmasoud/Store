@@ -30,10 +30,13 @@ import RemoveRounded from "@mui/icons-material/RemoveRounded";
 import MenuRounded from "@mui/icons-material/MenuRounded";
 import VisibilityRounded from "@mui/icons-material/VisibilityRounded";
 import VisibilityOffRounded from "@mui/icons-material/VisibilityOffRounded";
+import AddPhotoAlternateRounded from "@mui/icons-material/AddPhotoAlternateRounded";
+import ImageRounded from "@mui/icons-material/ImageRounded";
 import { MoneyField } from "./MoneyField";
 import { formatDecimal, formatRial, moneyInputValue, normalizeDecimal, normalizeMoney, parseLocalizedNumber, toEnglishDigits, toPersianDigits } from "./numberUtils";
 import {
   api,
+  apiAssetUrl,
   type DailyJournal,
   type Dues,
   type CashflowReport,
@@ -1300,6 +1303,8 @@ function InventoryView({ onBack }: { onBack: () => void }) {
 }
 
 function ProductsView({ onBack }: { onBack: () => void }) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [catalogTab, setCatalogTab] = useState(0);
   const [units, setUnits] = useState<Unit[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -1331,6 +1336,11 @@ function ProductsView({ onBack }: { onBack: () => void }) {
   const [productSaving, setProductSaving] = useState(false);
   const [pendingDeactivateProduct, setPendingDeactivateProduct] = useState<Product | null>(null);
   const [productSearch, setProductSearch] = useState("");
+  const [imageProduct, setImageProduct] = useState<Product | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState("");
+  const [imageBusy, setImageBusy] = useState(false);
+  const [imageError, setImageError] = useState("");
   const [deactivatingRecord, setDeactivatingRecord] = useState(false);
   const [variantStatus, setVariantStatus] = useState<"loading" | "ready" | "error">("loading");
   const [variantNotice, setVariantNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -1395,6 +1405,66 @@ function ProductsView({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => () => { if (imagePreview) URL.revokeObjectURL(imagePreview); }, [imagePreview]);
+
+  function closeImageManager() {
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImageProduct(null);
+    setImageFile(null);
+    setImagePreview("");
+    setImageError("");
+  }
+
+  function selectProductImage(file?: File) {
+    setImageError("");
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setImageError("فقط تصویر JPEG، PNG یا WebP قابل بارگذاری است.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setImageError("حجم تصویر باید حداکثر ۵ مگابایت باشد.");
+      return;
+    }
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  }
+
+  async function saveProductImage() {
+    if (!imageProduct || !imageFile) return;
+    setImageBusy(true);
+    setImageError("");
+    try {
+      await api.uploadProductImage(imageProduct.id, imageFile);
+      const productName = imageProduct.name;
+      closeImageManager();
+      await load();
+      setProductNotice({ type: "success", text: `تصویر «${productName}» ذخیره شد و در فروشگاه نمایش داده می‌شود.` });
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : "بارگذاری تصویر انجام نشد.");
+    } finally {
+      setImageBusy(false);
+    }
+  }
+
+  async function removeProductImage() {
+    if (!imageProduct?.image_url) return;
+    setImageBusy(true);
+    setImageError("");
+    try {
+      await api.removeProductImage(imageProduct.id);
+      const productName = imageProduct.name;
+      closeImageManager();
+      await load();
+      setProductNotice({ type: "success", text: `تصویر «${productName}» حذف شد؛ جای‌نگهدار در فروشگاه نمایش داده می‌شود.` });
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : "حذف تصویر انجام نشد.");
+    } finally {
+      setImageBusy(false);
+    }
+  }
 
   function resetUnitForm() {
     setEditingUnitId(null);
@@ -1985,7 +2055,7 @@ function ProductsView({ onBack }: { onBack: () => void }) {
             {unitProductStatus === "ready" && products.length > 0 && filteredProducts.length === 0 ? <div className="record-state"><SearchRounded /><strong>کالایی با این عبارت پیدا نشد</strong></div> : null}
             {unitProductStatus === "ready" && filteredProducts.length > 0 ? <div className="record-list">{filteredProducts.map((product) => {
               const categoryName = categories.find((category) => category.id === product.category_id)?.name ?? "بدون دسته";
-              return <article className="record-item record-item-product" key={product.id}><div><strong>{product.name}</strong><small>{categoryName}{product.description ? ` • ${product.description}` : ""}</small></div><div className="record-item-actions"><Button startIcon={<EditRounded />} onClick={() => startProductEdit(product)}>ویرایش</Button><Button color="error" startIcon={<DeleteOutlineRounded />} onClick={() => setPendingDeactivateProduct(product)}>غیرفعال</Button></div></article>;
+              return <article className="record-item record-item-product" key={product.id}><div className="admin-product-summary"><span className="admin-product-thumb">{product.image_url ? <img src={apiAssetUrl(product.image_url) ?? undefined} alt="" loading="lazy" /> : <ImageRounded />}</span><div><strong>{product.name}</strong><small>{categoryName}{product.description ? ` • ${product.description}` : ""}</small></div></div><div className="record-item-actions"><Button startIcon={<AddPhotoAlternateRounded />} onClick={() => { setImageProduct(product); setImageFile(null); setImagePreview(""); setImageError(""); }}>{product.image_url ? "تعویض عکس" : "افزودن عکس"}</Button><Button startIcon={<EditRounded />} onClick={() => startProductEdit(product)}>ویرایش</Button><Button color="error" startIcon={<DeleteOutlineRounded />} onClick={() => setPendingDeactivateProduct(product)}>غیرفعال</Button></div></article>;
             })}</div> : null}
           </section>
 
@@ -1994,6 +2064,28 @@ function ProductsView({ onBack }: { onBack: () => void }) {
           </Dialog>
           <Dialog open={pendingDeactivateProduct !== null} onClose={() => { if (!deactivatingRecord) setPendingDeactivateProduct(null); }} fullWidth maxWidth="xs" slotProps={{ paper: { className: "category-confirm-dialog" } }}>
             <DialogTitle>غیرفعال‌کردن کالا</DialogTitle><DialogContent><p>کالای «{pendingDeactivateProduct?.name}» از انتخاب‌های جدید پنهان می‌شود و سوابق آن باقی می‌ماند.</p><Alert severity="warning">اگر این کالا گونه فعال داشته باشد، عملیات انجام نمی‌شود.</Alert></DialogContent><DialogActions><Button size="large" onClick={() => setPendingDeactivateProduct(null)} disabled={deactivatingRecord}>انصراف</Button><Button size="large" color="error" variant="contained" onClick={deactivateProduct} disabled={deactivatingRecord} startIcon={deactivatingRecord ? <CircularProgress size={18} color="inherit" /> : <DeleteOutlineRounded />}>غیرفعال شود</Button></DialogActions>
+          </Dialog>
+          <Dialog open={imageProduct !== null} onClose={() => { if (!imageBusy) closeImageManager(); }} fullWidth maxWidth="sm" fullScreen={isMobile} className="product-image-dialog" aria-labelledby="product-image-title">
+            <DialogTitle id="product-image-title"><Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1 }}><span>تصویر «{imageProduct?.name}»</span><IconButton aria-label="بستن" onClick={closeImageManager} disabled={imageBusy}><CloseRounded /></IconButton></Stack></DialogTitle>
+            <DialogContent dividers>
+              <Stack spacing={2.25}>
+                {imageError ? <Alert severity="error">{imageError}</Alert> : null}
+                <Box className="admin-image-preview">
+                  {imagePreview || imageProduct?.image_url ? <img src={imagePreview || apiAssetUrl(imageProduct?.image_url) || undefined} alt={`پیش‌نمایش ${imageProduct?.name ?? "کالا"}`} /> : <Box><ImageRounded /><Typography sx={{ fontWeight: 900 }}>هنوز تصویری ثبت نشده است</Typography><Typography variant="body2" color="text.secondary">یک عکس روشن و واضح از کالا انتخاب کنید.</Typography></Box>}
+                </Box>
+                <Button component="label" variant="outlined" size="large" startIcon={<AddPhotoAlternateRounded />} disabled={imageBusy}>
+                  {imageProduct?.image_url || imageFile ? "انتخاب تصویر جایگزین" : "انتخاب تصویر"}
+                  <input hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { selectProductImage(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+                </Button>
+                <Alert severity="info" icon={false}>فرمت‌های مجاز: JPEG، PNG و WebP؛ حداکثر حجم ۵ مگابایت. تصویر پس از ذخیره در فروشگاه استفاده می‌شود.</Alert>
+              </Stack>
+            </DialogContent>
+            <DialogActions className="product-image-actions">
+              {imageProduct?.image_url ? <Button color="error" size="large" startIcon={<DeleteOutlineRounded />} disabled={imageBusy} onClick={() => void removeProductImage()}>حذف تصویر</Button> : null}
+              <Box sx={{ flex: 1 }} />
+              <Button size="large" onClick={closeImageManager} disabled={imageBusy}>انصراف</Button>
+              <Button variant="contained" size="large" startIcon={imageBusy ? <CircularProgress size={18} color="inherit" /> : <AddPhotoAlternateRounded />} disabled={!imageFile || imageBusy} onClick={() => void saveProductImage()}>{imageBusy ? "در حال ذخیره…" : "ذخیره تصویر"}</Button>
+            </DialogActions>
           </Dialog>
         </section>
       ) : null}

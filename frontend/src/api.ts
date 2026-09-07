@@ -24,6 +24,24 @@ export type ProductVariant = {
   is_active: boolean;
 };
 
+export type StorefrontProduct = {
+  variant_id: number;
+  variant_name: string;
+  sku?: string | null;
+  product_id: number;
+  product_name: string;
+  description?: string | null;
+  category_id?: number | null;
+  category_name?: string | null;
+  unit_id: number;
+  unit_name: string;
+  unit_symbol?: string | null;
+  retail_price_rial: number;
+  available_quantity: number | string;
+  image_url?: string | null;
+};
+export type ProductImageResult = { product_id: number; image_url: string | null };
+
 export type BaleLoginChallengeStatus = "pending" | "approved" | "consumed" | "expired";
 
 export type BaleLoginChallenge = {
@@ -268,7 +286,7 @@ export type InventoryAdjustmentCreate = {
 
 export type Unit = { id: number; name: string; symbol: string; is_active: boolean };
 export type Category = { id: number; name: string; parent_id?: number | null; is_active: boolean };
-export type Product = { id: number; name: string; description?: string | null; category_id?: number | null; is_active: boolean };
+export type Product = { id: number; name: string; description?: string | null; category_id?: number | null; image_url?: string | null; is_active: boolean };
 export type PersonType = "customer" | "supplier" | "both";
 export type CreditStatus = "good" | "normal" | "watch";
 export type Person = { id: number; name: string; phone?: string | null; person_type: PersonType; note?: string | null; credit_status: CreditStatus; is_active: boolean };
@@ -412,6 +430,13 @@ const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ??
   (import.meta.env.PROD ? "/api/v1" : "http://localhost:8000/api/v1");
 
+export function apiAssetUrl(path?: string | null) {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  const apiOrigin = new URL(API_BASE_URL, window.location.origin).origin;
+  return new URL(path, apiOrigin).toString();
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem("store_auth_token");
   const headers = new Headers(options.headers);
@@ -486,6 +511,9 @@ export const api = {
   },
   productVariants() {
     return request<ProductVariant[]>("/product-variants");
+  },
+  storefrontProducts() {
+    return request<StorefrontProduct[]>("/storefront/catalog");
   },
   createSale(payload: SaleInvoiceCreate) {
     return request<SaleInvoice>("/sales", {
@@ -570,6 +598,14 @@ export const api = {
   },
   deactivateProduct(id: number) {
     return request<Product>(`/products/${id}`, { method: "DELETE" });
+  },
+  uploadProductImage(id: number, file: File) {
+    const body = new FormData();
+    body.set("image", file);
+    return request<ProductImageResult>(`/products/${id}/image`, { method: "PUT", body });
+  },
+  removeProductImage(id: number) {
+    return request<ProductImageResult>(`/products/${id}/image`, { method: "DELETE" });
   },
   createProductVariant(payload: {
     product_id: number;

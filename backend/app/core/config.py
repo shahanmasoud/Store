@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     bale_login_ttl_seconds: int = Field(default=120, ge=30, le=300)
     bale_polling_fallback: bool = False
     public_base_url: str = "http://localhost:5173"
+    media_root: Path = Field(
+        default_factory=lambda: Path(__file__).resolve().parents[2] / "media"
+    )
+    media_url_prefix: str = Field(default="/media", pattern=r"^/[A-Za-z0-9/_-]*[A-Za-z0-9_-]$")
+    product_image_max_bytes: int = Field(default=5 * 1024 * 1024, ge=1024, le=20 * 1024 * 1024)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

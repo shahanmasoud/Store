@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+import re
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -46,9 +47,19 @@ class Product(Base, TimestampMixin, SoftDeleteMixin):
     name: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(Text)
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
+    image_filename: Mapped[str | None] = mapped_column(String(255))
 
     category: Mapped[Category | None] = relationship(back_populates="products")
     variants: Mapped[list["ProductVariant"]] = relationship(back_populates="product")
+
+    @property
+    def image_url(self) -> str | None:
+        if not self.image_filename or re.fullmatch(r"[0-9a-f]{32}\.(jpg|png|webp)", self.image_filename) is None:
+            return None
+        from app.core.config import get_settings
+
+        prefix = get_settings().media_url_prefix.rstrip("/")
+        return f"{prefix}/products/{self.image_filename}"
 
 
 class ProductVariant(Base, TimestampMixin, SoftDeleteMixin):

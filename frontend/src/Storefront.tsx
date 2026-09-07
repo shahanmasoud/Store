@@ -19,6 +19,7 @@ import {
   IconButton,
   InputAdornment,
   LinearProgress,
+  Skeleton,
   Snackbar,
   Stack,
   TextField,
@@ -45,25 +46,12 @@ import ShoppingBasketRounded from "@mui/icons-material/ShoppingBasketRounded";
 import StorefrontRounded from "@mui/icons-material/StorefrontRounded";
 import VerifiedRounded from "@mui/icons-material/VerifiedRounded";
 import { QRCodeSVG } from "qrcode.react";
-import { api, type BaleCustomer, type BaleLoginChallenge } from "./api";
+import { api, apiAssetUrl, type BaleCustomer, type BaleLoginChallenge, type StorefrontProduct } from "./api";
+import { formatDecimal, formatRial } from "./numberUtils";
 import heroImage from "./assets/storefront-hero.png";
 
 type StorefrontProps = { onOpenAdmin: () => void };
-type Product = { id: number; name: string; category: string; price: number; unit: string; badge?: string; position: string };
-
-const categories = ["همه", "حبوبات", "برنج", "غلات", "آجیل و خشکبار"];
-const products: Product[] = [
-  { id: 1, name: "لوبیا قرمز ممتاز", category: "حبوبات", price: 153500, unit: "کیلوگرم", badge: "پرفروش", position: "8% 78%" },
-  { id: 2, name: "نخود کرمانشاه", category: "حبوبات", price: 112000, unit: "کیلوگرم", position: "32% 86%" },
-  { id: 3, name: "عدس سبز درجه یک", category: "حبوبات", price: 91000, unit: "کیلوگرم", badge: "تازه", position: "53% 76%" },
-  { id: 4, name: "برنج ایرانی خوش‌عطر", category: "برنج", price: 148000, unit: "کیلوگرم", position: "60% 46%" },
-  { id: 5, name: "لپه آذرشهر", category: "حبوبات", price: 125000, unit: "کیلوگرم", position: "78% 82%" },
-  { id: 6, name: "ماش سبز", category: "غلات", price: 98000, unit: "کیلوگرم", position: "44% 68%" },
-];
-
-function formatToman(value: number) {
-  return `${value.toLocaleString("fa-IR")} تومان`;
-}
+type CatalogState = "loading" | "ready" | "error";
 
 type BaleLoginUiState = "idle" | "creating" | "pending" | "approved" | "expired" | "error" | "authenticated";
 
@@ -385,30 +373,68 @@ function BaleCustomerLogin({ onToast }: { onToast: (message: string) => void }) 
 export default function Storefront({ onOpenAdmin }: StorefrontProps) {
   const [category, setCategory] = useState("همه");
   const [query, setQuery] = useState("");
+  const [products, setProducts] = useState<StorefrontProduct[]>([]);
+  const [catalogState, setCatalogState] = useState<CatalogState>("loading");
+  const [catalogError, setCatalogError] = useState("");
+  const [failedImages, setFailedImages] = useState<Set<number>>(() => new Set());
   const [cart, setCart] = useState<Record<number, number>>({});
   const [cartOpen, setCartOpen] = useState(false);
   const [toast, setToast] = useState("");
 
+  const loadProducts = useCallback(async () => {
+    setCatalogState("loading");
+    setCatalogError("");
+    try {
+      const result = await api.storefrontProducts();
+      setProducts(result);
+      setFailedImages(new Set());
+      setCart((current) => {
+        const available = new Map(result.map((item) => [item.variant_id, Math.max(0, Number(item.available_quantity) || 0)]));
+        return Object.fromEntries(Object.entries(current).flatMap(([id, quantity]) => {
+          const maximum = available.get(Number(id)) ?? 0;
+          const next = Math.min(quantity, maximum);
+          return next > 0 ? [[id, next]] : [];
+        }));
+      });
+      setCatalogState("ready");
+    } catch (error) {
+      setCatalogError(error instanceof Error ? error.message : "دریافت کالاها از فروشگاه ممکن نشد.");
+      setCatalogState("error");
+    }
+  }, []);
+
+  useEffect(() => { void loadProducts(); }, [loadProducts]);
+
+  const categories = useMemo(() => ["همه", ...Array.from(new Set(products.map((item) => item.category_name?.trim() || "بدون دسته")))], [products]);
   const visibleProducts = useMemo(() => {
     return products.filter((product) => {
-      const matchesCategory = category === "همه" || product.category === category;
-      const matchesQuery = product.name.includes(query.trim());
+      const productCategory = product.category_name?.trim() || "بدون دسته";
+      const normalizedQuery = query.trim().toLocaleLowerCase("fa");
+      const matchesCategory = category === "همه" || productCategory === category;
+      const matchesQuery = !normalizedQuery || `${product.variant_name} ${product.product_name} ${product.description ?? ""} ${product.sku ?? ""}`.toLocaleLowerCase("fa").includes(normalizedQuery);
       return matchesCategory && matchesQuery;
-    });
-  }, [category, query]);
+    }).sort((left, right) => Number(Number(right.available_quantity) > 0) - Number(Number(left.available_quantity) > 0));
+  }, [category, products, query]);
 
-  const cartItems = products.filter((product) => cart[product.id]);
+  const cartItems = products.filter((product) => cart[product.variant_id]);
   const cartCount = Object.values(cart).reduce((sum, quantity) => sum + quantity, 0);
-  const cartTotal = cartItems.reduce((sum, product) => sum + product.price * cart[product.id], 0);
+  const cartTotal = cartItems.reduce((sum, product) => sum + product.retail_price_rial * cart[product.variant_id], 0);
 
-  function changeQuantity(product: Product, delta: number) {
+  function changeQuantity(product: StorefrontProduct, delta: number) {
+    const maximum = Math.max(0, Number(product.available_quantity) || 0);
+    if (delta > 0 && (maximum === 0 || (cart[product.variant_id] ?? 0) >= maximum)) {
+      setToast(maximum ? "بیشتر از موجودی فعلی نمی‌توانید اضافه کنید" : "این کالا فعلاً ناموجود است");
+      return;
+    }
     setCart((current) => {
-      const next = Math.max(0, (current[product.id] ?? 0) + delta);
-      const updated = { ...current, [product.id]: next };
-      if (!next) delete updated[product.id];
+      const currentQuantity = current[product.variant_id] ?? 0;
+      const requested = delta > 0 && currentQuantity === 0 ? Math.min(1, maximum) : currentQuantity + delta;
+      const next = Math.min(maximum, Math.max(0, requested));
+      const updated = { ...current, [product.variant_id]: next };
+      if (!next) delete updated[product.variant_id];
       return updated;
     });
-    if (delta > 0) setToast(`${product.name} به سبد اضافه شد`);
+    if (delta > 0) setToast(`${product.variant_name} به سبد اضافه شد`);
   }
 
   return (
@@ -466,7 +492,7 @@ export default function Storefront({ onOpenAdmin }: StorefrontProps) {
             <Typography variant="h4">انتخاب محصولات</Typography>
             <Typography color="text.secondary">دسته را انتخاب کن یا نام کالا را جست‌وجو کن.</Typography>
           </Box>
-          <Typography color="text.secondary">{visibleProducts.length.toLocaleString("fa-IR")} کالا</Typography>
+          <Typography color="text.secondary">{catalogState === "ready" ? `${visibleProducts.length.toLocaleString("fa-IR")} گونه` : "کاتالوگ آنلاین"}</Typography>
         </Box>
 
         <Stack direction="row" spacing={1} className="category-scroll">
@@ -475,38 +501,48 @@ export default function Storefront({ onOpenAdmin }: StorefrontProps) {
           ))}
         </Stack>
 
-        {visibleProducts.length ? (
+        {catalogState === "loading" ? (
+          <Box className="storefront-product-grid" aria-label="در حال بارگذاری کالاها" aria-busy="true">
+            {Array.from({ length: 6 }, (_, index) => <Card className="storefront-product-card storefront-product-skeleton" key={index}><Skeleton variant="rectangular" height={210} /><CardContent><Skeleton width="70%" height={32} /><Skeleton width="92%" /><Skeleton width="46%" height={30} /></CardContent><CardActions><Skeleton variant="rounded" width="100%" height={44} /></CardActions></Card>)}
+          </Box>
+        ) : null}
+
+        {catalogState === "error" ? (
+          <Box className="storefront-empty storefront-error" role="alert"><RefreshRounded /><Typography variant="h6">کالاها دریافت نشدند</Typography><Typography color="text.secondary">{catalogError}</Typography><Button variant="contained" startIcon={<RefreshRounded />} onClick={() => void loadProducts()}>تلاش دوباره</Button></Box>
+        ) : null}
+
+        {catalogState === "ready" && visibleProducts.length ? (
           <Box className="storefront-product-grid">
             {visibleProducts.map((product) => (
-              <Card key={product.id} className="storefront-product-card">
-                <Box className="product-photo" sx={{ backgroundImage: `url(${heroImage})`, backgroundPosition: product.position }}>
-                  {product.badge ? <Chip label={product.badge} color="secondary" size="small" /> : null}
+              <Card key={product.variant_id} className={`storefront-product-card${Number(product.available_quantity) > 0 ? "" : " product-unavailable"}`}>
+                <Box className="product-photo">
+                  {product.image_url && !failedImages.has(product.variant_id) ? <img src={apiAssetUrl(product.image_url) ?? undefined} alt={`تصویر ${product.variant_name}`} loading="lazy" onError={() => setFailedImages((current) => new Set(current).add(product.variant_id))} /> : <Box className="product-photo-placeholder"><StorefrontRounded /><Typography variant="caption">تصویر به‌زودی</Typography></Box>}
+                  <Chip label={Number(product.available_quantity) > 0 ? "موجود" : "ناموجود"} color={Number(product.available_quantity) > 0 ? "success" : "default"} size="small" />
                 </Box>
                 <CardContent>
-                  <Typography variant="h6">{product.name}</Typography>
-                  <Typography variant="body2" color="text.secondary">بسته‌بندی بهداشتی، انتخاب وزن هنگام سفارش</Typography>
+                  <Typography variant="h6">{product.variant_name}</Typography>
+                  <Typography variant="body2" color="text.secondary" className="product-description">{product.description || product.product_name}</Typography>
                   <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "end", mt: 2 }}>
-                    <Box><Typography variant="h6" color="primary.main">{formatToman(product.price)}</Typography><Typography variant="caption" color="text.secondary">هر {product.unit}</Typography></Box>
-                    {cart[product.id] ? (
+                    <Box><Typography variant="h6" color="primary.main">{formatRial(product.retail_price_rial)}</Typography><Typography variant="caption" color="text.secondary">هر {product.unit_name}{Number(product.available_quantity) > 0 ? ` • ${formatDecimal(product.available_quantity)} موجود` : ""}</Typography></Box>
+                    {cart[product.variant_id] ? (
                       <Stack direction="row" sx={{ alignItems: "center" }} className="quantity-stepper">
-                        <IconButton size="small" onClick={() => changeQuantity(product, -1)}><RemoveRounded /></IconButton>
-                        <Typography sx={{ fontWeight: 900 }}>{cart[product.id].toLocaleString("fa-IR")}</Typography>
-                        <IconButton size="small" onClick={() => changeQuantity(product, 1)}><AddRounded /></IconButton>
+                        <IconButton size="small" aria-label={`کم‌کردن ${product.variant_name}`} onClick={() => changeQuantity(product, -1)}><RemoveRounded /></IconButton>
+                        <Typography sx={{ fontWeight: 900 }}>{cart[product.variant_id].toLocaleString("fa-IR")}</Typography>
+                        <IconButton size="small" aria-label={`افزودن ${product.variant_name}`} onClick={() => changeQuantity(product, 1)}><AddRounded /></IconButton>
                       </Stack>
                     ) : null}
                   </Stack>
                 </CardContent>
                 <CardActions>
-                  <Button fullWidth variant={cart[product.id] ? "outlined" : "contained"} startIcon={<ShoppingBasketRounded />} onClick={() => changeQuantity(product, 1)}>
-                    {cart[product.id] ? "افزودن یکی دیگر" : "افزودن به سبد"}
+                  <Button fullWidth variant={cart[product.variant_id] ? "outlined" : "contained"} startIcon={<ShoppingBasketRounded />} disabled={Number(product.available_quantity) <= 0} onClick={() => changeQuantity(product, 1)}>
+                    {Number(product.available_quantity) <= 0 ? "فعلاً ناموجود" : cart[product.variant_id] ? "افزودن یکی دیگر" : "افزودن به سبد"}
                   </Button>
                 </CardActions>
               </Card>
             ))}
           </Box>
-        ) : (
-          <Box className="storefront-empty"><SearchRounded /><Typography variant="h6">کالایی پیدا نشد</Typography><Button onClick={() => { setQuery(""); setCategory("همه"); }}>پاک‌کردن فیلترها</Button></Box>
-        )}
+        ) : null}
+        {catalogState === "ready" && !visibleProducts.length ? products.length ? <Box className="storefront-empty"><SearchRounded /><Typography variant="h6">کالایی با این جست‌وجو پیدا نشد</Typography><Button onClick={() => { setQuery(""); setCategory("همه"); }}>پاک‌کردن فیلترها</Button></Box> : <Box className="storefront-empty"><StorefrontRounded /><Typography variant="h6">هنوز کالایی برای فروش آماده نیست</Typography><Typography color="text.secondary">پس از فعال‌کردن کالا و گونه، اینجا نمایش داده می‌شود.</Typography><Button variant="outlined" startIcon={<RefreshRounded />} onClick={() => void loadProducts()}>تازه‌سازی</Button></Box> : null}
 
         <Box className="storefront-trust-band">
           <Stack><VerifiedRounded color="primary" /><Box><Typography sx={{ fontWeight: 900 }}>کنترل کیفیت</Typography><Typography variant="body2" color="text.secondary">بررسی تازگی پیش از بسته‌بندی</Typography></Box></Stack>
@@ -519,12 +555,12 @@ export default function Storefront({ onOpenAdmin }: StorefrontProps) {
         <DialogTitle>سبد خرید شما</DialogTitle>
         <DialogContent dividers>
           {cartItems.length ? cartItems.map((product) => (
-            <Box className="cart-dialog-row" key={product.id}>
-              <Box><Typography sx={{ fontWeight: 900 }}>{product.name}</Typography><Typography variant="body2" color="text.secondary">{formatToman(product.price)} × {cart[product.id].toLocaleString("fa-IR")}</Typography></Box>
-              <Stack direction="row" sx={{ alignItems: "center" }} className="quantity-stepper"><IconButton size="small" onClick={() => changeQuantity(product, -1)}><RemoveRounded /></IconButton><Typography sx={{ fontWeight: 900 }}>{cart[product.id].toLocaleString("fa-IR")}</Typography><IconButton size="small" onClick={() => changeQuantity(product, 1)}><AddRounded /></IconButton></Stack>
+            <Box className="cart-dialog-row" key={product.variant_id}>
+              <Box><Typography sx={{ fontWeight: 900 }}>{product.variant_name}</Typography><Typography variant="body2" color="text.secondary">{formatRial(product.retail_price_rial)} × {cart[product.variant_id].toLocaleString("fa-IR")}</Typography></Box>
+              <Stack direction="row" sx={{ alignItems: "center" }} className="quantity-stepper"><IconButton size="small" aria-label={`کم‌کردن ${product.variant_name}`} onClick={() => changeQuantity(product, -1)}><RemoveRounded /></IconButton><Typography sx={{ fontWeight: 900 }}>{cart[product.variant_id].toLocaleString("fa-IR")}</Typography><IconButton size="small" aria-label={`افزودن ${product.variant_name}`} onClick={() => changeQuantity(product, 1)}><AddRounded /></IconButton></Stack>
             </Box>
           )) : <Box className="storefront-empty"><ShoppingBasketRounded /><Typography>سبد خرید هنوز خالی است.</Typography></Box>}
-          {cartItems.length ? <><Divider sx={{ my: 2 }} /><Stack direction="row" sx={{ justifyContent: "space-between" }}><Typography sx={{ fontWeight: 900 }}>جمع سفارش</Typography><Typography variant="h6" color="primary.main">{formatToman(cartTotal)}</Typography></Stack></> : null}
+          {cartItems.length ? <><Divider sx={{ my: 2 }} /><Stack direction="row" sx={{ justifyContent: "space-between" }}><Typography sx={{ fontWeight: 900 }}>جمع سفارش</Typography><Typography variant="h6" color="primary.main">{formatRial(cartTotal)}</Typography></Stack></> : null}
         </DialogContent>
         <DialogActions><Button onClick={() => setCartOpen(false)}>ادامه خرید</Button><Button variant="contained" disabled={!cartItems.length}>ادامه ثبت سفارش</Button></DialogActions>
       </Dialog>

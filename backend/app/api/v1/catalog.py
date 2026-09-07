@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import get_current_user
+from app.api.v1.auth import get_current_user, require_superuser
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.schemas.catalog import (
     CategoryCreate,
@@ -14,6 +15,7 @@ from app.schemas.catalog import (
     PriceRuleUpdate,
     ProductCreate,
     ProductRead,
+    ProductImageRead,
     ProductUpdate,
     ProductVariantCreate,
     ProductVariantRead,
@@ -23,6 +25,7 @@ from app.schemas.catalog import (
     UnitUpdate,
 )
 from app.services import catalog as catalog_service
+from app.services import product_media
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
@@ -85,6 +88,34 @@ def update_product(product_id: int, payload: ProductUpdate, db: Session = Depend
 @router.delete("/products/{product_id}", response_model=ProductRead)
 def deactivate_product(product_id: int, db: Session = Depends(get_db)) -> ProductRead:
     return catalog_service.deactivate_product(db, product_id)
+
+
+@router.put("/products/{product_id}/image", response_model=ProductImageRead)
+async def upload_product_image(
+    product_id: int,
+    image: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_superuser),
+) -> ProductImageRead:
+    maximum = get_settings().product_image_max_bytes
+    content = await image.read(maximum + 1)
+    product = product_media.replace_product_image(
+        db,
+        product_id=product_id,
+        content=content,
+        content_type=image.content_type,
+    )
+    return ProductImageRead(product_id=product.id, image_url=product.image_url)
+
+
+@router.delete("/products/{product_id}/image", response_model=ProductImageRead)
+def delete_product_image(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_superuser),
+) -> ProductImageRead:
+    product = product_media.remove_product_image(db, product_id=product_id)
+    return ProductImageRead(product_id=product.id, image_url=None)
 
 
 @router.get("/product-variants", response_model=list[ProductVariantRead])
