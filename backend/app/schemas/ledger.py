@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -127,6 +128,7 @@ class LedgerEntryCreate(BaseModel):
     source_type: LedgerSourceType = "manual"
     source_id: int | None = None
     jalali_date: str
+    due_jalali_date: str | None = None
     local_time: str
     description: str | None = None
 
@@ -135,9 +137,11 @@ class LedgerEntryCreate(BaseModel):
     def localized_integers(cls, value):
         return normalize_localized_integer(value)
 
-    @field_validator("jalali_date")
+    @field_validator("jalali_date", "due_jalali_date")
     @classmethod
-    def jalali_date_format(cls, value: str) -> str:
+    def jalali_date_format(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         return validate_jalali_date(value)
 
     @field_validator("local_time")
@@ -157,10 +161,45 @@ class LedgerEntryRead(BaseModel):
     source_type: LedgerSourceType
     source_id: int | None
     jalali_date: str
+    due_jalali_date: str | None
     local_time: str
     description: str | None
     status: LedgerStatus
     is_active: bool
+
+
+class LedgerDueDateUpdate(BaseModel):
+    due_jalali_date: str | None
+    reason: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("due_jalali_date")
+    @classmethod
+    def due_date_format(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_jalali_date(value)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("دلیل تغییر سررسید الزامی است.")
+        return value
+
+
+class LedgerDueAuditRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    entry_id: int
+    actor_user_id: int | None
+    actor_username: str | None
+    actor_full_name: str | None
+    before_due_date: str | None
+    after_due_date: str | None
+    reason: str
+    occurred_at_utc: datetime
 
 
 class SettlementCreate(BaseModel):

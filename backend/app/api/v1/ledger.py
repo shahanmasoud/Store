@@ -11,6 +11,8 @@ from app.schemas.ledger import (
     DuesRead,
     LedgerEntryCreate,
     LedgerEntryRead,
+    LedgerDueAuditRead,
+    LedgerDueDateUpdate,
     PersonCreate,
     PersonAccountSummary,
     PersonRead,
@@ -65,6 +67,25 @@ def person_ledger(person_id: int, db: Session = Depends(get_db)) -> list[LedgerE
 @router.post("/ledger/manual-entry", response_model=LedgerEntryRead, status_code=status.HTTP_201_CREATED)
 def create_manual_entry(payload: LedgerEntryCreate, db: Session = Depends(get_db)) -> LedgerEntryRead:
     return ledger_service.create_manual_entry(db, payload)
+
+
+@router.patch("/ledger/entries/{entry_id}/due-date", response_model=LedgerEntryRead)
+def update_ledger_entry_due_date(
+    entry_id: int,
+    payload: LedgerDueDateUpdate,
+    db: Session = Depends(get_db),
+    admin=Depends(require_superuser),
+) -> LedgerEntryRead:
+    return ledger_service.update_manual_entry_due_date(db, entry_id, payload, admin)
+
+
+@router.get("/ledger/entries/{entry_id}/due-date/audits", response_model=list[LedgerDueAuditRead])
+def ledger_entry_due_date_audits(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    _admin: object = Depends(require_superuser),
+) -> list[LedgerDueAuditRead]:
+    return ledger_service.list_ledger_due_audits(db, entry_id)
 
 
 @router.post("/settlements", response_model=SettlementRead, status_code=status.HTTP_201_CREATED)

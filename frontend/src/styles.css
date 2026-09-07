@@ -2187,6 +2187,21 @@ button {
 .ledger-entry-card small { color: #71817c; }
 .ledger-entry-card p { margin: 5px 0 0; color: #475a54; }
 .ledger-entry-amount { display: grid; align-content: center; justify-items: end; gap: 4px; white-space: nowrap; }
+.ledger-entry-due { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.ledger-entry-due .MuiButton-root, .due-toggle-button { min-height: 44px; }
+.ledger-due-dialog-form { display: flex; min-height: 100%; flex-direction: column; }
+.ledger-due-dialog-content { flex: 1; align-content: start; overflow-x: hidden; }
+.ledger-due-entry-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ledger-due-entry-summary > span { display: grid; gap: 4px; min-width: 0; padding: 13px; border: 1px solid #dce7e2; border-radius: 13px; background: #f7fbf9; }
+.ledger-due-entry-summary small, .ledger-due-audit-list small { color: #687a74; }
+.ledger-due-entry-summary strong { overflow-wrap: anywhere; color: #17332b; }
+.ledger-due-audits { display: grid; gap: 12px; padding-top: 4px; }
+.ledger-due-audit-list { display: grid; gap: 9px; }
+.ledger-due-audit-list article { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; padding: 12px; border: 1px solid #e1eae6; border-radius: 13px; background: #fafcfb; }
+.ledger-due-audit-list article > div { display: grid; min-width: 0; gap: 3px; }
+.ledger-due-audit-list article > p { grid-column: 1 / -1; margin: 3px 0 0; padding-top: 8px; color: #475a54; border-top: 1px solid #e6eeea; overflow-wrap: anywhere; }
+.ledger-due-dialog-actions { gap: 8px; flex-wrap: wrap; padding: 14px 24px 20px !important; background: #fff; border-top: 1px solid #e2ebe7; }
+.ledger-due-dialog-actions .MuiButton-root { min-height: 44px; }
 .dialog-form { display: grid; gap: 16px; padding-top: 8px !important; }
 
 .cheque-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
@@ -2243,6 +2258,9 @@ button {
   .ledger-side-balances { grid-template-columns: 1fr 1fr; }
   .ledger-entry-card { grid-template-columns: 1fr; }
   .ledger-entry-amount { justify-items: start; }
+  .ledger-due-entry-summary { grid-template-columns: 1fr; }
+  .ledger-due-dialog-actions { position: sticky; bottom: 0; display: grid; grid-template-columns: 1fr 1fr; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)) !important; z-index: 2; }
+  .ledger-due-dialog-actions .MuiButton-root { width: 100%; }
   .cheque-card { grid-template-columns: 1fr; padding: 14px; }
   .cheque-card-amount { justify-items: start; }
   .cheque-meta { grid-template-columns: 1fr 1fr; }
@@ -2253,6 +2271,7 @@ button {
 
 @media (max-width: 400px) {
   .ledger-side-balances, .cheque-meta, .cheque-actions { grid-template-columns: 1fr; }
+  .ledger-due-dialog-actions { grid-template-columns: 1fr; }
   .cheque-card-heading { grid-template-columns: auto minmax(0, 1fr); }
   .cheque-card-heading .MuiChip-root { grid-column: 1 / -1; justify-self: start; }
 }

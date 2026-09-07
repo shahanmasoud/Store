@@ -48,6 +48,7 @@ import {
   type InventoryTransaction,
   type InventoryReport,
   type LedgerEntry,
+  type LedgerDueDateAudit,
   type OnlineChannel,
   type OnlineOrder,
   type OnlinePriceRule,
@@ -2187,6 +2188,8 @@ function ProductsView({ onBack }: { onBack: () => void }) {
 }
 
 function LedgerView({ onBack }: { onBack: () => void }) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [people, setPeople] = useState<Person[]>([]);
   const [selectedId, setSelectedId] = useState(0);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
@@ -2212,12 +2215,22 @@ function LedgerView({ onBack }: { onBack: () => void }) {
   const [entryAmount, setEntryAmount] = useState("");
   const [entryDate, setEntryDate] = useState(currentJalaliDate);
   const [entryDescription, setEntryDescription] = useState("");
+  const [entryHasDueDate, setEntryHasDueDate] = useState(false);
+  const [entryDueDate, setEntryDueDate] = useState(currentJalaliDate);
   const [entrySaving, setEntrySaving] = useState(false);
   const [settlementType, setSettlementType] = useState<"debit" | "credit">("debit");
   const [settlementAmount, setSettlementAmount] = useState("");
   const [settlementDate, setSettlementDate] = useState(currentJalaliDate);
   const [settlementNote, setSettlementNote] = useState("");
   const [settlementSaving, setSettlementSaving] = useState(false);
+  const [dueEntry, setDueEntry] = useState<LedgerEntry | null>(null);
+  const [dueDateEnabled, setDueDateEnabled] = useState(false);
+  const [dueDateDraft, setDueDateDraft] = useState(currentJalaliDate);
+  const [dueReason, setDueReason] = useState("");
+  const [dueSaving, setDueSaving] = useState(false);
+  const [dueError, setDueError] = useState("");
+  const [dueAudits, setDueAudits] = useState<LedgerDueDateAudit[]>([]);
+  const [dueAuditsStatus, setDueAuditsStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const selected = people.find((person) => person.id === selectedId);
   const debitOpen = entries.filter((entry) => entry.status === "open" && entry.entry_type === "debit").reduce((sum, entry) => sum + entry.remaining_rial, 0);
   const creditOpen = entries.filter((entry) => entry.status === "open" && entry.entry_type === "credit").reduce((sum, entry) => sum + entry.remaining_rial, 0);
@@ -2283,10 +2296,36 @@ function LedgerView({ onBack }: { onBack: () => void }) {
     if (!selectedId || amount <= 0) { setNotice({ type: "error", text: "شخص و مبلغ مثبت را مشخص کنید." }); return; }
     setEntrySaving(true); setNotice(null);
     try {
-      await api.createManualEntry({ person_id: selectedId, entry_type: entryType, amount_rial: amount, jalali_date: entryDate, local_time: currentLocalTime(), description: entryDescription.trim() || undefined });
-      setEntryAmount(""); setEntryDescription(""); setNotice({ type: "success", text: "سند دستی ثبت شد." }); await loadLedger(selectedId);
+      await api.createManualEntry({ person_id: selectedId, entry_type: entryType, amount_rial: amount, jalali_date: entryDate, local_time: currentLocalTime(), description: entryDescription.trim() || undefined, due_jalali_date: entryHasDueDate ? entryDueDate : null });
+      setEntryAmount(""); setEntryDescription(""); setEntryHasDueDate(false); setNotice({ type: "success", text: "سند دستی ثبت شد." }); await loadLedger(selectedId);
     } catch (error) { setNotice({ type: "error", text: error instanceof Error ? error.message : "ثبت سند انجام نشد." }); }
     finally { setEntrySaving(false); }
+  }
+
+  async function loadDueAudits(entryId: number) {
+    setDueAuditsStatus("loading");
+    try { setDueAudits(await api.ledgerEntryDueDateAudits(entryId)); setDueAuditsStatus("ready"); }
+    catch { setDueAuditsStatus("error"); }
+  }
+
+  function openDueDateDialog(entry: LedgerEntry) {
+    setDueEntry(entry);
+    setDueDateEnabled(Boolean(entry.due_jalali_date));
+    setDueDateDraft(entry.due_jalali_date || currentJalaliDate());
+    setDueReason(""); setDueError(""); setDueAudits([]);
+    void loadDueAudits(entry.id);
+  }
+
+  async function submitDueDate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!dueEntry || !dueReason.trim()) { setDueError("دلیل این تغییر را بنویسید تا سابقه مالی قابل پیگیری باشد."); return; }
+    setDueSaving(true); setDueError("");
+    try {
+      await api.updateLedgerEntryDueDate(dueEntry.id, { due_jalali_date: dueDateEnabled ? dueDateDraft : null, reason: dueReason.trim() });
+      setDueEntry(null); setNotice({ type: "success", text: dueDateEnabled ? "سررسید سند به‌روزرسانی شد." : "سررسید سند حذف شد." });
+      await loadLedger(selectedId);
+    } catch (error) { setDueError(error instanceof Error ? error.message : "ذخیره سررسید انجام نشد."); }
+    finally { setDueSaving(false); }
   }
 
   async function submitSettlement(event: FormEvent<HTMLFormElement>) {
@@ -2322,13 +2361,57 @@ function LedgerView({ onBack }: { onBack: () => void }) {
               <div className="ledger-side-balances"><span><small>مانده بدهکار</small><strong>{formatRial(debitOpen)}</strong></span><span><small>مانده بستانکار</small><strong>{formatRial(creditOpen)}</strong></span></div>
             </section>
             <div className="ledger-actions-grid">
-              <form className="sale-panel ledger-form" onSubmit={submitEntry} noValidate><div className="ledger-section-heading"><div><strong>سند دستی</strong><small>افزایش مانده بدهکار یا بستانکار</small></div></div><TextField select label="نوع سند" value={entryType} onChange={(event) => setEntryType(event.target.value as "debit" | "credit")} disabled={entrySaving}><MenuItem value="debit">بدهکار — شخص باید پرداخت کند</MenuItem><MenuItem value="credit">بستانکار — فروشگاه باید پرداخت کند</MenuItem></TextField><MoneyField label="مبلغ (تومان)" valueRial={normalizeMoney(entryAmount)} onValueRialChange={(value) => setEntryAmount(moneyInputValue(value))} required disabled={entrySaving} /><JalaliDateField label="تاریخ سند" value={entryDate} onChange={setEntryDate} required /><TextField label="شرح (اختیاری)" value={entryDescription} onChange={(event) => setEntryDescription(event.target.value)} disabled={entrySaving} /><Button type="submit" size="large" variant="contained" disabled={entrySaving || normalizeMoney(entryAmount) <= 0} startIcon={entrySaving ? <CircularProgress size={18} color="inherit" /> : <AddRounded />}>{entrySaving ? "در حال ثبت…" : "ثبت سند"}</Button></form>
+              <form className="sale-panel ledger-form" onSubmit={submitEntry} noValidate>
+                <div className="ledger-section-heading"><div><strong>سند دستی</strong><small>افزایش مانده بدهکار یا بستانکار</small></div></div>
+                <TextField select label="نوع سند" value={entryType} onChange={(event) => setEntryType(event.target.value as "debit" | "credit")} disabled={entrySaving}><MenuItem value="debit">بدهکار — شخص باید پرداخت کند</MenuItem><MenuItem value="credit">بستانکار — فروشگاه باید پرداخت کند</MenuItem></TextField>
+                <MoneyField label="مبلغ (تومان)" valueRial={normalizeMoney(entryAmount)} onValueRialChange={(value) => setEntryAmount(moneyInputValue(value))} required disabled={entrySaving} />
+                <JalaliDateField label="تاریخ سند" value={entryDate} onChange={setEntryDate} required />
+                <Button type="button" className="due-toggle-button" variant={entryHasDueDate ? "contained" : "outlined"} onClick={() => setEntryHasDueDate((value) => !value)} disabled={entrySaving}>{entryHasDueDate ? "حذف سررسید از سند" : "افزودن سررسید (اختیاری)"}</Button>
+                {entryHasDueDate ? <JalaliDateField label="تاریخ سررسید" value={entryDueDate} onChange={setEntryDueDate} required /> : null}
+                <TextField label="شرح (اختیاری)" value={entryDescription} onChange={(event) => setEntryDescription(event.target.value)} disabled={entrySaving} />
+                <Button type="submit" size="large" variant="contained" disabled={entrySaving || normalizeMoney(entryAmount) <= 0} startIcon={entrySaving ? <CircularProgress size={18} color="inherit" /> : <AddRounded />}>{entrySaving ? "در حال ثبت…" : "ثبت سند"}</Button>
+              </form>
               <form className="sale-panel ledger-form" onSubmit={submitSettlement} noValidate><div className="ledger-section-heading"><div><strong>ثبت تسویه</strong><small>فقط اسناد باز همان سمت، از قدیمی‌ترین تسویه می‌شوند</small></div></div><TextField select label="سمت حساب برای تسویه" value={settlementType} onChange={(event) => setSettlementType(event.target.value as "debit" | "credit")} disabled={settlementSaving}><MenuItem value="debit">مانده بدهکار ({formatRial(debitOpen)})</MenuItem><MenuItem value="credit">مانده بستانکار ({formatRial(creditOpen)})</MenuItem></TextField><MoneyField label="مبلغ تسویه (تومان)" valueRial={normalizeMoney(settlementAmount)} onValueRialChange={(value) => setSettlementAmount(moneyInputValue(value))} required disabled={settlementSaving} error={normalizeMoney(settlementAmount) > selectedSideBalance} helperText={`حداکثر قابل تسویه: ${formatRial(selectedSideBalance)}`} /><JalaliDateField label="تاریخ تسویه" value={settlementDate} onChange={setSettlementDate} required /><TextField label="یادداشت (اختیاری)" value={settlementNote} onChange={(event) => setSettlementNote(event.target.value)} disabled={settlementSaving} /><Button type="submit" size="large" variant="contained" disabled={settlementSaving || normalizeMoney(settlementAmount) <= 0 || normalizeMoney(settlementAmount) > selectedSideBalance} startIcon={settlementSaving ? <CircularProgress size={18} color="inherit" /> : <PaymentsRounded />}>{settlementSaving ? "در حال ثبت…" : "ثبت تسویه"}</Button></form>
             </div>
-            <section className="sale-panel ledger-timeline-panel"><div className="ledger-section-heading"><div><strong>گردش حساب</strong><small>جدیدترین تراکنش‌ها در ابتدای فهرست</small></div><Chip label={`${entries.length.toLocaleString("fa-IR")} سند`} variant="outlined" /></div>{ledgerStatus === "loading" ? <div className="record-state"><CircularProgress size={26} /><span>در حال دریافت گردش حساب…</span></div> : null}{ledgerStatus === "error" ? <div className="record-state record-state-error"><span>گردش حساب دریافت نشد.</span><Button variant="outlined" onClick={() => loadLedger(selectedId)}>تلاش دوباره</Button></div> : null}{ledgerStatus === "ready" && entries.length === 0 ? <div className="record-state"><HistoryRounded /><strong>هنوز سندی ثبت نشده است</strong></div> : null}<div className="ledger-timeline">{sortedEntries.map((entry) => <article className="ledger-entry-card" key={entry.id}><span className={`ledger-entry-mark ${entry.entry_type}`} /><div><div className="ledger-entry-title"><strong>{entry.entry_type === "debit" ? "بدهکار" : "بستانکار"}</strong><Chip size="small" color={entry.status === "settled" ? "success" : "default"} label={entry.status === "settled" ? "تسویه‌شده" : entry.status === "canceled" ? "لغوشده" : "باز"} /></div><small>{toPersianDigits(entry.jalali_date)}، ساعت {toPersianDigits(entry.local_time)} • {({ sale: "فروش", purchase: "خرید", settlement: "تسویه", cheque: "چک", manual: "سند دستی" } as Record<string, string>)[entry.source_type] ?? entry.source_type}</small><p>{entry.description || "بدون شرح"}</p></div><div className="ledger-entry-amount"><strong>{formatRial(entry.amount_rial)}</strong><small>مانده {formatRial(entry.remaining_rial)}</small></div></article>)}</div></section>
+            <section className="sale-panel ledger-timeline-panel">
+              <div className="ledger-section-heading"><div><strong>گردش حساب</strong><small>جدیدترین تراکنش‌ها در ابتدای فهرست</small></div><Chip label={`${entries.length.toLocaleString("fa-IR")} سند`} variant="outlined" /></div>
+              {ledgerStatus === "loading" ? <div className="record-state"><CircularProgress size={26} /><span>در حال دریافت گردش حساب…</span></div> : null}
+              {ledgerStatus === "error" ? <div className="record-state record-state-error"><span>گردش حساب دریافت نشد.</span><Button variant="outlined" onClick={() => loadLedger(selectedId)}>تلاش دوباره</Button></div> : null}
+              {ledgerStatus === "ready" && entries.length === 0 ? <div className="record-state"><HistoryRounded /><strong>هنوز سندی ثبت نشده است</strong></div> : null}
+              <div className="ledger-timeline">{sortedEntries.map((entry) => {
+                const editableDueDate = entry.source_type === "manual" && entry.is_active && entry.status === "open" && Number(entry.remaining_rial) > 0;
+                const dueTone = !entry.due_jalali_date ? "default" : entry.due_jalali_date < currentJalaliDate() ? "error" : entry.due_jalali_date === currentJalaliDate() ? "warning" : "info";
+                const dueLabel = !entry.due_jalali_date ? "بدون سررسید" : entry.due_jalali_date < currentJalaliDate() ? `سررسید گذشته: ${toPersianDigits(entry.due_jalali_date)}` : entry.due_jalali_date === currentJalaliDate() ? "سررسید امروز" : `سررسید ${toPersianDigits(entry.due_jalali_date)}`;
+                return <article className="ledger-entry-card" key={entry.id}>
+                  <span className={`ledger-entry-mark ${entry.entry_type}`} />
+                  <div><div className="ledger-entry-title"><strong>{entry.entry_type === "debit" ? "بدهکار" : "بستانکار"}</strong><Chip size="small" color={entry.status === "settled" ? "success" : "default"} label={entry.status === "settled" ? "تسویه‌شده" : entry.status === "canceled" ? "لغوشده" : "باز"} /></div><small>{toPersianDigits(entry.jalali_date)}، ساعت {toPersianDigits(entry.local_time)} • {({ sale: "فروش", purchase: "خرید", settlement: "تسویه", cheque: "چک", manual: "سند دستی" } as Record<string, string>)[entry.source_type] ?? entry.source_type}</small><p>{entry.description || "بدون شرح"}</p><div className="ledger-entry-due"><Chip size="small" color={dueTone} variant={entry.due_jalali_date ? "filled" : "outlined"} label={dueLabel} />{editableDueDate ? <Button size="small" startIcon={<EditRounded />} onClick={() => openDueDateDialog(entry)}>{entry.due_jalali_date ? "ویرایش سررسید" : "تعیین سررسید"}</Button> : null}</div></div>
+                  <div className="ledger-entry-amount"><strong>{formatRial(entry.amount_rial)}</strong><small>مانده {formatRial(entry.remaining_rial)}</small></div>
+                </article>;
+              })}</div>
+            </section>
           </>}
         </main>
       </div>
+      <Dialog open={dueEntry !== null} onClose={() => { if (!dueSaving) setDueEntry(null); }} fullWidth maxWidth="sm" fullScreen={isMobile} className="ledger-due-dialog" aria-labelledby="ledger-due-dialog-title">
+        <form onSubmit={submitDueDate} className="ledger-due-dialog-form" noValidate>
+          <DialogTitle id="ledger-due-dialog-title"><Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1 }}><span>{dueEntry?.due_jalali_date ? "ویرایش سررسید سند" : "تعیین سررسید سند"}</span><IconButton aria-label="بستن" onClick={() => setDueEntry(null)} disabled={dueSaving}><CloseRounded /></IconButton></Stack></DialogTitle>
+          <DialogContent dividers className="dialog-form ledger-due-dialog-content">
+            <Alert severity="info">هر تغییر همراه با دلیل ثبت می‌شود؛ مبلغ و ماهیت سند تغییر نمی‌کند.</Alert>
+            {dueError ? <Alert severity="error" role="alert">{dueError}</Alert> : null}
+            <Box className="ledger-due-entry-summary"><span><small>مبلغ سند</small><strong>{formatRial(dueEntry?.amount_rial ?? 0)}</strong></span><span><small>مانده باز</small><strong>{formatRial(dueEntry?.remaining_rial ?? 0)}</strong></span></Box>
+            <Button type="button" variant={dueDateEnabled ? "contained" : "outlined"} className="due-toggle-button" onClick={() => { setDueDateEnabled((value) => !value); setDueError(""); }} disabled={dueSaving}>{dueDateEnabled ? "حذف سررسید" : "تعیین تاریخ سررسید"}</Button>
+            {dueDateEnabled ? <JalaliDateField label="تاریخ سررسید" value={dueDateDraft} onChange={(value) => { setDueDateDraft(value); setDueError(""); }} required /> : <Alert severity="warning" icon={false}>با ذخیره، این سند بدون تاریخ سررسید خواهد بود.</Alert>}
+            <TextField autoFocus label="دلیل تغییر" value={dueReason} onChange={(event) => { setDueReason(event.target.value); setDueError(""); }} required multiline minRows={2} disabled={dueSaving} error={dueReason.length > 0 && !dueReason.trim()} helperText="مثلاً توافق جدید با مشتری یا اصلاح تاریخ ثبت‌شده" slotProps={{ htmlInput: { maxLength: 2000 } }} />
+            <section className="ledger-due-audits" aria-labelledby="ledger-due-audits-title"><div className="ledger-section-heading"><div><strong id="ledger-due-audits-title">تاریخچه تغییر سررسید</strong><small>قدیمی‌ترین اطلاعات حذف نمی‌شوند</small></div></div>
+              {dueAuditsStatus === "loading" ? <div className="record-state"><CircularProgress size={24} /><span>در حال دریافت تاریخچه…</span></div> : null}
+              {dueAuditsStatus === "error" ? <div className="record-state record-state-error"><span>تاریخچه دریافت نشد.</span><Button variant="outlined" startIcon={<RefreshRounded />} onClick={() => dueEntry && void loadDueAudits(dueEntry.id)}>تلاش دوباره</Button></div> : null}
+              {dueAuditsStatus === "ready" && dueAudits.length === 0 ? <div className="record-state"><HistoryRounded /><strong>هنوز تغییری ثبت نشده است</strong></div> : null}
+              {dueAuditsStatus === "ready" && dueAudits.length > 0 ? <div className="ledger-due-audit-list">{dueAudits.map((audit) => <article key={audit.id}><div><small>از</small><strong>{audit.before_due_date ? toPersianDigits(audit.before_due_date) : "بدون سررسید"}</strong></div><ArrowBackRounded /><div><small>به</small><strong>{audit.after_due_date ? toPersianDigits(audit.after_due_date) : "بدون سررسید"}</strong></div><p>{audit.reason}<small>{audit.actor_full_name || audit.actor_username ? ` • توسط ${audit.actor_full_name || audit.actor_username}` : ""}</small></p></article>)}</div> : null}
+            </section>
+          </DialogContent>
+          <DialogActions className="ledger-due-dialog-actions"><Button size="large" onClick={() => setDueEntry(null)} disabled={dueSaving}>انصراف</Button><Button size="large" type="submit" variant="contained" disabled={dueSaving || !dueReason.trim()} startIcon={dueSaving ? <CircularProgress size={18} color="inherit" /> : <FactCheckRounded />}>{dueSaving ? "در حال ذخیره…" : "ذخیره سررسید"}</Button></DialogActions>
+        </form>
+      </Dialog>
       <Dialog open={personDialog} onClose={() => { if (!personSaving) setPersonDialog(false); }} fullWidth maxWidth="sm" className="person-responsive-dialog"><form onSubmit={submitPerson} noValidate><DialogTitle>{editingPersonId ? "ویرایش اطلاعات شخص" : "ثبت شخص جدید"}</DialogTitle><DialogContent className="dialog-form">{personDialogError ? <Alert severity="error">{personDialogError}</Alert> : null}<TextField autoFocus label="نام شخص" value={personName} onChange={(event) => { setPersonName(event.target.value); setPersonDialogError(""); }} required disabled={personSaving} error={personName.length > 0 && !personName.trim()} helperText={personName.length > 0 && !personName.trim() ? "نام نمی‌تواند فقط فاصله باشد." : ""} /><TextField label="شماره تماس (اختیاری)" value={personPhone} onChange={(event) => setPersonPhone(event.target.value)} inputMode="tel" disabled={personSaving} /><TextField select label="نوع شخص" value={personType} onChange={(event) => setPersonType(event.target.value as Person["person_type"])} disabled={personSaving}><MenuItem value="customer">مشتری</MenuItem><MenuItem value="supplier">تأمین‌کننده</MenuItem><MenuItem value="both">مشتری و تأمین‌کننده</MenuItem></TextField><TextField select label="وضعیت خوش‌حسابی" value={personCreditStatus} onChange={(event) => setPersonCreditStatus(event.target.value as Person["credit_status"])} disabled={personSaving} helperText="این نشان هنگام ثبت فاکتور به تصمیم‌گیری کمک می‌کند."><MenuItem value="good">خوش‌حساب</MenuItem><MenuItem value="normal">عادی</MenuItem><MenuItem value="watch">نیازمند توجه</MenuItem></TextField><TextField label="توضیحات (اختیاری)" value={personNote} onChange={(event) => setPersonNote(event.target.value)} multiline minRows={3} disabled={personSaving} /></DialogContent><DialogActions><Button size="large" onClick={() => setPersonDialog(false)} disabled={personSaving}>انصراف</Button><Button size="large" type="submit" variant="contained" disabled={personSaving || !personName.trim()} startIcon={personSaving ? <CircularProgress size={18} color="inherit" /> : editingPersonId ? <EditRounded /> : <AddRounded />}>{editingPersonId ? "ذخیره تغییرات" : "ثبت شخص"}</Button></DialogActions></form></Dialog>
 
       <Dialog open={summaryPerson !== null} onClose={() => setSummaryPerson(null)} fullWidth maxWidth="sm" className="person-responsive-dialog"><DialogTitle>خلاصه حساب {summaryPerson?.name}</DialogTitle><DialogContent className="person-summary-content">{summaryStatus === "loading" ? <div className="record-state"><CircularProgress size={28} /><span>در حال محاسبه خلاصه حساب…</span></div> : null}{summaryStatus === "error" ? <div className="record-state record-state-error"><strong>خلاصه حساب دریافت نشد</strong><Button variant="outlined" onClick={() => summaryPerson && openPersonSummary(summaryPerson)}>تلاش دوباره</Button></div> : null}{summaryStatus === "ready" && personSummary ? <><div className="person-summary-grid"><div><small>مانده بدهکار</small><strong>{formatRial(personSummary.debit_open_rial)}</strong></div><div><small>مانده بستانکار</small><strong>{formatRial(personSummary.credit_open_rial)}</strong></div><div className="person-summary-net"><small>مانده خالص</small><strong>{formatRial(Math.abs(personSummary.net_balance_rial))}</strong><span>{personSummary.net_balance_rial > 0 ? "شخص به فروشگاه بدهکار است" : personSummary.net_balance_rial < 0 ? "فروشگاه به شخص بدهکار است" : "حساب تسویه است"}</span></div></div>{personSummary.open_entries_count === 0 ? <Alert severity="success">این شخص سند باز ندارد.</Alert> : <Alert severity="info">{personSummary.open_entries_count.toLocaleString("fa-IR")} سند باز در این حساب وجود دارد.</Alert>}<div className="person-profile-details"><span><small>تلفن</small><strong>{summaryPerson?.phone ? toPersianDigits(summaryPerson.phone) : "ثبت نشده"}</strong></span><span><small>وضعیت خوش‌حسابی</small><strong>{summaryPerson?.credit_status === "good" ? "خوش‌حساب" : summaryPerson?.credit_status === "watch" ? "نیازمند توجه" : "عادی"}</strong></span>{summaryPerson?.note ? <span className="wide"><small>توضیحات</small><strong>{summaryPerson.note}</strong></span> : null}</div></> : null}</DialogContent><DialogActions className="person-summary-actions"><Button color="error" startIcon={<DeleteOutlineRounded />} onClick={() => summaryPerson && setPendingDeactivatePerson(summaryPerson)}>غیرفعال‌کردن</Button><Button startIcon={<EditRounded />} onClick={() => summaryPerson && openEditPerson(summaryPerson)}>ویرایش</Button><Button variant="contained" startIcon={<HistoryRounded />} disabled={summaryStatus !== "ready"} onClick={() => { if (summaryPerson) setSelectedId(summaryPerson.id); setSummaryPerson(null); }}>مشاهده گردش کامل</Button></DialogActions></Dialog>

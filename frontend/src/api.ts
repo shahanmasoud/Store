@@ -308,8 +308,20 @@ export type LedgerEntry = {
   jalali_date: string;
   local_time: string;
   description?: string | null;
+  due_jalali_date?: string | null;
   status: string;
   is_active: boolean;
+};
+export type LedgerDueDateAudit = {
+  id: number;
+  entry_id: number;
+  actor_user_id?: number | string | null;
+  actor_username?: string | null;
+  actor_full_name?: string | null;
+  before_due_date?: string | null;
+  after_due_date?: string | null;
+  reason: string;
+  occurred_at_utc: string;
 };
 export type ChequeType = "received" | "paid";
 export type ChequeStatus = "pending" | "cleared" | "bounced" | "canceled";
@@ -673,8 +685,14 @@ export const api = {
   personLedger(personId: number) {
     return request<LedgerEntry[]>(`/ledger/persons/${personId}`);
   },
-  createManualEntry(payload: { person_id: number; entry_type: "debit" | "credit"; amount_rial: number; jalali_date: string; local_time: string; description?: string }) {
+  createManualEntry(payload: { person_id: number; entry_type: "debit" | "credit"; amount_rial: number; jalali_date: string; local_time: string; description?: string; due_jalali_date?: string | null }) {
     return request<LedgerEntry>("/ledger/manual-entry", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updateLedgerEntryDueDate(id: number, payload: { due_jalali_date: string | null; reason: string }) {
+    return request<LedgerEntry>(`/ledger/entries/${id}/due-date`, { method: "PATCH", body: JSON.stringify(payload) });
+  },
+  ledgerEntryDueDateAudits(id: number) {
+    return request<LedgerDueDateAudit[]>(`/ledger/entries/${id}/due-date/audits`);
   },
   createSettlement(payload: { person_id: number; entry_type: "debit" | "credit"; amount_rial: number; jalali_date: string; local_time: string; note?: string }) {
     return request<unknown>("/settlements", { method: "POST", body: JSON.stringify(payload) });

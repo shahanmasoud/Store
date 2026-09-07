@@ -2,12 +2,14 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.ledger import Cheque, ChequeEvent, LedgerEntry, Person, Settlement
+from app.models.ledger import Cheque, ChequeEvent, LedgerDueAudit, LedgerEntry, Person, Settlement
+from app.models.user import User
 from app.schemas.ledger import (
     ChequeCreate,
     ChequeEventCreate,
     DuesRead,
     LedgerEntryCreate,
+    LedgerDueDateUpdate,
     PersonCreate,
     PersonUpdate,
     SettlementCreate,
@@ -120,6 +122,7 @@ def create_manual_entry(db: Session, payload: LedgerEntryCreate) -> LedgerEntry:
         source_type=payload.source_type,
         source_id=payload.source_id,
         jalali_date=payload.jalali_date,
+        due_jalali_date=payload.due_jalali_date,
         local_time=payload.local_time,
         description=payload.description,
     )
@@ -137,6 +140,62 @@ def get_person_ledger(db: Session, person_id: int) -> list[LedgerEntry]:
             select(LedgerEntry)
             .where(LedgerEntry.person_id == person_id, LedgerEntry.is_active.is_(True))
             .order_by(LedgerEntry.jalali_date, LedgerEntry.local_time, LedgerEntry.id)
+        )
+    )
+
+
+def _ledger_entry_or_404(db: Session, entry_id: int) -> LedgerEntry:
+    entry = db.get(LedgerEntry, entry_id)
+    if not entry:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="سند حساب پیدا نشد.")
+    return entry
+
+
+def update_manual_entry_due_date(
+    db: Session,
+    entry_id: int,
+    payload: LedgerDueDateUpdate,
+    actor: User,
+) -> LedgerEntry:
+    entry = _ledger_entry_or_404(db, entry_id)
+    if (
+        entry.source_type != "manual"
+        or not entry.is_active
+        or entry.status != "open"
+        or entry.remaining_rial <= 0
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="فقط سررسید سند دستیِ باز و فعال قابل تغییر است.",
+        )
+    if entry.due_jalali_date == payload.due_jalali_date:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="سررسید جدید با مقدار فعلی یکسان است.")
+
+    before_due_date = entry.due_jalali_date
+    entry.due_jalali_date = payload.due_jalali_date
+    db.add(
+        LedgerDueAudit(
+            entry_id=entry.id,
+            actor_user_id=actor.id,
+            actor_username=actor.username,
+            actor_full_name=actor.full_name,
+            before_due_date=before_due_date,
+            after_due_date=payload.due_jalali_date,
+            reason=payload.reason,
+        )
+    )
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+
+def list_ledger_due_audits(db: Session, entry_id: int) -> list[LedgerDueAudit]:
+    _ledger_entry_or_404(db, entry_id)
+    return list(
+        db.scalars(
+            select(LedgerDueAudit)
+            .where(LedgerDueAudit.entry_id == entry_id)
+            .order_by(LedgerDueAudit.occurred_at_utc, LedgerDueAudit.id)
         )
     )
 
@@ -266,10 +325,11 @@ def get_dues(db: Session, jalali_date_to: str) -> DuesRead:
             .where(
                 LedgerEntry.status == "open",
                 LedgerEntry.remaining_rial > 0,
-                LedgerEntry.jalali_date <= jalali_date_to,
+                LedgerEntry.due_jalali_date.is_not(None),
+                LedgerEntry.due_jalali_date <= jalali_date_to,
                 LedgerEntry.is_active.is_(True),
             )
-            .order_by(LedgerEntry.jalali_date, LedgerEntry.local_time, LedgerEntry.id)
+            .order_by(LedgerEntry.due_jalali_date, LedgerEntry.jalali_date, LedgerEntry.local_time, LedgerEntry.id)
         )
     )
     pending_cheques = list(

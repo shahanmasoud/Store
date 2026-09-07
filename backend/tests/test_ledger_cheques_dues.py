@@ -10,6 +10,7 @@ from app.core.security import get_password_hash
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
+from app.models.ledger import LedgerEntry
 from app.models.user import User
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -75,6 +76,8 @@ def create_entry(
     amount_rial: int,
     jalali_date: str,
     entry_type: str = "debit",
+    due_jalali_date: str | None = None,
+    source_type: str = "manual",
 ) -> dict:
     response = client.post(
         "/api/v1/ledger/manual-entry",
@@ -82,7 +85,9 @@ def create_entry(
             "person_id": person_id,
             "entry_type": entry_type,
             "amount_rial": amount_rial,
+            "source_type": source_type,
             "jalali_date": jalali_date,
+            "due_jalali_date": due_jalali_date,
             "local_time": "10:00",
             "description": "Manual opening balance",
         },
@@ -401,7 +406,9 @@ def test_dues_returns_open_ledger_and_pending_cheques_up_to_date(
     auth_headers: dict[str, str],
 ) -> None:
     person = create_person(client, auth_headers)
-    due_entry = create_entry(client, auth_headers, person["id"], 1_000_000, "1405/06/10")
+    due_entry = create_entry(
+        client, auth_headers, person["id"], 1_000_000, "1405/06/10", due_jalali_date="1405/06/10"
+    )
     create_entry(client, auth_headers, person["id"], 1_000_000, "1405/07/01")
     cheque = client.post(
         "/api/v1/cheques",
@@ -438,6 +445,142 @@ def test_dues_returns_open_ledger_and_pending_cheques_up_to_date(
     data = response.json()
     assert [entry["id"] for entry in data["open_ledger_entries"]] == [due_entry["id"]]
     assert [item["id"] for item in data["pending_cheques"]] == [cheque["id"]]
+
+
+def test_ledger_due_date_set_change_clear_is_audited_and_controls_dues(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    person = create_person(client, auth_headers)
+    entry = create_entry(client, auth_headers, person["id"], 1_000_000, "1405/06/01")
+    assert entry["due_jalali_date"] is None
+    assert client.get("/api/v1/dues?jalali_date_to=1405/12/29", headers=auth_headers).json()[
+        "open_ledger_entries"
+    ] == []
+
+    set_due = client.patch(
+        f"/api/v1/ledger/entries/{entry['id']}/due-date",
+        json={"due_jalali_date": "۱۴۰۵/۰۶/۲۰", "reason": "  توافق اولیه  "},
+        headers=auth_headers,
+    )
+    assert set_due.status_code == 200
+    assert set_due.json()["due_jalali_date"] == "1405/06/20"
+    assert [item["id"] for item in client.get(
+        "/api/v1/dues?jalali_date_to=1405/06/20", headers=auth_headers
+    ).json()["open_ledger_entries"]] == [entry["id"]]
+
+    changed = client.patch(
+        f"/api/v1/ledger/entries/{entry['id']}/due-date",
+        json={"due_jalali_date": "1405/06/25", "reason": "تمدید با مشتری"},
+        headers=auth_headers,
+    )
+    cleared = client.patch(
+        f"/api/v1/ledger/entries/{entry['id']}/due-date",
+        json={"due_jalali_date": None, "reason": "حذف موعد اشتباه"},
+        headers=auth_headers,
+    )
+    assert changed.status_code == 200
+    assert cleared.status_code == 200
+    assert cleared.json()["due_jalali_date"] is None
+
+    audits = client.get(
+        f"/api/v1/ledger/entries/{entry['id']}/due-date/audits", headers=auth_headers
+    )
+    assert audits.status_code == 200
+    assert [item["before_due_date"] for item in audits.json()] == [None, "1405/06/20", "1405/06/25"]
+    assert [item["after_due_date"] for item in audits.json()] == ["1405/06/20", "1405/06/25", None]
+    assert [item["reason"] for item in audits.json()] == ["توافق اولیه", "تمدید با مشتری", "حذف موعد اشتباه"]
+    assert all(item["actor_user_id"] == 1 for item in audits.json())
+    assert all(item["actor_username"] == "admin" for item in audits.json())
+    assert all(item["actor_full_name"] == "System Admin" for item in audits.json())
+    assert [item["id"] for item in audits.json()] == sorted(item["id"] for item in audits.json())
+
+
+def test_ledger_due_date_rejects_invalid_noop_and_ineligible_entries(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    db_session: Session,
+) -> None:
+    person = create_person(client, auth_headers)
+    open_entry = create_entry(
+        client, auth_headers, person["id"], 1000, "1405/06/01", due_jalali_date="1405/06/20"
+    )
+    invalid = client.patch(
+        f"/api/v1/ledger/entries/{open_entry['id']}/due-date",
+        json={"due_jalali_date": "1405/13/01", "reason": "اصلاح"},
+        headers=auth_headers,
+    )
+    blank_reason = client.patch(
+        f"/api/v1/ledger/entries/{open_entry['id']}/due-date",
+        json={"due_jalali_date": "1405/06/21", "reason": "   "},
+        headers=auth_headers,
+    )
+    no_op = client.patch(
+        f"/api/v1/ledger/entries/{open_entry['id']}/due-date",
+        json={"due_jalali_date": "1405/06/20", "reason": "بدون تغییر"},
+        headers=auth_headers,
+    )
+    missing = client.patch(
+        "/api/v1/ledger/entries/99999/due-date",
+        json={"due_jalali_date": "1405/06/20", "reason": "اصلاح"},
+        headers=auth_headers,
+    )
+    assert invalid.status_code == 422
+    assert blank_reason.status_code == 422
+    assert no_op.status_code == 409
+    assert missing.status_code == 404
+
+    ineligible_ids = []
+    for source_type in ("sale", "manual", "manual"):
+        item = create_entry(client, auth_headers, person["id"], 1000, "1405/06/01", source_type=source_type)
+        ineligible_ids.append(item["id"])
+    settled = db_session.get(LedgerEntry, ineligible_ids[1])
+    settled.status = "settled"
+    settled.remaining_rial = 0
+    inactive = db_session.get(LedgerEntry, ineligible_ids[2])
+    inactive.is_active = False
+    db_session.commit()
+
+    for entry_id in ineligible_ids:
+        response = client.patch(
+            f"/api/v1/ledger/entries/{entry_id}/due-date",
+            json={"due_jalali_date": "1405/06/20", "reason": "اصلاح"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 409
+
+
+def test_ledger_due_date_routes_require_superuser(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    db_session: Session,
+) -> None:
+    person = create_person(client, auth_headers)
+    entry = create_entry(client, auth_headers, person["id"], 1000, "1405/06/01")
+    db_session.add(
+        User(
+            username="operator-due",
+            full_name="کاربر عادی",
+            hashed_password=get_password_hash("operator123"),
+            is_active=True,
+            is_superuser=False,
+        )
+    )
+    db_session.commit()
+    login = client.post("/api/v1/auth/login", json={"username": "operator-due", "password": "operator123"})
+    operator_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    payload = {"due_jalali_date": "1405/06/20", "reason": "تعیین موعد"}
+
+    assert client.patch(f"/api/v1/ledger/entries/{entry['id']}/due-date", json=payload).status_code == 401
+    assert client.get(f"/api/v1/ledger/entries/{entry['id']}/due-date/audits").status_code == 401
+    forbidden_patch = client.patch(
+        f"/api/v1/ledger/entries/{entry['id']}/due-date", json=payload, headers=operator_headers
+    )
+    forbidden_history = client.get(
+        f"/api/v1/ledger/entries/{entry['id']}/due-date/audits", headers=operator_headers
+    )
+    assert forbidden_patch.status_code == 403
+    assert forbidden_history.status_code == 403
 
 
 def test_person_update_validation_and_soft_delete_preserve_financial_history(

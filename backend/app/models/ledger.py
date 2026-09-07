@@ -1,7 +1,10 @@
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.core.time import utc_now
 from app.models.catalog import TimestampMixin
 
 
@@ -32,12 +35,34 @@ class LedgerEntry(Base, TimestampMixin):
     source_type: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
     source_id: Mapped[int | None] = mapped_column(Integer)
     jalali_date: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    due_jalali_date: Mapped[str | None] = mapped_column(String(10), index=True)
     local_time: Mapped[str] = mapped_column(String(5), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="open", nullable=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     person: Mapped[Person] = relationship(back_populates="ledger_entries")
+    due_audits: Mapped[list["LedgerDueAudit"]] = relationship(
+        back_populates="entry",
+        cascade="all, delete-orphan",
+        order_by="LedgerDueAudit.id",
+    )
+
+
+class LedgerDueAudit(Base):
+    __tablename__ = "ledger_due_audits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    entry_id: Mapped[int] = mapped_column(ForeignKey("ledger_entries.id"), nullable=False, index=True)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    actor_username: Mapped[str | None] = mapped_column(String(50))
+    actor_full_name: Mapped[str | None] = mapped_column(String(120))
+    before_due_date: Mapped[str | None] = mapped_column(String(10))
+    after_due_date: Mapped[str | None] = mapped_column(String(10))
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    occurred_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    entry: Mapped[LedgerEntry] = relationship(back_populates="due_audits")
 
 
 class Settlement(Base, TimestampMixin):
