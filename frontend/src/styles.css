@@ -1364,6 +1364,17 @@ button {
   gap: 16px;
 }
 
+.sale-customer-field { display: grid; align-content: start; gap: 10px; min-width: 0; }
+.sale-customer-option { display: flex !important; min-height: 52px; align-items: center !important; justify-content: space-between !important; gap: 12px; }
+.sale-customer-option > span { display: grid; min-width: 0; }
+.sale-customer-option small { color: #687a74; }
+.selected-customer-card { display: grid; gap: 7px; padding: 12px 14px; border: 1px solid #dce7e2; border-inline-start: 4px solid #77847f; border-radius: 14px; background: #f8fbf9; }
+.selected-customer-card.credit-good { border-inline-start-color: #15803d; background: #f0faf3; }
+.selected-customer-card.credit-watch { border-inline-start-color: #b45309; background: #fff8ea; }
+.selected-customer-card > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.selected-customer-card p { margin: 0; color: #40534d; line-height: 1.8; overflow-wrap: anywhere; }
+.selected-customer-card small { color: #687a74; }
+
 .sale-meta-grid .date-field {
   min-width: 0;
 }

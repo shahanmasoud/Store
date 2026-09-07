@@ -14,6 +14,7 @@ class SaleInvoice(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     invoice_number: Mapped[str | None] = mapped_column(String(40), unique=True)
+    customer_id: Mapped[int | None] = mapped_column(ForeignKey("persons.id"), index=True)
     customer_name: Mapped[str | None] = mapped_column(String(160))
     subtotal_rial: Mapped[int] = mapped_column(Integer, nullable=False)
     discount_amount_rial: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -37,6 +38,7 @@ class SaleInvoice(Base, TimestampMixin):
         back_populates="invoice",
         cascade="all, delete-orphan",
     )
+    customer: Mapped["Person | None"] = relationship()
 
 
 class SaleInvoiceItem(Base, TimestampMixin):

@@ -74,6 +74,7 @@ class PaymentRead(BaseModel):
 
 
 class SaleInvoiceCreate(BaseModel):
+    customer_id: int | None = Field(default=None, gt=0)
     customer_name: str | None = Field(default=None, max_length=160)
     jalali_date: str
     local_time: str
@@ -111,6 +112,7 @@ class SaleInvoiceRead(BaseModel):
 
     id: int
     invoice_number: str | None
+    customer_id: int | None
     customer_name: str | None
     subtotal_rial: int
     discount_amount_rial: int

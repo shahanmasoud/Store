@@ -107,6 +107,7 @@ export type PaymentCreate = {
 };
 
 export type SaleInvoiceCreate = {
+  customer_id?: number;
   customer_name?: string;
   jalali_date: string;
   local_time: string;
@@ -119,6 +120,7 @@ export type SaleInvoiceCreate = {
 export type SaleInvoice = {
   id: number;
   invoice_number?: string | null;
+  customer_id?: number | null;
   customer_name?: string | null;
   subtotal_rial: number;
   discount_amount_rial: number;

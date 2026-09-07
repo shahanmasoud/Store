@@ -12,6 +12,7 @@ from app.db.session import get_db
 from app.main import app
 from app.models.catalog import Category, Product, ProductVariant, Unit
 from app.models.purchases import InventoryItem, InventoryTransaction
+from app.models.ledger import Person
 from app.models.sales import SaleInvoice, SaleInvoiceItem
 from app.models.user import User
 
@@ -103,6 +104,8 @@ def test_create_sale_calculates_totals_and_default_payment_statuses(
     assert data["total_rial"] == 1850000
     assert data["paid_total_rial"] == 1000000
     assert data["due_total_rial"] == 850000
+    assert data["customer_id"] is None
+    assert data["customer_name"] == "Walk-in customer"
     assert data["status"] == "active"
     assert data["is_active"] is True
     assert data["items"][0]["discount_amount_rial"] == 100000
@@ -118,6 +121,72 @@ def test_create_sale_calculates_totals_and_default_payment_statuses(
     assert str(transaction.quantity_delta) == "-2.000"
     assert transaction.sale_invoice_id == data["id"]
     assert transaction.sale_invoice_item_id == data["items"][0]["id"]
+
+
+def test_create_sale_links_active_customer_and_uses_canonical_name_snapshot(
+    client: TestClient,
+    db_session: Session,
+    auth_headers: dict[str, str],
+) -> None:
+    customer = Person(name="مشتری اصلی", phone="09120000000", person_type="customer")
+    db_session.add(customer)
+    db_session.commit()
+    payload = sale_payload() | {"customer_id": customer.id, "customer_name": "نام اشتباه ارسالی"}
+
+    response = client.post("/api/v1/sales", json=payload, headers=auth_headers)
+
+    assert response.status_code == 201
+    assert response.json()["customer_id"] == customer.id
+    assert response.json()["customer_name"] == "مشتری اصلی"
+    invoice = db_session.get(SaleInvoice, response.json()["id"])
+    assert invoice is not None
+    assert invoice.customer_id == customer.id
+    assert invoice.customer_name == "مشتری اصلی"
+    customer.name = "نام جدید مشتری"
+    db_session.commit()
+    fetched = client.get(f"/api/v1/sales/{invoice.id}", headers=auth_headers)
+    listed = client.get("/api/v1/sales", headers=auth_headers)
+    assert fetched.status_code == 200
+    assert fetched.json()["customer_id"] == customer.id
+    assert fetched.json()["customer_name"] == "مشتری اصلی"
+    assert listed.json()[0]["customer_id"] == customer.id
+    assert listed.json()[0]["customer_name"] == "مشتری اصلی"
+
+
+def test_create_sale_rejects_supplier_only_person(
+    client: TestClient,
+    db_session: Session,
+    auth_headers: dict[str, str],
+) -> None:
+    supplier = Person(name="فقط تأمین‌کننده", person_type="supplier")
+    db_session.add(supplier)
+    db_session.commit()
+
+    response = client.post(
+        "/api/v1/sales", json=sale_payload() | {"customer_id": supplier.id}, headers=auth_headers
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "شخص انتخاب‌شده مشتری نیست و نمی‌تواند به فاکتور فروش متصل شود."
+    assert db_session.query(SaleInvoice).count() == 0
+
+
+def test_create_sale_rejects_inactive_customer(
+    client: TestClient,
+    db_session: Session,
+    auth_headers: dict[str, str],
+) -> None:
+    customer = Person(name="مشتری غیرفعال", person_type="customer", is_active=False)
+    db_session.add(customer)
+    db_session.commit()
+
+    response = client.post(
+        "/api/v1/sales", json=sale_payload() | {"customer_id": customer.id}, headers=auth_headers
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "مشتری فعال پیدا نشد."
+    assert db_session.query(SaleInvoice).count() == 0
 
 
 def test_daily_journal_separates_mixed_received_and_pending_payments(

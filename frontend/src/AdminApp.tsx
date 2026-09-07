@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
-import { Alert, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, InputAdornment, LinearProgress, MenuItem, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
+import { Alert, Autocomplete, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, InputAdornment, LinearProgress, MenuItem, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
 import AccountBalanceWalletRounded from "@mui/icons-material/AccountBalanceWalletRounded";
 import AdminPanelSettingsRounded from "@mui/icons-material/AdminPanelSettingsRounded";
 import AnalyticsRounded from "@mui/icons-material/AnalyticsRounded";
@@ -2594,6 +2594,10 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: string[][] })
 function SalesView({ onBack }: { onBack: () => void }) {
   const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [customers, setCustomers] = useState<Person[]>([]);
+  const [customersStatus, setCustomersStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [customersError, setCustomersError] = useState("");
+  const [selectedCustomer, setSelectedCustomer] = useState<Person | null>(null);
   const [variantsStatus, setVariantsStatus] = useState<"loading" | "ready" | "error">("loading");
   const [variantsError, setVariantsError] = useState("");
   const [items, setItems] = useState<InvoiceDraftItem[]>([]);
@@ -2605,7 +2609,6 @@ function SalesView({ onBack }: { onBack: () => void }) {
   const [itemError, setItemError] = useState("");
   const [payments, setPayments] = useState<PaymentDraft[]>([makeDraftPayment("cash")]);
   const [invoiceDiscount, setInvoiceDiscount] = useState(0);
-  const [customerName, setCustomerName] = useState("");
   const [saleNote, setSaleNote] = useState("");
   const [saleDate, setSaleDate] = useState(currentJalaliDate);
   const [saleTime, setSaleTime] = useState(currentLocalTime());
@@ -2630,6 +2633,13 @@ function SalesView({ onBack }: { onBack: () => void }) {
         setVariantsError(error instanceof Error ? error.message : "کالاها و موجودی دریافت نشدند.");
         setVariantsStatus("error" as const);
       });
+  }
+
+  function loadCustomers() {
+    setCustomersStatus("loading"); setCustomersError("");
+    return api.persons()
+      .then((people) => { setCustomers(people.filter((person) => person.is_active && (person.person_type === "customer" || person.person_type === "both"))); setCustomersStatus("ready" as const); })
+      .catch((error) => { setCustomers([]); setCustomersError(error instanceof Error ? error.message : "فهرست مشتریان دریافت نشد."); setCustomersStatus("error" as const); });
   }
 
   function loadJournal(date: string) {
@@ -2671,6 +2681,17 @@ function SalesView({ onBack }: { onBack: () => void }) {
         if (!isMounted) return;
         setJournalStatus("error");
         setJournalError("اطلاعات دفتر روزانه دریافت نشد؛ دوباره تلاش کنید.");
+      });
+    api.persons()
+      .then((people) => {
+        if (!isMounted) return;
+        setCustomers(people.filter((person) => person.is_active && (person.person_type === "customer" || person.person_type === "both")));
+        setCustomersStatus("ready");
+      })
+      .catch((error) => {
+        if (!isMounted) return;
+        setCustomersError(error instanceof Error ? error.message : "فهرست مشتریان دریافت نشد.");
+        setCustomersStatus("error");
       });
 
     return () => {
@@ -2811,7 +2832,8 @@ function SalesView({ onBack }: { onBack: () => void }) {
 
     try {
       const sale = await api.createSale({
-        customer_name: customerName.trim() || undefined,
+        customer_id: selectedCustomer?.id,
+        customer_name: selectedCustomer?.name,
         jalali_date: saleDate,
         local_time: saleTime,
         discount_amount_rial: invoiceDiscount,
@@ -2832,7 +2854,7 @@ function SalesView({ onBack }: { onBack: () => void }) {
       setItems([]);
       setInvoiceDiscount(0);
       setPayments([makeDraftPayment("cash")]);
-      setCustomerName("");
+      setSelectedCustomer(null);
       setSaleNote("");
       resetItemForm();
       await loadSellableProducts();
@@ -2864,7 +2886,27 @@ function SalesView({ onBack }: { onBack: () => void }) {
         <Card variant="outlined" className="sale-panel sale-panel-main">
           <div className="sales-section-heading"><div><ReceiptLongRounded /><div><h3>مشخصات و پرداخت فاکتور</h3><p>اطلاعات مشتری اختیاری است.</p></div></div><Chip label={`${items.length.toLocaleString("fa-IR")} ردیف`} color={items.length ? "primary" : "default"} variant="outlined" /></div>
           <form className="sale-meta-grid" onSubmit={handleSubmitSale}>
-            <TextField label="نام مشتری (اختیاری)" value={customerName} onChange={(event) => setCustomerName(event.target.value)} disabled={submitStatus === "loading"} />
+            <div className="sale-customer-field">
+              <Autocomplete
+                options={customers}
+                value={selectedCustomer}
+                onChange={(_event, customer) => setSelectedCustomer(customer)}
+                getOptionLabel={(customer) => customer.name}
+                isOptionEqualToValue={(option, value) => option.id === value.id}
+                filterOptions={(options, state) => { const needle = toEnglishDigits(state.inputValue).trim().toLocaleLowerCase("fa-IR"); return needle ? options.filter((customer) => `${customer.name} ${toEnglishDigits(customer.phone ?? "")}`.toLocaleLowerCase("fa-IR").includes(needle)) : options; }}
+                loading={customersStatus === "loading"}
+                disabled={submitStatus === "loading" || customersStatus === "loading"}
+                noOptionsText={customersStatus === "ready" && customers.length === 0 ? "هنوز مشتری‌ای تعریف نشده است" : "مشتری پیدا نشد"}
+                loadingText="در حال دریافت مشتریان…"
+                clearText="فروش بدون مشتری"
+                openText="نمایش مشتریان"
+                closeText="بستن"
+                renderOption={(props, customer) => <li {...props} key={customer.id} className={`${props.className ?? ""} sale-customer-option`}><span><strong>{customer.name}</strong><small>{customer.phone ? toPersianDigits(customer.phone) : "بدون شماره تماس"}</small></span><Chip size="small" color={customer.credit_status === "good" ? "success" : customer.credit_status === "watch" ? "warning" : "default"} label={customer.credit_status === "good" ? "خوش‌حساب" : customer.credit_status === "watch" ? "نیازمند توجه" : "عادی"} /></li>}
+                renderInput={(params) => <TextField {...params} label="مشتری (اختیاری)" placeholder="نام یا شماره تماس را جست‌وجو کنید" helperText={customersStatus === "ready" && customers.length === 0 ? "می‌توانید فاکتور را بدون مشتری ثبت کنید." : "برای فروش بدون مشتری، انتخاب را خالی بگذارید."} slotProps={{ ...params.slotProps, input: { ...params.slotProps.input, endAdornment: <>{customersStatus === "loading" ? <CircularProgress color="inherit" size={18} /> : null}{params.slotProps.input.endAdornment}</> } }} />}
+              />
+              {customersStatus === "error" ? <Alert severity="error" action={<Button color="inherit" size="small" onClick={loadCustomers}>تلاش دوباره</Button>}>{customersError}</Alert> : null}
+              {selectedCustomer ? <div className={`selected-customer-card credit-${selectedCustomer.credit_status}`}><div><strong>{selectedCustomer.name}</strong><Chip size="small" color={selectedCustomer.credit_status === "good" ? "success" : selectedCustomer.credit_status === "watch" ? "warning" : "default"} label={selectedCustomer.credit_status === "good" ? "خوش‌حساب" : selectedCustomer.credit_status === "watch" ? "نیازمند توجه" : "عادی"} /></div><p>{selectedCustomer.note || "برای این مشتری توضیحی ثبت نشده است."}</p>{selectedCustomer.phone ? <small>شماره تماس: {toPersianDigits(selectedCustomer.phone)}</small> : null}</div> : null}
+            </div>
             <JalaliDateField label="تاریخ شمسی" value={saleDate} onChange={setSaleDate} required />
             <TextField label="ساعت" value={saleTime} onChange={(event) => setSaleTime(toEnglishDigits(event.target.value))} placeholder="14:30" required disabled={submitStatus === "loading"} />
             <TextField label="تخفیف فاکتور (تومان)" inputMode="numeric" value={moneyInputValue(invoiceDiscount)} onChange={(event) => setInvoiceDiscount(normalizeMoney(event.target.value))} disabled={submitStatus === "loading"} />

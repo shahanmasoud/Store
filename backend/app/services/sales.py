@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.time import utc_now
 from app.models.catalog import ProductVariant
 from app.models.purchases import InventoryItem, InventoryTransaction
+from app.models.ledger import Person
 from app.models.sales import Payment, SaleInvoice, SaleInvoiceItem
 from app.schemas.sales import DailyJournalPaymentBreakdown, DailyJournalRead, PaymentCreate, SaleInvoiceCreate
 
@@ -42,6 +43,22 @@ def _get_invoice_or_404(db: Session, invoice_id: int) -> SaleInvoice:
 
 
 def create_sale(db: Session, payload: SaleInvoiceCreate) -> SaleInvoice:
+    customer_name = payload.customer_name
+    if payload.customer_id is not None:
+        customer = db.get(Person, payload.customer_id)
+        if customer is None or not customer.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="مشتری فعال پیدا نشد.",
+            )
+        if customer.person_type not in {"customer", "both"}:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="شخص انتخاب‌شده مشتری نیست و نمی‌تواند به فاکتور فروش متصل شود.",
+            )
+        # The stored name is an immutable invoice-time snapshot of the canonical person name.
+        customer_name = customer.name
+
     variant_ids = {item.variant_id for item in payload.items}
     variants = {
         variant.id: variant
@@ -107,7 +124,8 @@ def create_sale(db: Session, payload: SaleInvoiceCreate) -> SaleInvoice:
     due_total = max(total - paid_total, 0)
 
     invoice = SaleInvoice(
-        customer_name=payload.customer_name,
+        customer_id=payload.customer_id,
+        customer_name=customer_name,
         subtotal_rial=subtotal,
         discount_amount_rial=payload.discount_amount_rial,
         total_rial=total,
