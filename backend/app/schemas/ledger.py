@@ -2,6 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.core.numbers import normalize_identifier, normalize_localized_integer
 from app.core.time import validate_jalali_date, validate_local_time
 
 PersonType = Literal["customer", "supplier", "both"]
@@ -20,6 +21,11 @@ class PersonCreate(BaseModel):
     person_type: PersonType
     note: str | None = Field(default=None, max_length=2000)
     credit_status: CreditStatus = "normal"
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_phone(cls, value):
+        return normalize_identifier(value)
 
     @field_validator("name")
     @classmethod
@@ -58,6 +64,11 @@ class PersonUpdate(BaseModel):
     person_type: PersonType | None = None
     note: str | None = Field(default=None, max_length=2000)
     credit_status: CreditStatus | None = None
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_phone(cls, value):
+        return normalize_identifier(value)
 
     @field_validator("name")
     @classmethod
@@ -118,6 +129,11 @@ class LedgerEntryCreate(BaseModel):
     jalali_date: str
     local_time: str
     description: str | None = None
+
+    @field_validator("person_id", "amount_rial", "source_id", mode="before")
+    @classmethod
+    def localized_integers(cls, value):
+        return normalize_localized_integer(value)
 
     @field_validator("jalali_date")
     @classmethod
@@ -188,6 +204,16 @@ class ChequeCreate(BaseModel):
     due_jalali_date: str
     local_time: str
     note: str | None = None
+
+    @field_validator("person_id", "amount_rial", mode="before")
+    @classmethod
+    def localized_integers(cls, value):
+        return normalize_localized_integer(value)
+
+    @field_validator("cheque_number", mode="before")
+    @classmethod
+    def normalize_cheque_number(cls, value):
+        return normalize_identifier(value)
 
     @field_validator("bank_name", "cheque_number")
     @classmethod

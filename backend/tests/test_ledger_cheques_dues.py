@@ -107,6 +107,50 @@ def test_person_and_manual_debit_credit_entries(client: TestClient, auth_headers
     assert [entry["id"] for entry in ledger.json()] == [debit["id"], credit["id"]]
 
 
+def test_ledger_endpoint_accepts_localized_numbers_and_canonicalizes_identifiers(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    person = client.post(
+        "/api/v1/persons",
+        json={"name": "مشتری", "phone": " ۰۹۱۲-٣٤٥-۶۷۸۹ ", "person_type": "customer"},
+        headers=auth_headers,
+    ).json()
+    entry = client.post(
+        "/api/v1/ledger/manual-entry",
+        json={
+            "person_id": str(person["id"]),
+            "entry_type": "debit",
+            "amount_rial": "۱٬۲۳۴٬۵۶۷",
+            "jalali_date": "۱۴۰۵/۰۶/۰۷",
+            "local_time": "۰۹:۳۰",
+        },
+        headers=auth_headers,
+    )
+
+    assert person["phone"] == "0912-345-6789"
+    assert entry.status_code == 201
+    assert entry.json()["amount_rial"] == 1_234_567
+    assert entry.json()["jalali_date"] == "1405/06/07"
+    assert entry.json()["local_time"] == "09:30"
+
+
+def test_ledger_endpoint_rejects_malformed_grouping(client: TestClient, auth_headers: dict[str, str]) -> None:
+    person = create_person(client, auth_headers)
+    response = client.post(
+        "/api/v1/ledger/manual-entry",
+        json={
+            "person_id": person["id"],
+            "entry_type": "debit",
+            "amount_rial": "۱٬۲۳",
+            "jalali_date": "1405/06/07",
+            "local_time": "09:30",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+    assert "جداکننده" in response.json()["detail"][0]["msg"]
+
+
 def test_create_person_persists_note_and_credit_status(client: TestClient, auth_headers: dict[str, str]) -> None:
     response = client.post(
         "/api/v1/persons",

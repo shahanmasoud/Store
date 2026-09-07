@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.time import validate_jalali_date, validate_local_time
+from app.core.numbers import normalize_identifier, normalize_localized_decimal, normalize_localized_integer
 
 PurchaseStatus = Literal["active", "canceled"]
 
@@ -15,6 +16,11 @@ def money_from_quantity(quantity: Decimal, unit_cost_rial: int) -> int:
 class SupplierCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     phone: str | None = Field(default=None, max_length=40)
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_phone(cls, value):
+        return normalize_identifier(value)
 
 
 class SupplierRead(SupplierCreate):
@@ -29,6 +35,16 @@ class PurchaseInvoiceItemCreate(BaseModel):
     quantity: Decimal = Field(gt=0)
     unit_cost_rial: int = Field(ge=0)
     extra_cost_rial: int = Field(default=0, ge=0)
+
+    @field_validator("variant_id", "unit_cost_rial", "extra_cost_rial", mode="before")
+    @classmethod
+    def localized_integers(cls, value):
+        return normalize_localized_integer(value)
+
+    @field_validator("quantity", mode="before")
+    @classmethod
+    def localized_quantity(cls, value):
+        return normalize_localized_decimal(value)
 
 
 class PurchaseInvoiceItemRead(BaseModel):
@@ -52,6 +68,11 @@ class PurchaseInvoiceCreate(BaseModel):
     paid_total_rial: int = Field(default=0, ge=0)
     note: str | None = None
     items: list[PurchaseInvoiceItemCreate] = Field(min_length=1)
+
+    @field_validator("supplier_id", "discount_amount_rial", "extra_cost_rial", "paid_total_rial", mode="before")
+    @classmethod
+    def localized_integers(cls, value):
+        return normalize_localized_integer(value)
 
     @field_validator("jalali_date")
     @classmethod
@@ -104,6 +125,11 @@ class InventoryRead(BaseModel):
 
 class InventoryUpdate(BaseModel):
     reorder_level: Decimal | None = Field(ge=0)
+
+    @field_validator("reorder_level", mode="before")
+    @classmethod
+    def localized_reorder_level(cls, value):
+        return normalize_localized_decimal(value)
 
 
 class InventoryTransactionRead(BaseModel):

@@ -3,6 +3,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.time import validate_jalali_date, validate_local_time
+from app.core.numbers import normalize_identifier, normalize_localized_decimal, normalize_localized_integer
 
 
 class OnlineChannelCreate(BaseModel):
@@ -43,6 +44,16 @@ class OnlinePriceRuleCreate(BaseModel):
     starts_jalali_date: str | None = None
     ends_jalali_date: str | None = None
 
+    @field_validator("channel_id", "variant_id", "price_rial", mode="before")
+    @classmethod
+    def localized_integers(cls, value):
+        return normalize_localized_integer(value)
+
+    @field_validator("min_quantity", mode="before")
+    @classmethod
+    def localized_quantity(cls, value):
+        return normalize_localized_decimal(value)
+
     @field_validator("starts_jalali_date", "ends_jalali_date")
     @classmethod
     def optional_jalali_date_format(cls, value: str | None) -> str | None:
@@ -65,6 +76,16 @@ class StockReservationCreate(BaseModel):
     expires_jalali_date: str | None = None
     local_time: str
     note: str | None = None
+
+    @field_validator("channel_id", "variant_id", mode="before")
+    @classmethod
+    def localized_integers(cls, value):
+        return normalize_localized_integer(value)
+
+    @field_validator("quantity", mode="before")
+    @classmethod
+    def localized_quantity(cls, value):
+        return normalize_localized_decimal(value)
 
     @field_validator("expires_jalali_date")
     @classmethod
@@ -107,6 +128,16 @@ class OnlineOrderItemCreate(BaseModel):
     variant_id: int
     quantity: Decimal = Field(gt=0)
 
+    @field_validator("variant_id", mode="before")
+    @classmethod
+    def localized_variant_id(cls, value):
+        return normalize_localized_integer(value)
+
+    @field_validator("quantity", mode="before")
+    @classmethod
+    def localized_quantity(cls, value):
+        return normalize_localized_decimal(value)
+
 
 class OnlineOrderCreate(BaseModel):
     external_order_id: str = Field(min_length=1, max_length=120)
@@ -117,6 +148,16 @@ class OnlineOrderCreate(BaseModel):
     local_time: str
     note: str | None = None
     items: list[OnlineOrderItemCreate] = Field(min_length=1)
+
+    @field_validator("external_order_id", "customer_phone", mode="before")
+    @classmethod
+    def normalize_identifiers(cls, value):
+        return normalize_identifier(value)
+
+    @field_validator("discount_amount_rial", mode="before")
+    @classmethod
+    def localized_discount(cls, value):
+        return normalize_localized_integer(value)
 
     @field_validator("jalali_date")
     @classmethod

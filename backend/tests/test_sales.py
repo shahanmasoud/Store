@@ -123,6 +123,25 @@ def test_create_sale_calculates_totals_and_default_payment_statuses(
     assert transaction.sale_invoice_item_id == data["items"][0]["id"]
 
 
+def test_sale_endpoint_accepts_localized_money_quantity_date_and_reference(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    payload = sale_payload()
+    payload["jalali_date"] = "۱۴۰۵/۰۵/۲۹"
+    payload["local_time"] = "۰۹:۳۰"
+    payload["discount_amount_rial"] = "۵۰٬۰۰۰"
+    payload["items"][0] |= {"quantity": "۲٫۰", "unit_price_rial": "۱٬۰۰۰٬۰۰۰", "discount_amount_rial": "۱۰۰٬۰۰۰"}
+    payload["payments"] = [{"method": "cash", "amount_rial": "۱٬۸۵۰٬۰۰۰", "reference_number": " ۱۲٣-۴۵۶ "}]
+
+    response = client.post("/api/v1/sales", json=payload, headers=auth_headers)
+
+    assert response.status_code == 201
+    assert response.json()["total_rial"] == 1_850_000
+    assert response.json()["jalali_date"] == "1405/05/29"
+    assert response.json()["payments"][0]["reference_number"] == "123-456"
+
+
 def test_create_sale_links_active_customer_and_uses_canonical_name_snapshot(
     client: TestClient,
     db_session: Session,

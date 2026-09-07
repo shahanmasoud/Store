@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.time import validate_jalali_date, validate_local_time
+from app.core.numbers import normalize_identifier, normalize_localized_decimal, normalize_localized_integer
 
 PaymentMethod = Literal["cash", "card", "transfer", "credit", "cheque", "voucher"]
 PaymentStatus = Literal["received", "pending"]
@@ -16,6 +17,16 @@ class SaleInvoiceItemCreate(BaseModel):
     unit_price_rial: int = Field(ge=0)
     discount_amount_rial: int = Field(default=0, ge=0)
     estimated_cost_rial: int | None = Field(default=None, ge=0)
+
+    @field_validator("variant_id", "unit_price_rial", "discount_amount_rial", "estimated_cost_rial", mode="before")
+    @classmethod
+    def localized_integers(cls, value):
+        return normalize_localized_integer(value)
+
+    @field_validator("quantity", mode="before")
+    @classmethod
+    def localized_quantity(cls, value):
+        return normalize_localized_decimal(value)
 
 
 class SaleInvoiceItemRead(BaseModel):
@@ -41,6 +52,16 @@ class PaymentCreate(BaseModel):
     local_time: str | None = None
     due_jalali_date: str | None = None
     note: str | None = None
+
+    @field_validator("amount_rial", mode="before")
+    @classmethod
+    def localized_amount(cls, value):
+        return normalize_localized_integer(value)
+
+    @field_validator("reference_number", mode="before")
+    @classmethod
+    def normalize_reference(cls, value):
+        return normalize_identifier(value)
 
     @field_validator("jalali_date", "due_jalali_date")
     @classmethod
@@ -82,6 +103,11 @@ class SaleInvoiceCreate(BaseModel):
     note: str | None = None
     items: list[SaleInvoiceItemCreate] = Field(min_length=1)
     payments: list[PaymentCreate] = Field(default_factory=list)
+
+    @field_validator("customer_id", "discount_amount_rial", mode="before")
+    @classmethod
+    def localized_integers(cls, value):
+        return normalize_localized_integer(value)
 
     @field_validator("jalali_date")
     @classmethod

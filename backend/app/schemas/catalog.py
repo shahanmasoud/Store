@@ -3,6 +3,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.time import validate_jalali_date, validate_local_time
+from app.core.numbers import normalize_identifier, normalize_localized_decimal, normalize_localized_integer
 
 
 class UnitCreate(BaseModel):
@@ -115,6 +116,16 @@ class ProductVariantCreate(BaseModel):
     wholesale_price_rial: int | None = None
     min_wholesale_quantity: Decimal | None = None
 
+    @field_validator("product_id", "unit_id", "retail_price_rial", "wholesale_price_rial", mode="before")
+    @classmethod
+    def localized_integers(cls, value):
+        return normalize_localized_integer(value)
+
+    @field_validator("min_wholesale_quantity", mode="before")
+    @classmethod
+    def localized_quantity(cls, value):
+        return normalize_localized_decimal(value)
+
     @field_validator("name")
     @classmethod
     def normalize_variant_name(cls, value: str) -> str:
@@ -128,7 +139,7 @@ class ProductVariantCreate(BaseModel):
     def normalize_sku(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return value.strip() or None
+        return normalize_identifier(value) or None
 
     @field_validator("retail_price_rial", "wholesale_price_rial", "min_wholesale_quantity")
     @classmethod
@@ -146,6 +157,16 @@ class ProductVariantUpdate(BaseModel):
     retail_price_rial: int | None = None
     wholesale_price_rial: int | None = None
     min_wholesale_quantity: Decimal | None = None
+
+    @field_validator("product_id", "unit_id", "retail_price_rial", "wholesale_price_rial", mode="before")
+    @classmethod
+    def localized_integers(cls, value):
+        return normalize_localized_integer(value)
+
+    @field_validator("min_wholesale_quantity", mode="before")
+    @classmethod
+    def localized_quantity(cls, value):
+        return normalize_localized_decimal(value)
 
     @field_validator("product_id", "unit_id")
     @classmethod
@@ -166,7 +187,7 @@ class ProductVariantUpdate(BaseModel):
     def normalize_optional_sku(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return value.strip() or None
+        return normalize_identifier(value) or None
 
     @field_validator("retail_price_rial", "wholesale_price_rial", "min_wholesale_quantity")
     @classmethod
@@ -189,6 +210,11 @@ class PriceListCreate(BaseModel):
     amount_rial: int
     jalali_date: str
     local_time: str
+
+    @field_validator("variant_id", "amount_rial", mode="before")
+    @classmethod
+    def localized_integers(cls, value):
+        return normalize_localized_integer(value)
 
     @field_validator("amount_rial")
     @classmethod
@@ -222,6 +248,16 @@ class PriceRuleCreate(BaseModel):
     discount_amount_rial: int | None = None
     discount_percent: Decimal | None = None
     starts_jalali_date: str | None = None
+
+    @field_validator("variant_id", "discount_amount_rial", mode="before")
+    @classmethod
+    def localized_integers(cls, value):
+        return normalize_localized_integer(value)
+
+    @field_validator("min_quantity", "discount_percent", mode="before")
+    @classmethod
+    def localized_decimals(cls, value):
+        return normalize_localized_decimal(value)
 
     @field_validator("min_quantity")
     @classmethod
@@ -266,6 +302,16 @@ class PriceRuleUpdate(BaseModel):
     discount_amount_rial: int | None = None
     discount_percent: Decimal | None = None
     starts_jalali_date: str | None = None
+
+    @field_validator("variant_id", "discount_amount_rial", mode="before")
+    @classmethod
+    def localized_integers(cls, value):
+        return normalize_localized_integer(value)
+
+    @field_validator("min_quantity", "discount_percent", mode="before")
+    @classmethod
+    def localized_decimals(cls, value):
+        return normalize_localized_decimal(value)
 
     @field_validator("variant_id", "min_quantity")
     @classmethod
