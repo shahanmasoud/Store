@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import require_superuser
+from app.api.v1.auth import require_permission, require_superuser
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.schemas.catalog import (
@@ -27,7 +27,7 @@ from app.schemas.catalog import (
 from app.services import catalog as catalog_service
 from app.services import product_media
 
-router = APIRouter(dependencies=[Depends(require_superuser)])
+router = APIRouter(dependencies=[Depends(require_permission("can_catalog_inventory"))])
 
 
 @router.get("/units", response_model=list[UnitRead])
@@ -45,7 +45,7 @@ def update_unit(unit_id: int, payload: UnitUpdate, db: Session = Depends(get_db)
     return catalog_service.update_unit(db, unit_id, payload)
 
 
-@router.delete("/units/{unit_id}", response_model=UnitRead)
+@router.delete("/units/{unit_id}", response_model=UnitRead, dependencies=[Depends(require_superuser)])
 def deactivate_unit(unit_id: int, db: Session = Depends(get_db)) -> UnitRead:
     return catalog_service.deactivate_unit(db, unit_id)
 
@@ -65,7 +65,7 @@ def update_category(category_id: int, payload: CategoryUpdate, db: Session = Dep
     return catalog_service.update_category(db, category_id, payload)
 
 
-@router.delete("/categories/{category_id}", response_model=CategoryRead)
+@router.delete("/categories/{category_id}", response_model=CategoryRead, dependencies=[Depends(require_superuser)])
 def deactivate_category(category_id: int, db: Session = Depends(get_db)) -> CategoryRead:
     return catalog_service.deactivate_category(db, category_id)
 
@@ -85,7 +85,7 @@ def update_product(product_id: int, payload: ProductUpdate, db: Session = Depend
     return catalog_service.update_product(db, product_id, payload)
 
 
-@router.delete("/products/{product_id}", response_model=ProductRead)
+@router.delete("/products/{product_id}", response_model=ProductRead, dependencies=[Depends(require_superuser)])
 def deactivate_product(product_id: int, db: Session = Depends(get_db)) -> ProductRead:
     return catalog_service.deactivate_product(db, product_id)
 
@@ -133,7 +133,7 @@ def update_variant(variant_id: int, payload: ProductVariantUpdate, db: Session =
     return catalog_service.update_variant(db, variant_id, payload)
 
 
-@router.delete("/product-variants/{variant_id}", response_model=ProductVariantRead)
+@router.delete("/product-variants/{variant_id}", response_model=ProductVariantRead, dependencies=[Depends(require_superuser)])
 def deactivate_variant(variant_id: int, db: Session = Depends(get_db)) -> ProductVariantRead:
     return catalog_service.deactivate_variant(db, variant_id)
 
@@ -171,6 +171,6 @@ def update_price_rule(
     return catalog_service.update_price_rule(db, price_rule_id, payload)
 
 
-@router.delete("/price-rules/{price_rule_id}", response_model=PriceRuleRead)
+@router.delete("/price-rules/{price_rule_id}", response_model=PriceRuleRead, dependencies=[Depends(require_superuser)])
 def deactivate_price_rule(price_rule_id: int, db: Session = Depends(get_db)) -> PriceRuleRead:
     return catalog_service.deactivate_price_rule(db, price_rule_id)

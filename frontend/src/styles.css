@@ -2100,6 +2100,7 @@ button {
 
 /* Ledger and cheque management */
 .cashier-home { display: grid; gap: 16px; max-width: 720px; }
+.role-home-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 14px; }
 .cashier-sale-card .MuiCardActionArea-root { min-height: 260px; }
 .cashier-sale-card .MuiCardContent-root { display: grid; justify-items: start; gap: 14px; padding: 28px; }
 .user-create-form { display: grid; gap: 16px; padding: 20px; margin-top: 16px; }
@@ -2112,6 +2113,8 @@ button {
 .admin-user-card p { margin: 0; color: #475a54; }
 .admin-user-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; border-top: 1px solid #e2ebe7; }
 .admin-user-actions .MuiButton-root, .user-create-form > .MuiButton-root { min-height: 44px; }
+.user-permission-switches { display: grid; gap: 4px; padding: 8px 12px; border: 1px solid #dce7e2; border-radius: 14px; background: #f8fbf9; }
+.user-permission-switches .MuiFormControlLabel-root { min-height: 44px; margin-inline: 0; }
 .admin-user-dialog-form { display: flex; min-height: 100%; flex-direction: column; }
 .admin-user-dialog-form .MuiDialogContent-root { flex: 1; align-content: start; overflow-x: hidden; }
 .admin-user-dialog-actions { gap: 8px; flex-wrap: wrap; padding: 14px 24px 20px !important; border-top: 1px solid #e2ebe7; background: #fff; }

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import require_superuser
+from app.api.v1.auth import require_permission, require_superuser
 from app.db.session import get_db
 from app.schemas.purchases import (
     InventoryAdjustmentCreate,
@@ -14,7 +14,7 @@ from app.schemas.purchases import (
 from app.models.user import User
 from app.services import purchases as purchase_service
 
-router = APIRouter(dependencies=[Depends(require_superuser)])
+router = APIRouter(dependencies=[Depends(require_permission("can_catalog_inventory"))])
 
 
 @router.post("/purchase-invoices", response_model=PurchaseInvoiceRead, status_code=status.HTTP_201_CREATED)
@@ -32,7 +32,7 @@ def purchase(invoice_id: int, db: Session = Depends(get_db)) -> PurchaseInvoiceR
     return purchase_service.get_purchase(db, invoice_id)
 
 
-@router.post("/purchase-invoices/{invoice_id}/cancel", response_model=PurchaseInvoiceRead)
+@router.post("/purchase-invoices/{invoice_id}/cancel", response_model=PurchaseInvoiceRead, dependencies=[Depends(require_superuser)])
 def cancel_purchase(invoice_id: int, db: Session = Depends(get_db)) -> PurchaseInvoiceRead:
     return purchase_service.cancel_purchase(db, invoice_id)
 
@@ -55,7 +55,7 @@ def update_inventory(
 def create_inventory_adjustment(
     payload: InventoryAdjustmentCreate,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_superuser),
+    actor: User = Depends(require_permission("can_catalog_inventory")),
 ) -> InventoryTransactionRead:
     return purchase_service.create_inventory_adjustment(db, payload, actor=actor)
 

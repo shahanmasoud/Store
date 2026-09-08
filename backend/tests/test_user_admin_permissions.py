@@ -69,6 +69,7 @@ def create_cashier(
     username: str = "cashier",
     password: str = "cashier-123",
     can_sales: bool = True,
+    can_catalog_inventory: bool = False,
 ) -> dict:
     response = client.post(
         "/api/v1/users",
@@ -78,6 +79,7 @@ def create_cashier(
             "full_name": "صندوقدار آزمایشی",
             "temporary_password": password,
             "can_sales": can_sales,
+            "can_catalog_inventory": can_catalog_inventory,
             "reason": "ایجاد حساب برای شیفت فروش",
         },
     )
@@ -108,7 +110,7 @@ def test_users_require_authentication_and_superuser(client: TestClient, db_sessi
 
 @pytest.mark.parametrize(
     "forbidden_field,forbidden_value",
-    [("is_superuser", True), ("can_ledger", True), ("can_catalog_inventory", True), ("can_cheques_reports", True)],
+    [("is_superuser", True), ("can_ledger", True), ("can_cheques_reports", True)],
 )
 def test_create_user_forbids_privilege_escalation_fields(
     client: TestClient, forbidden_field: str, forbidden_value: bool
@@ -169,7 +171,95 @@ def test_cashier_can_use_sales_only_and_cannot_cancel(client: TestClient) -> Non
     for path in denied:
         response = client.get(path, headers=headers)
         assert response.status_code == 403, (path, response.text)
-        assert response.json()["detail"] == "فقط مدیر اصلی اجازه انجام این عملیات را دارد."
+
+
+def test_catalog_inventory_operator_matrix_and_adjustment_actor(client: TestClient) -> None:
+    operator = create_cashier(
+        client,
+        username="stock",
+        password="stock-pass-123",
+        can_sales=False,
+        can_catalog_inventory=True,
+    )
+    token = login(client, "stock", "stock-pass-123")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    unit_response = client.post("/api/v1/units", headers=headers, json={"name": "عدد", "symbol": "عدد"})
+    assert unit_response.status_code == 201, unit_response.text
+    unit_id = unit_response.json()["id"]
+    assert client.patch(f"/api/v1/units/{unit_id}", headers=headers, json={"name": "بسته"}).status_code == 200
+    category = client.post("/api/v1/categories", headers=headers, json={"name": "آزمایشی"})
+    assert category.status_code == 201
+    product = client.post(
+        "/api/v1/products",
+        headers=headers,
+        json={"name": "کالای انبار", "category_id": category.json()["id"]},
+    )
+    assert product.status_code == 201
+    variant = client.post(
+        "/api/v1/product-variants",
+        headers=headers,
+        json={
+            "product_id": product.json()["id"],
+            "unit_id": unit_id,
+            "name": "کالای انبار - بسته",
+            "retail_price_rial": 250000,
+        },
+    )
+    assert variant.status_code == 201, variant.text
+    variant_id = variant.json()["id"]
+    adjustment = client.post(
+        "/api/v1/inventory/adjustments",
+        headers=headers,
+        json={
+            "variant_id": variant_id,
+            "adjustment_type": "initial",
+            "quantity": "5",
+            "unit_cost_rial": 180000,
+            "reason": "شمارش موجودی ابتدای شیفت",
+            "jalali_date": "1405/06/17",
+            "local_time": "09:15",
+        },
+    )
+    assert adjustment.status_code == 201, adjustment.text
+    assert adjustment.json()["actor_user_id"] == operator["id"]
+    assert adjustment.json()["actor_username"] == "stock"
+    assert client.get("/api/v1/inventory", headers=headers).status_code == 200
+    assert client.get("/api/v1/inventory-transactions", headers=headers).status_code == 200
+    assert client.get("/api/v1/purchase-invoices", headers=headers).status_code == 200
+
+    # Destructive operations stay behind the primary administrator even with the section permission.
+    assert client.delete(f"/api/v1/units/{unit_id}", headers=headers).status_code == 403
+    assert client.delete(f"/api/v1/products/{product.json()['id']}/image", headers=headers).status_code == 403
+    assert client.post("/api/v1/purchase-invoices/999/cancel", headers=headers).status_code == 403
+    assert client.delete("/api/v1/price-rules/999", headers=headers).status_code == 403
+
+    # No implicit access is gained outside the granted section.
+    assert client.get("/api/v1/sales", headers=headers).status_code == 403
+    assert client.get("/api/v1/persons", headers=headers).status_code == 403
+    assert client.get("/api/v1/reports/inventory", headers=headers).status_code == 403
+    assert client.get("/api/v1/online/channels", headers=headers).status_code == 403
+
+
+def test_combined_permissions_and_catalog_permission_change_invalidate_token(client: TestClient) -> None:
+    operator = create_cashier(client, can_sales=True, can_catalog_inventory=True)
+    old_token = login(client, "cashier", "cashier-123")
+    old_headers = {"Authorization": f"Bearer {old_token}"}
+    assert client.get("/api/v1/sales", headers=old_headers).status_code == 200
+    assert client.get("/api/v1/products", headers=old_headers).status_code == 200
+
+    response = client.patch(
+        f"/api/v1/users/{operator['id']}",
+        headers=admin_headers(client),
+        json={"can_catalog_inventory": False, "reason": "پایان مسئولیت انبار"},
+    )
+    assert response.status_code == 200
+    assert response.json()["can_sales"] is True
+    assert response.json()["can_catalog_inventory"] is False
+    assert client.get("/api/v1/auth/me", headers=old_headers).status_code == 401
+    fresh_headers = {"Authorization": f"Bearer {login(client, 'cashier', 'cashier-123')}"}
+    assert client.get("/api/v1/sales", headers=fresh_headers).status_code == 200
+    assert client.get("/api/v1/products", headers=fresh_headers).status_code == 403
 
 
 def test_permission_change_invalidates_token_and_denies_new_session(client: TestClient) -> None:
@@ -259,12 +349,12 @@ def test_superuser_accounts_cannot_be_mutated_through_subadmin_endpoints(
 
 
 def test_admin_audits_have_safe_before_after_snapshots(client: TestClient, db_session: Session) -> None:
-    cashier = create_cashier(client)
+    cashier = create_cashier(client, can_catalog_inventory=True)
     headers = admin_headers(client)
     client.patch(
         f"/api/v1/users/{cashier['id']}",
         headers=headers,
-        json={"full_name": "صندوقدار عصر", "can_sales": False, "reason": "تغییر شیفت و دسترسی"},
+        json={"full_name": "صندوقدار عصر", "can_sales": False, "can_catalog_inventory": False, "reason": "تغییر شیفت و دسترسی"},
     )
     client.post(
         f"/api/v1/users/{cashier['id']}/reset-password",
@@ -277,6 +367,8 @@ def test_admin_audits_have_safe_before_after_snapshots(client: TestClient, db_se
     assert audits[0].after_json["username"] == "cashier"
     assert audits[1].before_json["can_sales"] is True
     assert audits[1].after_json["can_sales"] is False
+    assert audits[1].before_json["can_catalog_inventory"] is True
+    assert audits[1].after_json["can_catalog_inventory"] is False
     encoded = json.dumps([audit.before_json for audit in audits] + [audit.after_json for audit in audits])
     assert "password" not in encoded.lower()
     assert "hash" not in encoded.lower()

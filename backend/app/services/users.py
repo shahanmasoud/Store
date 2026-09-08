@@ -103,7 +103,7 @@ def create_subadmin(db: Session, payload: UserAdminCreate, *, actor: User) -> Us
         is_active=True,
         is_superuser=False,
         can_sales=payload.can_sales,
-        can_catalog_inventory=False,
+        can_catalog_inventory=payload.can_catalog_inventory,
         can_ledger=False,
         can_cheques_reports=False,
     )
@@ -127,11 +127,19 @@ def update_subadmin(db: Session, user_id: int, payload: UserAdminUpdate, *, acto
     target = get_user_or_404(db, user_id)
     _ensure_subadmin_target(target)
     before = _snapshot(target)
-    permission_changed = payload.can_sales is not None and payload.can_sales != target.can_sales
+    permission_changed = (
+        (payload.can_sales is not None and payload.can_sales != target.can_sales)
+        or (
+            payload.can_catalog_inventory is not None
+            and payload.can_catalog_inventory != target.can_catalog_inventory
+        )
+    )
     if payload.full_name is not None:
         target.full_name = payload.full_name
     if payload.can_sales is not None:
         target.can_sales = payload.can_sales
+    if payload.can_catalog_inventory is not None:
+        target.can_catalog_inventory = payload.can_catalog_inventory
     if permission_changed:
         target.token_version += 1
     db.add(target)
