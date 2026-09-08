@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import get_current_user, require_superuser
+from app.api.v1.auth import require_superuser
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.schemas.catalog import (
@@ -27,7 +27,7 @@ from app.schemas.catalog import (
 from app.services import catalog as catalog_service
 from app.services import product_media
 
-router = APIRouter(dependencies=[Depends(get_current_user)])
+router = APIRouter(dependencies=[Depends(require_superuser)])
 
 
 @router.get("/units", response_model=list[UnitRead])

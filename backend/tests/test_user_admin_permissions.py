@@ -1,0 +1,320 @@
+import json
+from collections.abc import Generator
+from pathlib import Path
+
+import pytest
+from alembic import command
+from alembic.config import Config
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.core.config import get_settings
+from app.core.security import get_password_hash
+from app.db.base import Base
+from app.db.session import get_db
+from app.main import app
+from app.models.user import User, UserAdminAudit
+
+
+@pytest.fixture()
+def db_session() -> Generator[Session, None, None]:
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    testing_session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    with testing_session() as db:
+        db.add(
+            User(
+                username="admin",
+                full_name="مدیر سیستم",
+                hashed_password=get_password_hash("admin123"),
+                is_active=True,
+                is_superuser=True,
+            )
+        )
+        db.commit()
+        yield db
+    Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture()
+def client(db_session: Session) -> Generator[TestClient, None, None]:
+    def override_get_db() -> Generator[Session, None, None]:
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
+def login(client: TestClient, username: str = "admin", password: str = "admin123") -> str:
+    response = client.post("/api/v1/auth/login", json={"username": username, "password": password})
+    assert response.status_code == 200, response.text
+    return response.json()["access_token"]
+
+
+def admin_headers(client: TestClient) -> dict[str, str]:
+    return {"Authorization": f"Bearer {login(client)}"}
+
+
+def create_cashier(
+    client: TestClient,
+    *,
+    username: str = "cashier",
+    password: str = "cashier-123",
+    can_sales: bool = True,
+) -> dict:
+    response = client.post(
+        "/api/v1/users",
+        headers=admin_headers(client),
+        json={
+            "username": username,
+            "full_name": "صندوقدار آزمایشی",
+            "temporary_password": password,
+            "can_sales": can_sales,
+            "reason": "ایجاد حساب برای شیفت فروش",
+        },
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_users_require_authentication_and_superuser(client: TestClient, db_session: Session) -> None:
+    assert client.get("/api/v1/users").status_code == 401
+    db_session.add(
+        User(
+            username="plain",
+            full_name="کاربر عادی",
+            hashed_password="$2b$12$invalid-but-not-used",
+            is_active=True,
+            is_superuser=False,
+        )
+    )
+    db_session.commit()
+    # Create through the supported path so that password hashing is valid.
+    plain = db_session.scalar(select(User).where(User.username == "plain"))
+    plain.hashed_password = get_password_hash("plain-pass-123")
+    db_session.commit()
+    token = login(client, "plain", "plain-pass-123")
+    response = client.get("/api/v1/users", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "forbidden_field,forbidden_value",
+    [("is_superuser", True), ("can_ledger", True), ("can_catalog_inventory", True), ("can_cheques_reports", True)],
+)
+def test_create_user_forbids_privilege_escalation_fields(
+    client: TestClient, forbidden_field: str, forbidden_value: bool
+) -> None:
+    payload = {
+        "username": "cashier",
+        "full_name": "صندوقدار",
+        "temporary_password": "cashier-123",
+        "can_sales": True,
+        "reason": "نیاز عملیاتی فروش",
+        forbidden_field: forbidden_value,
+    }
+    response = client.post("/api/v1/users", headers=admin_headers(client), json=payload)
+    assert response.status_code == 422
+    assert all(user["username"] != "cashier" for user in client.get("/api/v1/users", headers=admin_headers(client)).json())
+
+
+def test_effective_permissions_and_inactive_users_are_listed(client: TestClient) -> None:
+    headers = admin_headers(client)
+    admin = client.get("/api/v1/auth/me", headers=headers).json()
+    assert admin["can_sales"] is True
+    assert admin["can_catalog_inventory"] is True
+    assert admin["can_ledger"] is True
+    assert admin["can_cheques_reports"] is True
+
+    cashier = create_cashier(client)
+    assert cashier["is_superuser"] is False
+    assert cashier["can_sales"] is True
+    assert cashier["can_catalog_inventory"] is False
+    response = client.post(
+        f"/api/v1/users/{cashier['id']}/deactivate",
+        headers=headers,
+        json={"reason": "پایان همکاری صندوقدار"},
+    )
+    assert response.status_code == 200
+    listed = client.get("/api/v1/users", headers=headers).json()
+    assert next(item for item in listed if item["id"] == cashier["id"])["is_active"] is False
+
+
+def test_cashier_can_use_sales_only_and_cannot_cancel(client: TestClient) -> None:
+    create_cashier(client)
+    token = login(client, "cashier", "cashier-123")
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.get("/api/v1/sales", headers=headers).status_code == 200
+    options = client.get("/api/v1/sales/form-options", headers=headers)
+    assert options.status_code == 200
+    assert set(options.json()) == {"variants", "inventory", "customers"}
+    assert client.get("/api/v1/daily-journal?jalali_date=1405/06/17", headers=headers).status_code == 200
+    assert client.post("/api/v1/sales/999/cancel", headers=headers).status_code == 403
+
+    denied = [
+        "/api/v1/products",
+        "/api/v1/purchase-invoices",
+        "/api/v1/persons",
+        "/api/v1/reports/inventory",
+        "/api/v1/online/channels",
+    ]
+    for path in denied:
+        response = client.get(path, headers=headers)
+        assert response.status_code == 403, (path, response.text)
+        assert response.json()["detail"] == "فقط مدیر اصلی اجازه انجام این عملیات را دارد."
+
+
+def test_permission_change_invalidates_token_and_denies_new_session(client: TestClient) -> None:
+    cashier = create_cashier(client)
+    old_token = login(client, "cashier", "cashier-123")
+    response = client.patch(
+        f"/api/v1/users/{cashier['id']}",
+        headers=admin_headers(client),
+        json={"can_sales": False, "reason": "انتقال از صندوق فروش"},
+    )
+    assert response.status_code == 200
+    assert client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {old_token}"}).status_code == 401
+    new_token = login(client, "cashier", "cashier-123")
+    denied = client.get("/api/v1/sales", headers={"Authorization": f"Bearer {new_token}"})
+    assert denied.status_code == 403
+    assert denied.json()["detail"] == "شما اجازه دسترسی به این بخش را ندارید."
+
+
+def test_reset_password_and_deactivation_invalidate_sessions(client: TestClient) -> None:
+    cashier = create_cashier(client)
+    old_token = login(client, "cashier", "cashier-123")
+    reset = client.post(
+        f"/api/v1/users/{cashier['id']}/reset-password",
+        headers=admin_headers(client),
+        json={"temporary_password": "replacement-456", "reason": "درخواست بازنشانی امن"},
+    )
+    assert reset.status_code == 200
+    assert client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {old_token}"}).status_code == 401
+    assert client.post("/api/v1/auth/login", json={"username": "cashier", "password": "cashier-123"}).status_code == 401
+    fresh_token = login(client, "cashier", "replacement-456")
+
+    deactivated = client.post(
+        f"/api/v1/users/{cashier['id']}/deactivate",
+        headers=admin_headers(client),
+        json={"reason": "پایان دسترسی فروش"},
+    )
+    assert deactivated.status_code == 200
+    assert client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {fresh_token}"}).status_code == 401
+    assert client.post("/api/v1/auth/login", json={"username": "cashier", "password": "replacement-456"}).status_code == 401
+
+
+def test_self_deactivate_and_admin_reset_are_blocked(client: TestClient) -> None:
+    headers = admin_headers(client)
+    admin_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+    deactivate = client.post(
+        f"/api/v1/users/{admin_id}/deactivate",
+        headers=headers,
+        json={"reason": "نباید مجاز باشد"},
+    )
+    reset = client.post(
+        f"/api/v1/users/{admin_id}/reset-password",
+        headers=headers,
+        json={"temporary_password": "another-admin-123", "reason": "نباید مجاز باشد"},
+    )
+    assert deactivate.status_code == 409
+    assert reset.status_code == 409
+    assert client.get("/api/v1/auth/me", headers=headers).status_code == 200
+
+
+def test_superuser_accounts_cannot_be_mutated_through_subadmin_endpoints(
+    client: TestClient, db_session: Session
+) -> None:
+    second_admin = User(
+        username="second-admin",
+        full_name="مدیر اصلی دوم",
+        hashed_password=get_password_hash("second-admin-123"),
+        is_active=True,
+        is_superuser=True,
+    )
+    db_session.add(second_admin)
+    db_session.commit()
+    headers = admin_headers(client)
+    deactivate = client.post(
+        f"/api/v1/users/{second_admin.id}/deactivate",
+        headers=headers,
+        json={"reason": "این مسیر نباید مدیر اصلی را تغییر دهد"},
+    )
+    reset = client.post(
+        f"/api/v1/users/{second_admin.id}/reset-password",
+        headers=headers,
+        json={"temporary_password": "replacement-admin-456", "reason": "این مسیر مخصوص زیرمدیر است"},
+    )
+    assert deactivate.status_code == 409
+    assert reset.status_code == 409
+    db_session.refresh(second_admin)
+    assert second_admin.is_active is True
+
+
+def test_admin_audits_have_safe_before_after_snapshots(client: TestClient, db_session: Session) -> None:
+    cashier = create_cashier(client)
+    headers = admin_headers(client)
+    client.patch(
+        f"/api/v1/users/{cashier['id']}",
+        headers=headers,
+        json={"full_name": "صندوقدار عصر", "can_sales": False, "reason": "تغییر شیفت و دسترسی"},
+    )
+    client.post(
+        f"/api/v1/users/{cashier['id']}/reset-password",
+        headers=headers,
+        json={"temporary_password": "audit-pass-789", "reason": "بازنشانی آزمایشی"},
+    )
+    audits = list(db_session.scalars(select(UserAdminAudit).where(UserAdminAudit.target_user_id == cashier["id"]).order_by(UserAdminAudit.id)))
+    assert [audit.action for audit in audits] == ["create", "update", "reset_password"]
+    assert audits[0].before_json is None
+    assert audits[0].after_json["username"] == "cashier"
+    assert audits[1].before_json["can_sales"] is True
+    assert audits[1].after_json["can_sales"] is False
+    encoded = json.dumps([audit.before_json for audit in audits] + [audit.after_json for audit in audits])
+    assert "password" not in encoded.lower()
+    assert "hash" not in encoded.lower()
+    assert "token_version" not in encoded
+    assert all(audit.reason for audit in audits)
+
+
+def test_0016_migration_preserves_legacy_users_with_deny_defaults(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_path = tmp_path / "legacy-users.db"
+    database_url = f"sqlite:///{database_path.as_posix()}"
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    get_settings.cache_clear()
+    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    command.upgrade(config, "0015_cheque_audits")
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO users
+                    (username, full_name, hashed_password, is_active, is_superuser, token_version, created_at_utc)
+                VALUES
+                    ('legacy', 'کاربر قدیمی', 'not-a-real-hash', 1, 0, 0, CURRENT_TIMESTAMP)
+                """
+            )
+        )
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        legacy = connection.execute(text("SELECT * FROM users WHERE username='legacy'")).mappings().one()
+        columns = {column["name"] for column in inspect(connection).get_columns("user_admin_audits")}
+        integrity = connection.execute(text("PRAGMA integrity_check")).scalar_one()
+    assert integrity == "ok"
+    assert legacy["can_sales"] == 0
+    assert legacy["can_catalog_inventory"] == 0
+    assert legacy["can_ledger"] == 0
+    assert legacy["can_cheques_reports"] == 0
+    assert {"actor_user_id", "target_user_id", "before_json", "after_json", "reason"} <= columns
+    get_settings.cache_clear()

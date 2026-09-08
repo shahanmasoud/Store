@@ -1,3 +1,6 @@
+from collections.abc import Callable
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
@@ -45,6 +48,21 @@ def require_superuser(current_user: User = Depends(get_current_user)) -> User:
             detail="فقط مدیر اصلی اجازه انجام این عملیات را دارد.",
         )
     return current_user
+
+
+PermissionName = Literal["can_sales", "can_catalog_inventory", "can_ledger", "can_cheques_reports"]
+
+
+def require_permission(permission: PermissionName) -> Callable[..., User]:
+    def permission_dependency(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.is_superuser or bool(getattr(current_user, permission, False)):
+            return current_user
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="شما اجازه دسترسی به این بخش را ندارید.",
+        )
+
+    return permission_dependency
 
 
 @router.post("/login", response_model=LoginResponse)

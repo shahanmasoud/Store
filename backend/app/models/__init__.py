@@ -11,7 +11,7 @@ from app.models.purchases import (
     Supplier,
 )
 from app.models.sales import Payment, SaleInvoice, SaleInvoiceItem
-from app.models.user import User
+from app.models.user import User, UserAdminAudit
 
 __all__ = [
     "Category",
@@ -44,5 +44,6 @@ __all__ = [
     "Supplier",
     "Unit",
     "User",
+    "UserAdminAudit",
 ]
 

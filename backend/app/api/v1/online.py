@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import get_current_user
+from app.api.v1.auth import require_superuser
 from app.core.time import validate_jalali_date
 from app.db.session import get_db
 from app.models.online import OnlineChannel, OnlineOrder, OnlinePriceRule, StockReservation
@@ -37,7 +37,7 @@ def get_online_channel(
     return online_service.channel_from_token(db, x_online_token)
 
 
-@router.get("/online/channels", response_model=list[OnlineChannelRead], dependencies=[Depends(get_current_user)])
+@router.get("/online/channels", response_model=list[OnlineChannelRead], dependencies=[Depends(require_superuser)])
 def channels(db: Session = Depends(get_db)) -> list[OnlineChannel]:
     return online_service.list_channels(db)
 
@@ -46,7 +46,7 @@ def channels(db: Session = Depends(get_db)) -> list[OnlineChannel]:
     "/online/channels",
     response_model=OnlineChannelRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(require_superuser)],
 )
 def create_channel(payload: OnlineChannelCreate, db: Session = Depends(get_db)) -> OnlineChannel:
     return online_service.create_channel(db, payload)
@@ -56,7 +56,7 @@ def create_channel(payload: OnlineChannelCreate, db: Session = Depends(get_db)) 
     "/online/price-rules",
     response_model=OnlinePriceRuleRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(require_superuser)],
 )
 def create_price_rule(payload: OnlinePriceRuleCreate, db: Session = Depends(get_db)) -> OnlinePriceRule:
     return online_service.create_price_rule(db, payload)
@@ -65,7 +65,7 @@ def create_price_rule(payload: OnlinePriceRuleCreate, db: Session = Depends(get_
 @router.get(
     "/online/price-rules",
     response_model=list[OnlinePriceRuleRead],
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(require_superuser)],
 )
 def price_rules(
     channel_id: int | None = None,
@@ -79,7 +79,7 @@ def price_rules(
     "/online/reservations",
     response_model=StockReservationRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(require_superuser)],
 )
 def create_reservation(
     payload: StockReservationCreate,
@@ -91,7 +91,7 @@ def create_reservation(
 @router.get(
     "/online/reservations",
     response_model=list[StockReservationRead],
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(require_superuser)],
 )
 def reservations(
     channel_id: int | None = None,
@@ -109,7 +109,7 @@ def reservations(
     )
 
 
-@router.get("/online/orders", response_model=list[OnlineOrderRead], dependencies=[Depends(get_current_user)])
+@router.get("/online/orders", response_model=list[OnlineOrderRead], dependencies=[Depends(require_superuser)])
 def orders(
     channel_id: int | None = None,
     db: Session = Depends(get_db),

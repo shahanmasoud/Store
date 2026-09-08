@@ -11,8 +11,24 @@ from app.models.purchases import InventoryItem, InventoryTransaction
 from app.models.ledger import Person
 from app.models.sales import Payment, SaleInvoice, SaleInvoiceItem
 from app.schemas.sales import DailyJournalPaymentBreakdown, DailyJournalRead, PaymentCreate, SaleInvoiceCreate
+from app.schemas.sales import SalesFormOptionsRead
+from app.services import catalog as catalog_service
+from app.services import ledger as ledger_service
+from app.services import purchases as purchase_service
 
 RECEIVED_BY_DEFAULT = {"cash", "card", "transfer"}
+
+
+def get_sales_form_options(db: Session) -> SalesFormOptionsRead:
+    return SalesFormOptionsRead(
+        variants=catalog_service.list_variants(db),
+        inventory=purchase_service.list_inventory(db),
+        customers=[
+            person
+            for person in ledger_service.list_persons(db)
+            if person.person_type in {"customer", "both"}
+        ],
+    )
 
 
 def _gross_line_total(quantity: Decimal, unit_price_rial: int) -> int:

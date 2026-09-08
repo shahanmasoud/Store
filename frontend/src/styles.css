@@ -2099,6 +2099,23 @@ button {
 }
 
 /* Ledger and cheque management */
+.cashier-home { display: grid; gap: 16px; max-width: 720px; }
+.cashier-sale-card .MuiCardActionArea-root { min-height: 260px; }
+.cashier-sale-card .MuiCardContent-root { display: grid; justify-items: start; gap: 14px; padding: 28px; }
+.user-create-form { display: grid; gap: 16px; padding: 20px; margin-top: 16px; }
+.user-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.user-card-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr)); gap: 14px; margin-top: 16px; }
+.admin-user-card .MuiCardContent-root { display: grid; gap: 12px; }
+.admin-user-card .MuiCardContent-root > div:first-child { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.admin-user-card .MuiCardContent-root > div:first-child > span { display: grid; gap: 4px; min-width: 0; }
+.admin-user-card small { color: #687a74; overflow-wrap: anywhere; }
+.admin-user-card p { margin: 0; color: #475a54; }
+.admin-user-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; border-top: 1px solid #e2ebe7; }
+.admin-user-actions .MuiButton-root, .user-create-form > .MuiButton-root { min-height: 44px; }
+.admin-user-dialog-form { display: flex; min-height: 100%; flex-direction: column; }
+.admin-user-dialog-form .MuiDialogContent-root { flex: 1; align-content: start; overflow-x: hidden; }
+.admin-user-dialog-actions { gap: 8px; flex-wrap: wrap; padding: 14px 24px 20px !important; border-top: 1px solid #e2ebe7; background: #fff; }
+.admin-user-dialog-actions .MuiButton-root { min-height: 44px; }
 .ledger-shell {
   display: grid;
   grid-template-columns: minmax(260px, 0.34fr) minmax(0, 1fr);
@@ -2294,6 +2311,12 @@ button {
 }
 
 @media (max-width: 640px) {
+  .user-create-form { padding: 15px; border-radius: 18px; }
+  .user-form-grid { grid-template-columns: 1fr; }
+  .admin-user-actions { display: grid; grid-template-columns: 1fr; }
+  .admin-user-actions .MuiButton-root { width: 100%; }
+  .admin-user-dialog-actions { position: sticky; bottom: 0; display: grid; grid-template-columns: 1fr 1fr; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)) !important; z-index: 2; }
+  .admin-user-dialog-actions .MuiButton-root { width: 100%; }
   .ledger-shell { gap: 14px; }
   .ledger-people-panel, .ledger-form, .ledger-timeline-panel, .cheque-create-form, .dues-panel, .cheque-list-panel { padding: 15px; border-radius: 18px; }
   .ledger-section-heading { align-items: stretch; flex-direction: column; }

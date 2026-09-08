@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import get_current_user, require_superuser
+from app.api.v1.auth import require_superuser
 from app.core.time import validate_jalali_date
 from app.db.session import get_db
 from app.schemas.ledger import (
@@ -25,7 +25,7 @@ from app.schemas.ledger import (
 )
 from app.services import ledger as ledger_service
 
-router = APIRouter(dependencies=[Depends(get_current_user)])
+router = APIRouter(dependencies=[Depends(require_superuser)])
 
 
 @router.post("/persons", response_model=PersonRead, status_code=status.HTTP_201_CREATED)

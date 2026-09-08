@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
-import { Alert, Autocomplete, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, InputAdornment, LinearProgress, MenuItem, Stack, Tab, Tabs, TextField, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { Alert, Autocomplete, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, FormControlLabel, IconButton, InputAdornment, LinearProgress, MenuItem, Stack, Switch, Tab, Tabs, TextField, Typography, useMediaQuery, useTheme } from "@mui/material";
 import AccountBalanceWalletRounded from "@mui/icons-material/AccountBalanceWalletRounded";
 import AdminPanelSettingsRounded from "@mui/icons-material/AdminPanelSettingsRounded";
 import AnalyticsRounded from "@mui/icons-material/AnalyticsRounded";
@@ -79,7 +79,7 @@ const TOKEN_KEY = "store_auth_token";
 const PRICE_TYPE_LABELS: Record<PriceType, string> = { retail: "خرده‌فروشی", wholesale: "عمده‌فروشی", online: "آنلاین" };
 
 type AuthStatus = "checking" | "guest" | "authenticated";
-type AppView = "dashboard" | "sales" | "purchase" | "inventory" | "products" | "ledger" | "cheques" | "reports" | "online";
+type AppView = "dashboard" | "sales" | "purchase" | "inventory" | "products" | "ledger" | "cheques" | "reports" | "online" | "users";
 
 const viewMeta: Record<AppView, { title: string; eyebrow: string; help: string }> = {
   dashboard: { title: "خانه مدیریت", eyebrow: "نمای کلی فروشگاه", help: "از کارهای سریع شروع کن یا وضعیت امروز را مرور کن." },
@@ -91,6 +91,7 @@ const viewMeta: Record<AppView, { title: string; eyebrow: string; help: string }
   cheques: { title: "مدیریت چک‌ها", eyebrow: "سررسید و پیگیری", help: "چک‌های نزدیک به سررسید را اول بررسی و وضعیتشان را به‌روز کن." },
   reports: { title: "گزارش‌ها", eyebrow: "تحلیل عملکرد", help: "بازه زمانی را انتخاب کن تا فروش، سود و جریان نقدی را مقایسه کنی." },
   online: { title: "سفارش‌های آنلاین", eyebrow: "اتصال فروشگاه", help: "کانال فروش را متصل کن و سفارش‌های جدید را قبل از تایید بررسی کن." },
+  users: { title: "کاربران و دسترسی‌ها", eyebrow: "امنیت و تیم فروش", help: "برای صندوقدار حساب جدا بساز و فقط دسترسی لازم را فعال کن." },
 };
 
 type InvoiceDraftItem = {
@@ -352,6 +353,7 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
   const [passwordSuccess, setPasswordSuccess] = useState("");
   const [visiblePasswords, setVisiblePasswords] = useState({ current: false, next: false, confirm: false });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [accessNotice, setAccessNotice] = useState("");
   const sectionHeadingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -373,6 +375,12 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
       });
   }, []);
 
+  useEffect(() => {
+    const logout = () => handleLogout();
+    window.addEventListener("store:unauthorized", logout);
+    return () => window.removeEventListener("store:unauthorized", logout);
+  }, []);
+
   const displayName = useMemo(() => {
     return user?.full_name || user?.username || "مدیر فروشگاه";
   }, [user]);
@@ -385,6 +393,9 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
   }, [status, view]);
 
   function navigateView(target: AppView) {
+    const allowed = user?.is_superuser || target === "dashboard" || (target === "sales" && user?.can_sales);
+    if (!allowed) { setAccessNotice("شما به این بخش دسترسی ندارید؛ به خانه مدیریت برگشتید."); setView("dashboard"); setMobileNavOpen(false); return; }
+    setAccessNotice("");
     setMobileNavOpen(false);
     setView(target);
   }
@@ -485,7 +496,7 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
           <DashboardRounded aria-hidden="true" />
           خانه مدیریت
         </button>
-        {moduleCards.map((card) => {
+        {moduleCards.filter((card) => user?.is_superuser || (card.key === "sales" && user?.can_sales)).map((card) => {
           const target = card.key as AppView;
           const Icon = card.key === "sales" ? PointOfSaleRounded :
             card.key === "products" ? Inventory2Rounded :
@@ -507,6 +518,7 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
             </button>
           );
         })}
+        {user?.is_superuser ? <button type="button" className={`sidebar-link ${view === "users" ? "active" : ""}`} aria-current={view === "users" ? "page" : undefined} onClick={() => navigateView("users")}><AdminPanelSettingsRounded aria-hidden="true" />کاربران و دسترسی‌ها</button> : null}
       </nav>
     );
   }
@@ -603,6 +615,7 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
           <button className="ghost-button" type="button" onClick={handleLogout}>خروج</button>
         </div>
       </header>
+      {accessNotice ? <Alert severity="warning" onClose={() => setAccessNotice("")}>{accessNotice}</Alert> : null}
 
       <Dialog
         open={passwordDialogOpen}
@@ -648,8 +661,9 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
       {view === "cheques" ? <ChequesView onBack={() => navigateView("dashboard")} onOpenLedger={() => navigateView("ledger")} /> : null}
       {view === "reports" ? <ReportsView onBack={() => navigateView("dashboard")} /> : null}
       {view === "online" ? <OnlineView onBack={() => navigateView("dashboard")} /> : null}
+      {view === "users" && user?.is_superuser ? <UsersView onBack={() => navigateView("dashboard")} currentUserId={user.id} /> : null}
       {view === "dashboard" ? (
-        <DashboardView
+        user?.is_superuser ? <DashboardView
           onOpenSales={() => navigateView("sales")}
           onOpenPurchase={() => navigateView("purchase")}
           onOpenInventory={() => navigateView("inventory")}
@@ -658,11 +672,39 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
           onOpenCheques={() => navigateView("cheques")}
           onOpenReports={() => navigateView("reports")}
           onOpenOnline={() => navigateView("online")}
-        />
+        /> : <CashierHome onOpenSales={() => navigateView("sales")} />
       ) : null}
       </div>
     </main>
   );
+}
+
+function CashierHome({ onOpenSales }: { onOpenSales: () => void }) {
+  return <Box className="cashier-home"><Alert severity="info">این حساب برای ثبت فروش آماده است. بخش‌های مالی و تنظیمات فقط در اختیار مدیر اصلی هستند.</Alert><Card className="cashier-sale-card"><CardActionArea onClick={onOpenSales}><CardContent><PointOfSaleRounded color="primary" sx={{ fontSize: 42 }} /><Typography variant="h5">ثبت فروش</Typography><Typography color="text.secondary">فاکتور جدید بساز، مشتری و روش پرداخت را انتخاب کن.</Typography><Button variant="contained" size="large" sx={{ minHeight: 44 }}>شروع فروش</Button></CardContent></CardActionArea></Card></Box>;
+}
+
+function UsersView({ onBack, currentUserId }: { onBack: () => void; currentUserId: number | string }) {
+  const theme = useTheme(); const mobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const [users, setUsers] = useState<User[]>([]); const [status, setStatus] = useState<"loading" | "ready" | "error">("loading"); const [error, setError] = useState(""); const [notice, setNotice] = useState("");
+  const [username, setUsername] = useState(""); const [fullName, setFullName] = useState(""); const [password, setPassword] = useState(""); const [canSales, setCanSales] = useState(true); const [createReason, setCreateReason] = useState(""); const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<User | null>(null); const [editName, setEditName] = useState(""); const [editSales, setEditSales] = useState(false); const [editReason, setEditReason] = useState(""); const [dialogError, setDialogError] = useState("");
+  const [resetting, setResetting] = useState<User | null>(null); const [resetPassword, setResetPassword] = useState(""); const [resetReason, setResetReason] = useState("");
+  const [deactivating, setDeactivating] = useState<User | null>(null); const [deactivateReason, setDeactivateReason] = useState("");
+  async function load() { setStatus("loading"); setError(""); try { setUsers(await api.users()); setStatus("ready"); } catch (e) { setError(e instanceof Error ? e.message : "کاربران دریافت نشدند."); setStatus("error"); } }
+  useEffect(() => { void load(); }, []);
+  async function create(event: FormEvent) { event.preventDefault(); if (!username.trim() || !fullName.trim() || password.length < 8 || createReason.trim().length < 3) return; setSaving(true); setError(""); try { await api.createUser({ username: username.trim(), full_name: fullName.trim(), temporary_password: password, can_sales: canSales, reason: createReason.trim() }); setUsername(""); setFullName(""); setPassword(""); setCreateReason(""); setNotice("کاربر ساخته شد؛ رمز موقت دوباره نمایش داده نمی‌شود."); await load(); } catch (e) { setError(e instanceof Error ? e.message : "ساخت کاربر انجام نشد."); } finally { setSaving(false); } }
+  async function saveEdit(event: FormEvent) { event.preventDefault(); if (!editing || !editName.trim() || editReason.trim().length < 3) return; setSaving(true); setDialogError(""); try { await api.updateUser(editing.id, { full_name: editName.trim(), can_sales: editSales, reason: editReason.trim() }); setEditing(null); setNotice("اطلاعات و دسترسی کاربر به‌روز شد."); await load(); } catch (e) { setDialogError(e instanceof Error ? e.message : "ویرایش انجام نشد."); } finally { setSaving(false); } }
+  async function saveReset(event: FormEvent) { event.preventDefault(); if (!resetting || resetPassword.length < 8 || resetReason.trim().length < 3) return; setSaving(true); setDialogError(""); try { await api.resetUserPassword(resetting.id, { temporary_password: resetPassword, reason: resetReason.trim() }); setResetting(null); setResetPassword(""); setNotice("رمز موقت تغییر کرد و نشست‌های قبلی کاربر پایان یافتند."); } catch (e) { setDialogError(e instanceof Error ? e.message : "تغییر رمز انجام نشد."); } finally { setSaving(false); } }
+  async function deactivate() { if (!deactivating || deactivateReason.trim().length < 3) return; setSaving(true); setDialogError(""); try { await api.deactivateUser(deactivating.id, { reason: deactivateReason.trim() }); setDeactivating(null); setNotice("کاربر غیرفعال و نشست‌های او فوراً پایان یافت."); await load(); } catch (e) { setDialogError(e instanceof Error ? e.message : "غیرفعال‌سازی انجام نشد."); } finally { setSaving(false); } }
+  return <CrudWorkspace title="کاربران و دسترسی‌ها" eyebrow="مدیر اصلی" onBack={onBack}>
+    {notice ? <Alert severity="success" onClose={() => setNotice("")}>{notice}</Alert> : null}{error ? <Alert severity="error" action={status === "error" ? <Button color="inherit" onClick={() => void load()}>تلاش دوباره</Button> : undefined}>{error}</Alert> : null}
+    <form className="sale-panel user-create-form" onSubmit={create} noValidate><div className="ledger-section-heading"><div><strong>ساخت حساب صندوقدار</strong><small>نام کاربری بعد از ساخت قابل تغییر نیست.</small></div></div><div className="user-form-grid"><TextField label="نام کاربری" value={username} onChange={(e) => setUsername(e.target.value)} required disabled={saving} slotProps={{ htmlInput: { dir: "ltr", minLength: 3, maxLength: 50, autoComplete: "off" } }} /><TextField label="نام و نام خانوادگی" value={fullName} onChange={(e) => setFullName(e.target.value)} required disabled={saving} /><TextField type="password" label="رمز موقت" value={password} onChange={(e) => setPassword(e.target.value)} required disabled={saving} helperText="حداقل ۸ کاراکتر؛ پس از ثبت دوباره نمایش داده نمی‌شود." slotProps={{ htmlInput: { minLength: 8, maxLength: 128, autoComplete: "new-password" } }} /><TextField label="دلیل ایجاد حساب" value={createReason} onChange={(e) => setCreateReason(e.target.value)} required disabled={saving} helperText="حداقل ۳ کاراکتر" /></div><FormControlLabel control={<Switch checked={canSales} onChange={(e) => setCanSales(e.target.checked)} disabled={saving} />} label="اجازه ثبت فروش؛ سایر بخش‌ها برای صندوقدار بسته می‌مانند" /><Button type="submit" variant="contained" size="large" disabled={saving || username.trim().length < 3 || !fullName.trim() || password.length < 8 || createReason.trim().length < 3} startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <AddRounded />}>ساخت کاربر</Button></form>
+    {status === "loading" ? <div className="record-state"><CircularProgress size={28} /><span>در حال دریافت کاربران…</span></div> : null}{status === "ready" && users.length === 0 ? <div className="record-state"><AdminPanelSettingsRounded /><strong>کاربری ثبت نشده است</strong></div> : null}
+    <div className="user-card-list">{users.map((item) => <Card key={item.id} className="admin-user-card"><CardContent><div><span><strong>{item.full_name || item.username}</strong><small dir="ltr">@{item.username}</small></span><Chip label={item.is_superuser ? "مدیر اصلی" : item.is_active ? "فعال" : "غیرفعال"} color={item.is_superuser ? "primary" : item.is_active ? "success" : "default"} /></div><p>{item.is_superuser ? "دسترسی کامل" : item.can_sales ? "دسترسی ثبت فروش" : "بدون دسترسی عملیاتی"}</p>{!item.is_superuser ? <div className="admin-user-actions"><Button startIcon={<EditRounded />} onClick={() => { setEditing(item); setEditName(item.full_name || ""); setEditSales(Boolean(item.can_sales)); setEditReason(""); setDialogError(""); }}>ویرایش</Button><Button startIcon={<LockResetRounded />} onClick={() => { setResetting(item); setResetPassword(""); setResetReason(""); setDialogError(""); }}>رمز موقت جدید</Button><Button color="error" disabled={String(item.id) === String(currentUserId) || !item.is_active} onClick={() => { setDeactivating(item); setDeactivateReason(""); setDialogError(""); }}>غیرفعال‌سازی</Button></div> : null}</CardContent></Card>)}</div>
+    <Dialog open={editing !== null} fullScreen={mobile} fullWidth maxWidth="sm" onClose={() => !saving && setEditing(null)}><form className="admin-user-dialog-form" onSubmit={saveEdit}><DialogTitle>ویرایش {editing?.username}</DialogTitle><DialogContent dividers className="dialog-form">{dialogError ? <Alert severity="error">{dialogError}</Alert> : null}<TextField label="نام کاربری" value={editing?.username || ""} disabled helperText="نام کاربری ثابت است." /><TextField label="نام و نام خانوادگی" value={editName} onChange={(e) => setEditName(e.target.value)} required /><FormControlLabel control={<Switch checked={editSales} onChange={(e) => setEditSales(e.target.checked)} />} label="اجازه ثبت فروش" /><TextField label="دلیل تغییر" value={editReason} onChange={(e) => setEditReason(e.target.value)} required multiline minRows={2} /></DialogContent><DialogActions className="admin-user-dialog-actions"><Button onClick={() => setEditing(null)}>انصراف</Button><Button type="submit" variant="contained" disabled={saving || !editName.trim() || editReason.trim().length < 3}>ذخیره</Button></DialogActions></form></Dialog>
+    <Dialog open={resetting !== null} fullScreen={mobile} fullWidth maxWidth="xs" onClose={() => !saving && setResetting(null)}><form className="admin-user-dialog-form" onSubmit={saveReset}><DialogTitle>رمز موقت جدید</DialogTitle><DialogContent dividers className="dialog-form">{dialogError ? <Alert severity="error">{dialogError}</Alert> : null}<Alert severity="warning">رمز قبلی و همه نشست‌های کاربر فوراً بی‌اعتبار می‌شوند.</Alert><TextField type="password" label="رمز موقت جدید" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} required helperText="حداقل ۸ کاراکتر؛ پس از ذخیره دوباره نمایش داده نمی‌شود." /><TextField label="دلیل تغییر رمز" value={resetReason} onChange={(e) => setResetReason(e.target.value)} required multiline minRows={2} /></DialogContent><DialogActions className="admin-user-dialog-actions"><Button onClick={() => setResetting(null)}>انصراف</Button><Button type="submit" variant="contained" disabled={saving || resetPassword.length < 8 || resetReason.trim().length < 3}>تغییر رمز</Button></DialogActions></form></Dialog>
+    <Dialog open={deactivating !== null} fullScreen={mobile} fullWidth maxWidth="xs" onClose={() => !saving && setDeactivating(null)}><DialogTitle>غیرفعال‌سازی {deactivating?.full_name}</DialogTitle><DialogContent dividers className="dialog-form">{dialogError ? <Alert severity="error">{dialogError}</Alert> : null}<Alert severity="error">با تأیید، دسترسی «{deactivating?.username}» و همه نشست‌های فعال او فوراً پایان می‌یابد.</Alert><TextField label="دلیل غیرفعال‌سازی" value={deactivateReason} onChange={(e) => setDeactivateReason(e.target.value)} required multiline minRows={2} /></DialogContent><DialogActions className="admin-user-dialog-actions"><Button onClick={() => setDeactivating(null)}>انصراف</Button><Button color="error" variant="contained" onClick={() => void deactivate()} disabled={saving || deactivateReason.trim().length < 3}>غیرفعال شود</Button></DialogActions></Dialog>
+  </CrudWorkspace>;
 }
 
 function DashboardView({
@@ -2976,10 +3018,12 @@ function SalesView({ onBack }: { onBack: () => void }) {
   function loadSellableProducts() {
     setVariantsError("");
     setVariantsStatus("loading");
-    return Promise.all([api.productVariants(), api.inventory()])
-      .then(([nextVariants, nextInventory]) => {
-        setVariants(nextVariants.filter((variant) => variant.is_active));
-        setInventory(nextInventory);
+    return api.salesFormOptions()
+      .then((options) => {
+        setVariants(options.variants.filter((variant) => variant.is_active));
+        setInventory(options.inventory);
+        setCustomers(options.customers.filter((person) => person.is_active));
+        setCustomersStatus("ready" as const);
         setVariantsStatus("ready" as const);
       })
       .catch((error) => {
@@ -2990,8 +3034,8 @@ function SalesView({ onBack }: { onBack: () => void }) {
 
   function loadCustomers() {
     setCustomersStatus("loading"); setCustomersError("");
-    return api.persons()
-      .then((people) => { setCustomers(people.filter((person) => person.is_active && (person.person_type === "customer" || person.person_type === "both"))); setCustomersStatus("ready" as const); })
+    return api.salesFormOptions()
+      .then((options) => { setCustomers(options.customers.filter((person) => person.is_active)); setCustomersStatus("ready" as const); })
       .catch((error) => { setCustomers([]); setCustomersError(error instanceof Error ? error.message : "فهرست مشتریان دریافت نشد."); setCustomersStatus("error" as const); });
   }
 
@@ -3012,17 +3056,21 @@ function SalesView({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     let isMounted = true;
-    Promise.all([api.productVariants(), api.inventory()])
-      .then(([nextVariants, nextInventory]) => {
+    api.salesFormOptions()
+      .then((options) => {
         if (!isMounted) return;
-        setVariants(nextVariants.filter((variant) => variant.is_active));
-        setInventory(nextInventory);
+        setVariants(options.variants.filter((variant) => variant.is_active));
+        setInventory(options.inventory);
+        setCustomers(options.customers.filter((person) => person.is_active));
+        setCustomersStatus("ready");
         setVariantsStatus("ready");
       })
       .catch((error) => {
         if (!isMounted) return;
         setVariantsError(error instanceof Error ? error.message : "کالاها دریافت نشدند.");
         setVariantsStatus("error");
+        setCustomersError(error instanceof Error ? error.message : "فهرست مشتریان دریافت نشد.");
+        setCustomersStatus("error");
       });
     api.dailyJournal(currentJalaliDate())
       .then((nextJournal) => {
@@ -3035,18 +3083,6 @@ function SalesView({ onBack }: { onBack: () => void }) {
         setJournalStatus("error");
         setJournalError("اطلاعات دفتر روزانه دریافت نشد؛ دوباره تلاش کنید.");
       });
-    api.persons()
-      .then((people) => {
-        if (!isMounted) return;
-        setCustomers(people.filter((person) => person.is_active && (person.person_type === "customer" || person.person_type === "both")));
-        setCustomersStatus("ready");
-      })
-      .catch((error) => {
-        if (!isMounted) return;
-        setCustomersError(error instanceof Error ? error.message : "فهرست مشتریان دریافت نشد.");
-        setCustomersStatus("error");
-      });
-
     return () => {
       isMounted = false;
     };

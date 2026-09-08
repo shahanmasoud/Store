@@ -4,7 +4,14 @@ export type User = {
   full_name?: string | null;
   is_active?: boolean;
   is_superuser?: boolean;
+  can_sales?: boolean;
+  can_catalog_inventory?: boolean;
+  can_ledger?: boolean;
+  can_cheques_reports?: boolean;
+  created_at_utc?: string;
+  updated_at_utc?: string;
 };
+export type AdminUserAuditPayload = { full_name?: string | null; can_sales?: boolean; reason: string; expected_updated_at?: string };
 
 export type LoginResponse = {
   access_token: string;
@@ -290,6 +297,7 @@ export type Product = { id: number; name: string; description?: string | null; c
 export type PersonType = "customer" | "supplier" | "both";
 export type CreditStatus = "good" | "normal" | "watch";
 export type Person = { id: number; name: string; phone?: string | null; person_type: PersonType; note?: string | null; credit_status: CreditStatus; is_active: boolean };
+export type SalesFormOptions = { variants: ProductVariant[]; inventory: InventoryItem[]; customers: Person[] };
 export type PersonSummary = {
   person_id: number;
   debit_open_rial: number;
@@ -531,6 +539,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       message =
         response.status === 401 ? "نام کاربری یا رمز عبور درست نیست." : message;
     }
+    if (response.status === 401) window.dispatchEvent(new Event("store:unauthorized"));
     throw new ApiError(message, response.status);
   }
 
@@ -554,6 +563,11 @@ export const api = {
       body: JSON.stringify(payload),
     });
   },
+  users() { return request<User[]>("/users"); },
+  createUser(payload: { username: string; full_name: string; temporary_password: string; can_sales: boolean; reason: string }) { return request<User>("/users", { method: "POST", body: JSON.stringify(payload) }); },
+  updateUser(id: number | string, payload: AdminUserAuditPayload) { return request<User>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }); },
+  deactivateUser(id: number | string, payload: { reason: string }) { return request<User>(`/users/${id}/deactivate`, { method: "POST", body: JSON.stringify(payload) }); },
+  resetUserPassword(id: number | string, payload: { temporary_password: string; reason: string }) { return request<User>(`/users/${id}/reset-password`, { method: "POST", body: JSON.stringify(payload) }); },
   createBaleLoginChallenge(returnPath = "/") {
     return request<BaleLoginChallenge>("/auth/bale/challenges", {
       method: "POST",
@@ -575,6 +589,9 @@ export const api = {
   },
   productVariants() {
     return request<ProductVariant[]>("/product-variants");
+  },
+  salesFormOptions() {
+    return request<SalesFormOptions>("/sales/form-options");
   },
   storefrontProducts() {
     return request<StorefrontProduct[]>("/storefront/catalog");

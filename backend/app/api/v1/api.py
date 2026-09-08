@@ -9,6 +9,7 @@ from app.api.v1 import purchases
 from app.api.v1 import reports
 from app.api.v1 import sales
 from app.api.v1 import storefront
+from app.api.v1 import users
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -20,4 +21,5 @@ api_router.include_router(purchases.router, tags=["purchases"])
 api_router.include_router(reports.router, tags=["reports"])
 api_router.include_router(sales.router, tags=["sales"])
 api_router.include_router(storefront.router, tags=["storefront"])
+api_router.include_router(users.router, tags=["users"])
 

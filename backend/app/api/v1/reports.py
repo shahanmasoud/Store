@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import get_current_user
+from app.api.v1.auth import require_superuser
 from app.core.time import validate_jalali_date
 from app.db.session import get_db
 from app.schemas.reports import (
@@ -13,7 +13,7 @@ from app.schemas.reports import (
 )
 from app.services import reports as report_service
 
-router = APIRouter(dependencies=[Depends(get_current_user)])
+router = APIRouter(dependencies=[Depends(require_superuser)])
 
 
 def _valid_date(value: str) -> str:

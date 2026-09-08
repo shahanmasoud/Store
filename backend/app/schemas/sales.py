@@ -5,6 +5,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.core.time import validate_jalali_date, validate_local_time
 from app.core.numbers import normalize_identifier, normalize_localized_decimal, normalize_localized_integer
+from app.schemas.catalog import ProductVariantRead
+from app.schemas.ledger import PersonRead
+from app.schemas.purchases import InventoryRead
 
 PaymentMethod = Literal["cash", "card", "transfer", "credit", "cheque", "voucher"]
 PaymentStatus = Literal["received", "pending"]
@@ -169,3 +172,9 @@ class DailyJournalRead(BaseModel):
     pending_total_rial: int
     estimated_profit_rial: int
     payments: list[DailyJournalPaymentBreakdown]
+
+
+class SalesFormOptionsRead(BaseModel):
+    variants: list[ProductVariantRead]
+    inventory: list[InventoryRead]
+    customers: list[PersonRead]

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import get_current_user, require_superuser
+from app.api.v1.auth import require_superuser
 from app.db.session import get_db
 from app.schemas.purchases import (
     InventoryAdjustmentCreate,
@@ -14,7 +14,7 @@ from app.schemas.purchases import (
 from app.models.user import User
 from app.services import purchases as purchase_service
 
-router = APIRouter(dependencies=[Depends(get_current_user)])
+router = APIRouter(dependencies=[Depends(require_superuser)])
 
 
 @router.post("/purchase-invoices", response_model=PurchaseInvoiceRead, status_code=status.HTTP_201_CREATED)
