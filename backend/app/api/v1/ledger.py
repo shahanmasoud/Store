@@ -11,6 +11,7 @@ from app.schemas.ledger import (
     ChequeRead,
     ChequeUpdate,
     DuesRead,
+    DueRemindersRead,
     LedgerEntryCreate,
     LedgerEntryRead,
     LedgerDueAuditRead,
@@ -102,6 +103,22 @@ def dues(jalali_date_to: str = Query(...), db: Session = Depends(get_db)) -> Due
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return ledger_service.get_dues(db, validated_date)
+
+
+@router.get("/due-reminders", response_model=DueRemindersRead)
+def due_reminders(
+    today_jalali: str = Query(...),
+    through_jalali: str = Query(...),
+    db: Session = Depends(get_db),
+) -> DueRemindersRead:
+    try:
+        today = validate_jalali_date(today_jalali)
+        through = validate_jalali_date(through_jalali)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if through < today:
+        raise HTTPException(status_code=422, detail="پایان بازه یادآوری نمی‌تواند پیش از امروز باشد.")
+    return ledger_service.get_due_reminders(db, today, through)
 
 
 @router.post("/cheques", response_model=ChequeRead, status_code=status.HTTP_201_CREATED)

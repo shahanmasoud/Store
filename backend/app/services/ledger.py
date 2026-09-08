@@ -11,6 +11,10 @@ from app.schemas.ledger import (
     ChequeCreate,
     ChequeEventCreate,
     ChequeUpdate,
+    DueReminderGroup,
+    DueReminderItem,
+    DueRemindersRead,
+    DueReminderTotals,
     DuesRead,
     LedgerEntryCreate,
     LedgerDueDateUpdate,
@@ -479,4 +483,91 @@ def get_dues(db: Session, jalali_date_to: str) -> DuesRead:
         jalali_date_to=jalali_date_to,
         open_ledger_entries=open_ledger_entries,
         pending_cheques=pending_cheques,
+    )
+
+
+def _reminder_totals(items: list[DueReminderItem]) -> DueReminderTotals:
+    receivables = [item for item in items if item.direction == "receivable"]
+    payables = [item for item in items if item.direction == "payable"]
+    return DueReminderTotals(
+        count=len(items),
+        total_rial=sum(item.amount_rial for item in items),
+        receivable_count=len(receivables),
+        receivable_total_rial=sum(item.amount_rial for item in receivables),
+        payable_count=len(payables),
+        payable_total_rial=sum(item.amount_rial for item in payables),
+    )
+
+
+def _reminder_group(items: list[DueReminderItem]) -> DueReminderGroup:
+    return DueReminderGroup(items=items, **_reminder_totals(items).model_dump())
+
+
+def get_due_reminders(db: Session, today_jalali: str, through_jalali: str) -> DueRemindersRead:
+    ledger_rows = db.execute(
+        select(LedgerEntry, Person.name)
+        .join(Person, Person.id == LedgerEntry.person_id)
+        .where(
+            LedgerEntry.is_active.is_(True),
+            LedgerEntry.status == "open",
+            LedgerEntry.remaining_rial > 0,
+            LedgerEntry.due_jalali_date.is_not(None),
+            LedgerEntry.due_jalali_date <= through_jalali,
+        )
+    ).all()
+    cheque_rows = db.execute(
+        select(Cheque, Person.name)
+        .outerjoin(Person, Person.id == Cheque.person_id)
+        .where(
+            Cheque.is_active.is_(True),
+            Cheque.status == "pending",
+            Cheque.due_jalali_date <= through_jalali,
+        )
+    ).all()
+
+    items = [
+        DueReminderItem(
+            kind="ledger_entry",
+            record_id=entry.id,
+            person_id=entry.person_id,
+            person_name=person_name,
+            direction="receivable" if entry.entry_type == "debit" else "payable",
+            record_type=entry.entry_type,
+            amount_rial=entry.remaining_rial,
+            due_jalali_date=entry.due_jalali_date,
+            status=entry.status,
+            description=entry.description,
+            cheque_number=None,
+            bank_name=None,
+        )
+        for entry, person_name in ledger_rows
+    ]
+    items.extend(
+        DueReminderItem(
+            kind="cheque",
+            record_id=cheque.id,
+            person_id=cheque.person_id,
+            person_name=person_name,
+            direction="receivable" if cheque.cheque_type == "received" else "payable",
+            record_type=cheque.cheque_type,
+            amount_rial=cheque.amount_rial,
+            due_jalali_date=cheque.due_jalali_date,
+            status=cheque.status,
+            description=cheque.note,
+            cheque_number=cheque.cheque_number,
+            bank_name=cheque.bank_name,
+        )
+        for cheque, person_name in cheque_rows
+    )
+    items.sort(key=lambda item: (item.due_jalali_date, item.kind, item.record_id))
+    overdue = [item for item in items if item.due_jalali_date < today_jalali]
+    today = [item for item in items if item.due_jalali_date == today_jalali]
+    upcoming = [item for item in items if today_jalali < item.due_jalali_date <= through_jalali]
+    return DueRemindersRead(
+        today_jalali=today_jalali,
+        through_jalali=through_jalali,
+        overdue=_reminder_group(overdue),
+        today=_reminder_group(today),
+        upcoming=_reminder_group(upcoming),
+        totals=_reminder_totals(items),
     )

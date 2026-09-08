@@ -40,6 +40,8 @@ import {
   apiAssetUrl,
   type DailyJournal,
   type Dues,
+  type DueReminders,
+  type DueReminderItem,
   type CashflowReport,
   type Category,
   type Cheque,
@@ -218,6 +220,14 @@ function currentJalaliDate() {
   }).formatToParts(new Date());
   const part = (type: Intl.DateTimeFormatPartTypes) =>
     toEnglishDigits(parts.find((item) => item.type === type)?.value ?? "");
+  return `${part("year")}/${part("month").padStart(2, "0")}/${part("day").padStart(2, "0")}`;
+}
+
+function jalaliDateAfterDays(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const parts = new Intl.DateTimeFormat("fa-IR-u-ca-persian", { timeZone: "Asia/Tehran", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => toEnglishDigits(parts.find((item) => item.type === type)?.value ?? "");
   return `${part("year")}/${part("month").padStart(2, "0")}/${part("day").padStart(2, "0")}`;
 }
 
@@ -635,7 +645,7 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
       {view === "inventory" ? <InventoryView onBack={() => navigateView("dashboard")} /> : null}
       {view === "products" ? <ProductsView onBack={() => navigateView("dashboard")} /> : null}
       {view === "ledger" ? <LedgerView onBack={() => navigateView("dashboard")} /> : null}
-      {view === "cheques" ? <ChequesView onBack={() => navigateView("dashboard")} /> : null}
+      {view === "cheques" ? <ChequesView onBack={() => navigateView("dashboard")} onOpenLedger={() => navigateView("ledger")} /> : null}
       {view === "reports" ? <ReportsView onBack={() => navigateView("dashboard")} /> : null}
       {view === "online" ? <OnlineView onBack={() => navigateView("dashboard")} /> : null}
       {view === "dashboard" ? (
@@ -674,7 +684,7 @@ function DashboardView({
   onOpenReports: () => void;
   onOpenOnline: () => void;
 }) {
-  const [snapshot, setSnapshot] = useState<{ journal: DailyJournal; inventory: InventoryReport; dues: Dues } | null>(null);
+  const [snapshot, setSnapshot] = useState<{ journal: DailyJournal; inventory: InventoryReport; reminders: DueReminders } | null>(null);
   const [snapshotStatus, setSnapshotStatus] = useState<"loading" | "ready" | "error">("loading");
   const [snapshotError, setSnapshotError] = useState("");
 
@@ -683,12 +693,12 @@ function DashboardView({
     setSnapshotError("");
     const today = currentJalaliDate();
     try {
-      const [journal, inventory, dues] = await Promise.all([
+      const [journal, inventory, reminders] = await Promise.all([
         api.dailyJournal(today),
         api.inventoryReport(),
-        api.dues(today),
+        api.dueReminders(today, jalaliDateAfterDays(7)),
       ]);
-      setSnapshot({ journal, inventory, dues });
+      setSnapshot({ journal, inventory, reminders });
       setSnapshotStatus("ready");
     } catch (error) {
       setSnapshotError(error instanceof Error ? error.message : "خلاصه وضعیت فروشگاه دریافت نشد.");
@@ -752,7 +762,7 @@ function DashboardView({
             <Card><CardContent><Stack direction="row" sx={{ justifyContent: "space-between" }}><Typography color="text.secondary">فروش امروز</Typography><PointOfSaleRounded color="primary" /></Stack><Typography variant="h5">{formatRial(snapshot.journal.sales_total_rial)}</Typography><Chip size="small" label={`${toPersianDigits(snapshot.journal.invoice_count.toLocaleString("fa-IR"))} فاکتور`} color="primary" variant="outlined" /></CardContent></Card>
             <Card><CardContent><Stack direction="row" sx={{ justifyContent: "space-between" }}><Typography color="text.secondary">دریافت واقعی</Typography><ReceiptLongRounded color="info" /></Stack><Typography variant="h5">{formatRial(snapshot.journal.received_total_rial)}</Typography><LinearProgress aria-label="نسبت مبلغ دریافت‌شده به فروش امروز" variant="determinate" value={snapshot.journal.sales_total_rial > 0 ? Math.min(100, snapshot.journal.received_total_rial / snapshot.journal.sales_total_rial * 100) : 0} sx={{ mt: 1.5 }} /></CardContent></Card>
             <Card><CardContent><Stack direction="row" sx={{ justifyContent: "space-between" }}><Typography color="text.secondary">هشدار موجودی</Typography><Inventory2Rounded color="warning" /></Stack><Typography variant="h5">{toPersianDigits(snapshot.inventory.low_stock_count.toLocaleString("fa-IR"))} کالا</Typography><Button size="small" onClick={onOpenInventory}>{snapshot.inventory.low_stock_count ? "بررسی موجودی" : "انبار بدون هشدار"}</Button></CardContent></Card>
-            <Card><CardContent><Stack direction="row" sx={{ justifyContent: "space-between" }}><Typography color="text.secondary">چک‌های سررسیدشده</Typography><PaymentsRounded color="secondary" /></Stack><Typography variant="h5">{toPersianDigits(snapshot.dues.pending_cheques.length.toLocaleString("fa-IR"))} چک</Typography><Button size="small" onClick={onOpenCheques}>{snapshot.dues.pending_cheques.length ? "پیگیری چک‌ها" : "بدون سررسید معوق"}</Button></CardContent></Card>
+            <Card><CardContent><Stack direction="row" sx={{ justifyContent: "space-between" }}><Typography color="text.secondary">کارهای سررسید امروز</Typography><PaymentsRounded color="secondary" /></Stack><Typography variant="h5">{toPersianDigits((snapshot.reminders.overdue.count + snapshot.reminders.today.count).toLocaleString("fa-IR"))} مورد</Typography><Button size="small" onClick={onOpenCheques}>{snapshot.reminders.overdue.count + snapshot.reminders.today.count ? "پیگیری سررسیدها" : "کار عقب‌افتاده‌ای نیست"}</Button></CardContent></Card>
           </Box>
         ) : null}
       </Box>
@@ -2251,7 +2261,7 @@ function LedgerView({ onBack }: { onBack: () => void }) {
     try { setEntries(await api.personLedger(personId)); setLedgerStatus("ready"); }
     catch (error) { setLedgerStatus("error"); setNotice({ type: "error", text: error instanceof Error ? error.message : "دفتر حساب دریافت نشد." }); }
   }
-  useEffect(() => { loadPeople(); }, []);
+  useEffect(() => { loadPeople(); const focusPersonId = Number(sessionStorage.getItem("store_focus_ledger_person") || 0); if (focusPersonId) { setSelectedId(focusPersonId); sessionStorage.removeItem("store_focus_ledger_person"); } }, []);
   useEffect(() => { if (selectedId) loadLedger(selectedId); else { setEntries([]); setLedgerStatus("idle"); } }, [selectedId]);
 
   function openCreatePerson() {
@@ -2423,7 +2433,7 @@ function LedgerView({ onBack }: { onBack: () => void }) {
   );
 }
 
-function ChequesView({ onBack }: { onBack: () => void }) {
+function ChequesView({ onBack, onOpenLedger }: { onBack: () => void; onOpenLedger: () => void }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [people, setPeople] = useState<Person[]>([]);
@@ -2468,6 +2478,10 @@ function ChequesView({ onBack }: { onBack: () => void }) {
   const [editStale, setEditStale] = useState(false);
   const [chequeAudits, setChequeAudits] = useState<ChequeAudit[]>([]);
   const [chequeAuditsStatus, setChequeAuditsStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [reminderHorizon, setReminderHorizon] = useState(7);
+  const [reminders, setReminders] = useState<DueReminders | null>(null);
+  const [remindersStatus, setRemindersStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [remindersError, setRemindersError] = useState("");
 
   async function load() {
     setStatus("loading");
@@ -2479,7 +2493,21 @@ function ChequesView({ onBack }: { onBack: () => void }) {
     try { setDues(await api.dues(date)); setDuesStatus("ready"); }
     catch (error) { setDuesStatus("error"); setNotice({ type: "error", text: error instanceof Error ? error.message : "سررسیدها دریافت نشدند." }); }
   }
-  useEffect(() => { load(); loadDues(); }, []);
+  async function loadReminders(days = reminderHorizon) {
+    setRemindersStatus("loading"); setRemindersError("");
+    try { setReminders(await api.dueReminders(currentJalaliDate(), jalaliDateAfterDays(days))); setRemindersStatus("ready"); }
+    catch (error) { setRemindersStatus("error"); setRemindersError(error instanceof Error ? error.message : "کارهای سررسید دریافت نشدند."); }
+  }
+  useEffect(() => { load(); loadDues(); void loadReminders(7); }, []);
+
+  function openReminder(item: DueReminderItem) {
+    if (item.kind === "ledger_entry") {
+      if (item.person_id) sessionStorage.setItem("store_focus_ledger_person", String(item.person_id));
+      onOpenLedger(); return;
+    }
+    setSearch(""); setTypeFilter(""); setStatusFilter(""); setDueFilter("all");
+    window.setTimeout(() => document.getElementById(`cheque-${item.record_id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+  }
 
   const pendingReceived = cheques.filter((cheque) => cheque.status === "pending" && cheque.cheque_type === "received");
   const pendingPaid = cheques.filter((cheque) => cheque.status === "pending" && cheque.cheque_type === "paid");
@@ -2567,11 +2595,21 @@ function ChequesView({ onBack }: { onBack: () => void }) {
     <CrudWorkspace title="دفتر چک‌ها و سررسیدها" eyebrow="دریافتی و پرداختی" onBack={onBack}>
       {notice ? <Alert severity={notice.type} onClose={() => setNotice(null)}>{notice.text}</Alert> : null}
       <div className="cheque-kpis"><div><small>دریافتی در انتظار</small><strong>{formatRial(pendingReceived.reduce((sum, item) => sum + item.amount_rial, 0))}</strong><span>{pendingReceived.length.toLocaleString("fa-IR")} فقره</span></div><div><small>پرداختی در انتظار</small><strong>{formatRial(pendingPaid.reduce((sum, item) => sum + item.amount_rial, 0))}</strong><span>{pendingPaid.length.toLocaleString("fa-IR")} فقره</span></div><div className="warning"><small>سررسید تا تاریخ پیگیری</small><strong>{duePending.length.toLocaleString("fa-IR")} فقره</strong><span>{toPersianDigits(duesDate)}</span></div><div><small>کل مبلغ در انتظار</small><strong>{formatRial(pendingTotal)}</strong><span>دریافتی و پرداختی</span></div></div>
+      <section className="sale-panel due-reminder-center" aria-labelledby="due-reminder-title" aria-busy={remindersStatus === "loading"}>
+        <div className="due-reminder-heading"><div><strong id="due-reminder-title">کارهای سررسید</strong><small>امروز {toPersianDigits(currentJalaliDate())} به وقت تهران</small></div><TextField select size="small" label="افق پیگیری" value={reminderHorizon} onChange={(event) => { const days = Number(event.target.value); setReminderHorizon(days); void loadReminders(days); }} disabled={remindersStatus === "loading"}><MenuItem value={7}>۷ روز آینده</MenuItem><MenuItem value={14}>۱۴ روز آینده</MenuItem><MenuItem value={30}>۳۰ روز آینده</MenuItem></TextField></div>
+        {remindersStatus === "loading" ? <div className="due-reminder-loading" role="status"><LinearProgress /><div><span /><span /><span /></div><small>در حال مرتب‌کردن کارهای سررسید…</small></div> : null}
+        {remindersStatus === "error" ? <Alert severity="error" action={<Button color="inherit" startIcon={<RefreshRounded />} onClick={() => void loadReminders()}>تلاش دوباره</Button>}>{remindersError}</Alert> : null}
+        {remindersStatus === "ready" && reminders ? <>
+          <div className="due-reminder-kpis"><article className="overdue"><small>عقب‌افتاده</small><strong>{toPersianDigits(reminders.overdue.count.toLocaleString("fa-IR"))} مورد</strong><span>{formatRial(reminders.overdue.total_rial)}</span></article><article className="today"><small>امروز</small><strong>{toPersianDigits(reminders.today.count.toLocaleString("fa-IR"))} مورد</strong><span>{formatRial(reminders.today.total_rial)}</span></article><article className="upcoming"><small>آینده نزدیک</small><strong>{toPersianDigits(reminders.upcoming.count.toLocaleString("fa-IR"))} مورد</strong><span>{formatRial(reminders.upcoming.total_rial)}</span></article></div>
+          {reminders.totals.count === 0 ? <div className="record-state due-reminder-empty"><FactCheckRounded /><strong>در این بازه کاری برای پیگیری نیست</strong><span>افق پیگیری را بیشتر کنید یا بعداً دوباره بررسی کنید.</span></div> : null}
+          <div className="due-reminder-groups">{([ ["overdue", "عقب‌افتاده"], ["today", "امروز"], ["upcoming", "آینده نزدیک"] ] as const).map(([key, label]) => { const group = reminders[key]; if (!group.items.length) return null; return <section key={key} className={`due-reminder-group ${key}`}><header><strong>{label}</strong><Chip size="small" label={`${toPersianDigits(group.count.toLocaleString("fa-IR"))} مورد`} color={key === "overdue" ? "error" : key === "today" ? "warning" : "info"} /></header><div>{group.items.map((item) => <article key={`${item.kind}-${item.record_id}`}><div className="due-reminder-main"><span className="due-reminder-kind">{item.kind === "cheque" ? <PaymentsRounded /> : <AccountBalanceWalletRounded />}</span><div><strong>{item.person_name || (item.kind === "cheque" ? "چک بدون شخص" : "شخص نامشخص")}</strong><small>{item.kind === "cheque" ? `${item.bank_name || "بانک ثبت نشده"} • شماره ${item.cheque_number ? toPersianDigits(item.cheque_number) : "—"}` : item.description || "سند حساب"}</small></div></div><div className="due-reminder-meta"><span><small>مبلغ</small><strong>{formatRial(item.amount_rial)}</strong></span><span><small>سررسید</small><strong>{toPersianDigits(item.due_jalali_date)}</strong></span><Chip size="small" variant="outlined" label={item.direction === "receivable" ? "دریافتنی" : "پرداختنی"} color={item.direction === "receivable" ? "success" : "secondary"} /></div><Button size="large" variant="outlined" onClick={() => openReminder(item)} startIcon={item.kind === "cheque" ? <PaymentsRounded /> : <HistoryRounded />}>{item.kind === "cheque" ? "نمایش چک" : "بازکردن دفتر شخص"}</Button></article>)}</div></section>; })}</div>
+        </> : null}
+      </section>
       <div className="cheque-layout">
         <form className="sale-panel cheque-create-form" onSubmit={submitCheque} noValidate><div className="ledger-section-heading"><div><strong>ثبت چک جدید</strong><small>اطلاعات روی برگه چک را وارد کنید</small></div></div><div className="cheque-form-grid"><TextField select label="نوع چک" value={chequeType} onChange={(event) => setChequeType(event.target.value as "received" | "paid")} disabled={saving}><MenuItem value="received">دریافتی</MenuItem><MenuItem value="paid">پرداختی</MenuItem></TextField><TextField select label="شخص مرتبط (اختیاری)" value={personId} onChange={(event) => setPersonId(event.target.value)} disabled={saving}><MenuItem value="">بدون شخص</MenuItem>{people.map((person) => <MenuItem value={person.id} key={person.id}>{person.name}</MenuItem>)}</TextField><TextField label="نام بانک" value={bank} onChange={(event) => setBank(event.target.value)} required disabled={saving} error={bank.length > 0 && !bank.trim()} /><TextField label="شماره چک" value={toPersianDigits(number)} onChange={(event) => setNumber(toEnglishDigits(event.target.value))} required disabled={saving} slotProps={{ htmlInput: { dir: "ltr", inputMode: "numeric" } }} /><MoneyField label="مبلغ (تومان)" valueRial={normalizeMoney(amount)} onValueRialChange={(value) => setAmount(moneyInputValue(value))} required disabled={saving} /><JalaliDateField label="تاریخ صدور" value={issueDate} onChange={setIssueDate} required /><JalaliDateField label="تاریخ سررسید" value={dueDate} onChange={setDueDate} required /><TextField label="یادداشت (اختیاری)" value={note} onChange={(event) => setNote(event.target.value)} disabled={saving} /></div>{dueDate < issueDate ? <Alert severity="error">تاریخ سررسید نمی‌تواند پیش از تاریخ صدور باشد.</Alert> : null}<Button type="submit" variant="contained" size="large" disabled={saving || !bank.trim() || !number.trim() || normalizeMoney(amount) <= 0 || dueDate < issueDate} startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <AddRounded />}>{saving ? "در حال ثبت…" : "ثبت چک"}</Button></form>
         <section className="sale-panel dues-panel"><div className="ledger-section-heading"><div><strong>سررسیدها</strong><small>تعهدهای باز تا تاریخ انتخابی</small></div></div><div className="dues-controls"><JalaliDateField label="تا تاریخ" value={duesDate} onChange={setDuesDate} /><Button variant="outlined" size="large" onClick={() => loadDues(duesDate)} disabled={duesStatus === "loading"}>{duesStatus === "loading" ? <CircularProgress size={18} /> : "به‌روزرسانی"}</Button></div>{duesStatus === "error" ? <div className="record-state record-state-error"><span>سررسیدها دریافت نشدند.</span><Button onClick={() => loadDues()}>تلاش دوباره</Button></div> : null}{duesStatus === "ready" && dues && dues.open_ledger_entries.length + dues.pending_cheques.length === 0 ? <div className="record-state"><FactCheckRounded /><strong>تعهد بازی تا این تاریخ نیست</strong></div> : null}{duesStatus === "ready" && dues ? <div className="dues-summary"><div><span>مانده بدهکار سررسیدشده</span><strong>{formatRial(duesDebitRial)}</strong><small>مطالبات فروشگاه</small></div><div><span>مانده بستانکار سررسیدشده</span><strong>{formatRial(duesCreditRial)}</strong><small>تعهد فروشگاه</small></div><div><span>خالص اسناد باز</span><strong>{formatRial(Math.abs(duesDebitRial - duesCreditRial))}</strong><small>{duesDebitRial > duesCreditRial ? "بدهکار" : duesCreditRial > duesDebitRial ? "بستانکار" : "تسویه"}</small></div><div><span>چک در انتظار</span><strong>{dues.pending_cheques.length.toLocaleString("fa-IR")} فقره</strong><small>{formatRial(dues.pending_cheques.reduce((sum, item) => sum + item.amount_rial, 0))}</small></div></div> : null}</section>
       </div>
-      <section className="sale-panel cheque-list-panel"><div className="ledger-section-heading"><div><strong>فهرست چک‌ها</strong><small>جست‌وجو، پیگیری و مشاهده تاریخچه</small></div><Chip label={`${filteredCheques.length.toLocaleString("fa-IR")} نتیجه`} variant="outlined" /></div><div className="cheque-filters"><TextField size="small" label="بانک، شماره یا شخص" value={search} onChange={(event) => setSearch(event.target.value)} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} /><TextField select size="small" label="نوع" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as typeof typeFilter)}><MenuItem value="">همه</MenuItem><MenuItem value="received">دریافتی</MenuItem><MenuItem value="paid">پرداختی</MenuItem></TextField><TextField select size="small" label="وضعیت" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><MenuItem value="">همه</MenuItem><MenuItem value="pending">در انتظار</MenuItem><MenuItem value="cleared">وصول/پاس‌شده</MenuItem><MenuItem value="bounced">برگشتی</MenuItem><MenuItem value="canceled">باطل‌شده</MenuItem></TextField><TextField select size="small" label="سررسید" value={dueFilter} onChange={(event) => setDueFilter(event.target.value as typeof dueFilter)}><MenuItem value="all">همه تاریخ‌ها</MenuItem><MenuItem value="due">تا تاریخ پیگیری</MenuItem></TextField></div>{status === "loading" ? <div className="record-state"><CircularProgress size={26} /><span>در حال دریافت چک‌ها…</span></div> : null}{status === "error" ? <div className="record-state record-state-error"><span>فهرست چک‌ها دریافت نشد.</span><Button variant="outlined" startIcon={<RefreshRounded />} onClick={load}>تلاش دوباره</Button></div> : null}{status === "ready" && cheques.length === 0 ? <div className="record-state"><PaymentsRounded /><strong>هنوز چکی ثبت نشده است</strong></div> : null}{status === "ready" && cheques.length > 0 && filteredCheques.length === 0 ? <div className="record-state"><SearchRounded /><strong>چکی با این فیلتر پیدا نشد</strong></div> : null}<div className="cheque-cards">{filteredCheques.map((cheque) => { const person = people.find((item) => item.id === cheque.person_id); const statusLabel = ({ pending: "در انتظار", cleared: cheque.cheque_type === "received" ? "وصول‌شده" : "پاس‌شده", bounced: "برگشتی", canceled: "باطل‌شده" } as const)[cheque.status]; const canClear = cheque.status === "pending" || cheque.status === "bounced"; const canBounce = cheque.status === "pending"; const canCancel = cheque.status === "pending" || cheque.status === "bounced"; return <article className={`cheque-card status-${cheque.status}`} key={cheque.id}><div className="cheque-card-main"><div className="cheque-card-heading"><span className="cheque-bank-icon"><PaymentsRounded /></span><div><strong>{cheque.bank_name}</strong><small>شماره {toPersianDigits(cheque.cheque_number)}</small></div><Chip size="small" label={statusLabel} color={cheque.status === "cleared" ? "success" : cheque.status === "bounced" ? "error" : cheque.status === "pending" ? "warning" : "default"} /></div><div className="cheque-meta"><span><small>نوع</small><strong>{cheque.cheque_type === "received" ? "دریافتی" : "پرداختی"}</strong></span><span><small>شخص</small><strong>{person?.name || "ثبت نشده"}</strong></span><span><small>سررسید</small><strong>{toPersianDigits(cheque.due_jalali_date)}</strong></span></div></div><div className="cheque-card-amount"><small>مبلغ چک</small><strong>{formatRial(cheque.amount_rial)}</strong></div><div className="cheque-actions">{cheque.status === "pending" && cheque.is_active ? <Button size="large" variant="contained" startIcon={<EditRounded />} onClick={() => openChequeEdit(cheque)}>ویرایش</Button> : null}<Button size="large" variant="outlined" color="success" disabled={!canClear} onClick={() => openEvent(cheque, "cleared")}>{cheque.cheque_type === "received" ? "وصول" : "پاس"}</Button><Button size="large" variant="outlined" color="error" disabled={!canBounce} onClick={() => openEvent(cheque, "bounced")}>برگشت</Button><Button size="large" disabled={!canCancel} onClick={() => openEvent(cheque, "canceled")}>ابطال</Button><Button size="large" startIcon={<HistoryRounded />} onClick={() => setHistoryId(historyId === cheque.id ? null : cheque.id)}>تاریخچه</Button></div>{historyId === cheque.id ? <div className="cheque-history">{cheque.events.map((item) => <div key={item.id}><span /><p><strong>{({ created: "ثبت چک", cleared: "وصول/پاس", bounced: "برگشت", canceled: "ابطال" } as const)[item.event_type]}</strong><small>{toPersianDigits(item.jalali_date)}، ساعت {toPersianDigits(item.local_time)}{item.note ? ` • ${item.note}` : ""}</small></p></div>)}</div> : null}</article>; })}</div></section>
+      <section className="sale-panel cheque-list-panel"><div className="ledger-section-heading"><div><strong>فهرست چک‌ها</strong><small>جست‌وجو، پیگیری و مشاهده تاریخچه</small></div><Chip label={`${filteredCheques.length.toLocaleString("fa-IR")} نتیجه`} variant="outlined" /></div><div className="cheque-filters"><TextField size="small" label="بانک، شماره یا شخص" value={search} onChange={(event) => setSearch(event.target.value)} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} /><TextField select size="small" label="نوع" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as typeof typeFilter)}><MenuItem value="">همه</MenuItem><MenuItem value="received">دریافتی</MenuItem><MenuItem value="paid">پرداختی</MenuItem></TextField><TextField select size="small" label="وضعیت" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><MenuItem value="">همه</MenuItem><MenuItem value="pending">در انتظار</MenuItem><MenuItem value="cleared">وصول/پاس‌شده</MenuItem><MenuItem value="bounced">برگشتی</MenuItem><MenuItem value="canceled">باطل‌شده</MenuItem></TextField><TextField select size="small" label="سررسید" value={dueFilter} onChange={(event) => setDueFilter(event.target.value as typeof dueFilter)}><MenuItem value="all">همه تاریخ‌ها</MenuItem><MenuItem value="due">تا تاریخ پیگیری</MenuItem></TextField></div>{status === "loading" ? <div className="record-state"><CircularProgress size={26} /><span>در حال دریافت چک‌ها…</span></div> : null}{status === "error" ? <div className="record-state record-state-error"><span>فهرست چک‌ها دریافت نشد.</span><Button variant="outlined" startIcon={<RefreshRounded />} onClick={load}>تلاش دوباره</Button></div> : null}{status === "ready" && cheques.length === 0 ? <div className="record-state"><PaymentsRounded /><strong>هنوز چکی ثبت نشده است</strong></div> : null}{status === "ready" && cheques.length > 0 && filteredCheques.length === 0 ? <div className="record-state"><SearchRounded /><strong>چکی با این فیلتر پیدا نشد</strong></div> : null}<div className="cheque-cards">{filteredCheques.map((cheque) => { const person = people.find((item) => item.id === cheque.person_id); const statusLabel = ({ pending: "در انتظار", cleared: cheque.cheque_type === "received" ? "وصول‌شده" : "پاس‌شده", bounced: "برگشتی", canceled: "باطل‌شده" } as const)[cheque.status]; const canClear = cheque.status === "pending" || cheque.status === "bounced"; const canBounce = cheque.status === "pending"; const canCancel = cheque.status === "pending" || cheque.status === "bounced"; return <article id={`cheque-${cheque.id}`} className={`cheque-card status-${cheque.status}`} key={cheque.id}><div className="cheque-card-main"><div className="cheque-card-heading"><span className="cheque-bank-icon"><PaymentsRounded /></span><div><strong>{cheque.bank_name}</strong><small>شماره {toPersianDigits(cheque.cheque_number)}</small></div><Chip size="small" label={statusLabel} color={cheque.status === "cleared" ? "success" : cheque.status === "bounced" ? "error" : cheque.status === "pending" ? "warning" : "default"} /></div><div className="cheque-meta"><span><small>نوع</small><strong>{cheque.cheque_type === "received" ? "دریافتی" : "پرداختی"}</strong></span><span><small>شخص</small><strong>{person?.name || "ثبت نشده"}</strong></span><span><small>سررسید</small><strong>{toPersianDigits(cheque.due_jalali_date)}</strong></span></div></div><div className="cheque-card-amount"><small>مبلغ چک</small><strong>{formatRial(cheque.amount_rial)}</strong></div><div className="cheque-actions">{cheque.status === "pending" && cheque.is_active ? <Button size="large" variant="contained" startIcon={<EditRounded />} onClick={() => openChequeEdit(cheque)}>ویرایش</Button> : null}<Button size="large" variant="outlined" color="success" disabled={!canClear} onClick={() => openEvent(cheque, "cleared")}>{cheque.cheque_type === "received" ? "وصول" : "پاس"}</Button><Button size="large" variant="outlined" color="error" disabled={!canBounce} onClick={() => openEvent(cheque, "bounced")}>برگشت</Button><Button size="large" disabled={!canCancel} onClick={() => openEvent(cheque, "canceled")}>ابطال</Button><Button size="large" startIcon={<HistoryRounded />} onClick={() => setHistoryId(historyId === cheque.id ? null : cheque.id)}>تاریخچه</Button></div>{historyId === cheque.id ? <div className="cheque-history">{cheque.events.map((item) => <div key={item.id}><span /><p><strong>{({ created: "ثبت چک", cleared: "وصول/پاس", bounced: "برگشت", canceled: "ابطال" } as const)[item.event_type]}</strong><small>{toPersianDigits(item.jalali_date)}، ساعت {toPersianDigits(item.local_time)}{item.note ? ` • ${item.note}` : ""}</small></p></div>)}</div> : null}</article>; })}</div></section>
       <Dialog open={editCheque !== null} onClose={() => { if (!editSaving) setEditCheque(null); }} fullWidth maxWidth="md" fullScreen={isMobile} className="cheque-edit-dialog" aria-labelledby="cheque-edit-title">
         <form className="cheque-edit-dialog-form" onSubmit={submitChequeEdit} noValidate>
           <DialogTitle id="cheque-edit-title"><Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1 }}><span>ویرایش چک {editCheque ? toPersianDigits(editCheque.cheque_number) : ""}</span><IconButton aria-label="بستن" onClick={() => setEditCheque(null)} disabled={editSaving}><CloseRounded /></IconButton></Stack></DialogTitle>

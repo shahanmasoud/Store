@@ -6,7 +6,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -850,6 +850,138 @@ def test_0015_migration_backfills_legacy_snapshot_without_changing_cheque(
     assert audit["actor_user_id"] is None
     assert '"cheque_number": "legacy-77"' in audit["after_json"]
     get_settings.cache_clear()
+
+
+def test_due_reminders_group_boundaries_totals_nullable_person_and_stable_order(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    person = create_person(client, auth_headers)
+    overdue_ledger = create_entry(
+        client, auth_headers, person["id"], 1_000_000, "1405/06/01", "debit", due_jalali_date="1405/06/09"
+    )
+    today_ledger = create_entry(
+        client, auth_headers, person["id"], 400_000, "1405/06/02", "credit", due_jalali_date="1405/06/10"
+    )
+    upcoming_cheque = client.post(
+        "/api/v1/cheques",
+        json={
+            "cheque_type": "received", "person_id": None, "bank_name": "ملت",
+            "cheque_number": "reminder-1", "amount_rial": 750_000,
+            "issue_jalali_date": "1405/06/01", "due_jalali_date": "1405/06/15",
+            "local_time": "09:00", "note": "چک بدون شخص",
+        },
+        headers=auth_headers,
+    ).json()
+    same_day_cheque = client.post(
+        "/api/v1/cheques",
+        json={
+            "cheque_type": "paid", "person_id": person["id"], "bank_name": "ملی",
+            "cheque_number": "reminder-2", "amount_rial": 250_000,
+            "issue_jalali_date": "1405/06/01", "due_jalali_date": "1405/06/10", "local_time": "09:00",
+        },
+        headers=auth_headers,
+    ).json()
+
+    response = client.get(
+        "/api/v1/due-reminders?today_jalali=۱۴۰۵/۰۶/۱۰&through_jalali=۱۴۰۵/۰۶/۱۵",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["today_jalali"] == "1405/06/10"
+    assert [(item["kind"], item["record_id"]) for item in data["overdue"]["items"]] == [
+        ("ledger_entry", overdue_ledger["id"])
+    ]
+    assert [(item["kind"], item["record_id"]) for item in data["today"]["items"]] == [
+        ("cheque", same_day_cheque["id"]), ("ledger_entry", today_ledger["id"])
+    ]
+    assert [(item["kind"], item["record_id"]) for item in data["upcoming"]["items"]] == [
+        ("cheque", upcoming_cheque["id"])
+    ]
+    assert data["upcoming"]["items"][0] == {
+        "kind": "cheque", "record_id": upcoming_cheque["id"], "person_id": None, "person_name": None,
+        "direction": "receivable", "record_type": "received", "amount_rial": 750_000,
+        "due_jalali_date": "1405/06/15", "status": "pending", "description": "چک بدون شخص",
+        "cheque_number": "reminder-1", "bank_name": "ملت",
+    }
+    assert data["totals"] == {
+        "count": 4, "total_rial": 2_400_000,
+        "receivable_count": 2, "receivable_total_rial": 1_750_000,
+        "payable_count": 2, "payable_total_rial": 650_000,
+    }
+    assert data["today"]["count"] == 2
+    assert data["today"]["total_rial"] == 650_000
+
+
+def test_due_reminders_exclusions_auth_range_and_query_count(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    db_session: Session,
+) -> None:
+    person = create_person(client, auth_headers)
+    create_entry(client, auth_headers, person["id"], 100, "1405/01/01")
+    future = create_entry(
+        client, auth_headers, person["id"], 200, "1405/01/01", due_jalali_date="1405/07/01"
+    )
+    settled = create_entry(
+        client, auth_headers, person["id"], 300, "1405/01/01", due_jalali_date="1405/06/05"
+    )
+    inactive = create_entry(
+        client, auth_headers, person["id"], 400, "1405/01/01", due_jalali_date="1405/06/05"
+    )
+    db_session.get(LedgerEntry, settled["id"]).status = "settled"
+    db_session.get(LedgerEntry, settled["id"]).remaining_rial = 0
+    db_session.get(LedgerEntry, inactive["id"]).is_active = False
+    db_session.commit()
+    cleared = client.post(
+        "/api/v1/cheques",
+        json={
+            "cheque_type": "received", "bank_name": "ملی", "cheque_number": "excluded-cleared",
+            "amount_rial": 500, "issue_jalali_date": "1405/06/01",
+            "due_jalali_date": "1405/06/05", "local_time": "09:00",
+        },
+        headers=auth_headers,
+    ).json()
+    client.post(
+        f"/api/v1/cheques/{cleared['id']}/events",
+        json={"event_type": "cleared", "jalali_date": "1405/06/06", "local_time": "09:00"},
+        headers=auth_headers,
+    )
+
+    assert client.get(
+        "/api/v1/due-reminders?today_jalali=1405/06/10&through_jalali=1405/06/20"
+    ).status_code == 401
+    assert client.get(
+        "/api/v1/due-reminders?today_jalali=1405/06/20&through_jalali=1405/06/10", headers=auth_headers
+    ).status_code == 422
+    assert client.get(
+        "/api/v1/due-reminders?today_jalali=1405/13/01&through_jalali=1405/13/02", headers=auth_headers
+    ).status_code == 422
+
+    statement_count = 0
+
+    def count_statement(*_args) -> None:
+        nonlocal statement_count
+        statement_count += 1
+
+    engine = db_session.get_bind()
+    event.listen(engine, "before_cursor_execute", count_statement)
+    try:
+        response = client.get(
+            "/api/v1/due-reminders?today_jalali=1405/06/10&through_jalali=1405/06/20", headers=auth_headers
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", count_statement)
+    assert response.status_code == 200
+    assert response.json()["totals"]["count"] == 0
+    assert future["id"] not in [
+        item["record_id"]
+        for group in ("overdue", "today", "upcoming")
+        for item in response.json()[group]["items"]
+    ]
+    # One auth lookup plus one joined query per financial source; no person N+1 queries.
+    assert statement_count == 3
 
 
 def test_person_update_validation_and_soft_delete_preserve_financial_history(

@@ -372,6 +372,30 @@ export type ChequeAudit = {
   occurred_at_utc: string;
 };
 export type Dues = { jalali_date_to: string; open_ledger_entries: LedgerEntry[]; pending_cheques: Cheque[] };
+export type DueReminderItem = {
+  kind: "ledger_entry" | "cheque";
+  record_id: number;
+  person_id?: number | null;
+  person_name?: string | null;
+  direction: "receivable" | "payable";
+  record_type: "debit" | "credit" | "received" | "paid";
+  amount_rial: number;
+  due_jalali_date: string;
+  status: string;
+  description?: string | null;
+  cheque_number?: string | null;
+  bank_name?: string | null;
+};
+export type DueReminders = {
+  today_jalali: string;
+  through_jalali: string;
+  overdue: DueReminderGroup;
+  today: DueReminderGroup;
+  upcoming: DueReminderGroup;
+  totals: DueReminderTotals;
+};
+export type DueReminderTotals = { count: number; total_rial: number; receivable_count: number; receivable_total_rial: number; payable_count: number; payable_total_rial: number };
+export type DueReminderGroup = DueReminderTotals & { items: DueReminderItem[] };
 export type SalesSummaryReport = {
   from_jalali: string;
   to_jalali: string;
@@ -727,6 +751,9 @@ export const api = {
   },
   dues(jalaliDateTo: string) {
     return request<Dues>(`/dues?jalali_date_to=${encodeURIComponent(jalaliDateTo)}`);
+  },
+  dueReminders(todayJalali: string, throughJalali: string) {
+    return request<DueReminders>(`/due-reminders?today_jalali=${encodeURIComponent(todayJalali)}&through_jalali=${encodeURIComponent(throughJalali)}`);
   },
   cheques() {
     return request<Cheque[]>("/cheques");

@@ -407,3 +407,45 @@ class DuesRead(BaseModel):
     jalali_date_to: str
     open_ledger_entries: list[LedgerEntryRead]
     pending_cheques: list[ChequeRead]
+
+
+DueReminderKind = Literal["ledger_entry", "cheque"]
+DueReminderDirection = Literal["receivable", "payable"]
+DueReminderRecordType = Literal["debit", "credit", "received", "paid"]
+
+
+class DueReminderItem(BaseModel):
+    kind: DueReminderKind
+    record_id: int
+    person_id: int | None
+    person_name: str | None
+    direction: DueReminderDirection
+    record_type: DueReminderRecordType
+    amount_rial: int
+    due_jalali_date: str
+    status: str
+    description: str | None
+    cheque_number: str | None
+    bank_name: str | None
+
+
+class DueReminderTotals(BaseModel):
+    count: int
+    total_rial: int
+    receivable_count: int
+    receivable_total_rial: int
+    payable_count: int
+    payable_total_rial: int
+
+
+class DueReminderGroup(DueReminderTotals):
+    items: list[DueReminderItem]
+
+
+class DueRemindersRead(BaseModel):
+    today_jalali: str
+    through_jalali: str
+    overdue: DueReminderGroup
+    today: DueReminderGroup
+    upcoming: DueReminderGroup
+    totals: DueReminderTotals
