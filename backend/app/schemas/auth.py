@@ -63,6 +63,7 @@ class UserAdminCreate(BaseModel):
     can_sales: bool = False
     can_catalog_inventory: bool = False
     can_ledger: bool = False
+    can_cheques_reports: bool = False
     reason: str = Field(min_length=3, max_length=2000)
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -73,13 +74,14 @@ class UserAdminUpdate(BaseModel):
     can_sales: bool | None = None
     can_catalog_inventory: bool | None = None
     can_ledger: bool | None = None
+    can_cheques_reports: bool | None = None
     reason: str = Field(min_length=3, max_length=2000)
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     @model_validator(mode="after")
     def require_change(self) -> "UserAdminUpdate":
-        if self.full_name is None and self.can_sales is None and self.can_catalog_inventory is None and self.can_ledger is None:
+        if self.full_name is None and self.can_sales is None and self.can_catalog_inventory is None and self.can_ledger is None and self.can_cheques_reports is None:
             raise ValueError("حداقل یک تغییر برای کاربر مشخص کنید.")
         return self
 

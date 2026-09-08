@@ -203,6 +203,14 @@ class LedgerDueAuditRead(BaseModel):
     occurred_at_utc: datetime
 
 
+class ChequePersonOption(BaseModel):
+    id: int
+    name: str
+    person_type: PersonType
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class SettlementCreate(BaseModel):
     person_id: int
     entry_type: LedgerEntryType = "debit"

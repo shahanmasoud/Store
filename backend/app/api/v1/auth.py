@@ -65,6 +65,18 @@ def require_permission(permission: PermissionName) -> Callable[..., User]:
     return permission_dependency
 
 
+def require_any_permission(*permissions: PermissionName) -> Callable[..., User]:
+    def permission_dependency(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.is_superuser or any(bool(getattr(current_user, permission, False)) for permission in permissions):
+            return current_user
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="شما اجازه دسترسی به این بخش را ندارید.",
+        )
+
+    return permission_dependency
+
+
 @router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse:
     user = authenticate_user(db, username=payload.username, password=payload.password)

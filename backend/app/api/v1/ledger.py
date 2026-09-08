@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import require_permission, require_superuser
+from app.api.v1.auth import require_any_permission, require_permission, require_superuser
 from app.core.time import validate_jalali_date
 from app.db.session import get_db
 from app.schemas.ledger import (
     ChequeCreate,
     ChequeAuditRead,
     ChequeEventCreate,
+    ChequePersonOption,
     ChequeRead,
     ChequeUpdate,
     DuesRead,
@@ -97,12 +98,12 @@ def create_settlement(payload: SettlementCreate, db: Session = Depends(get_db), 
 
 
 @router.get("/dues", response_model=DuesRead)
-def dues(jalali_date_to: str = Query(...), db: Session = Depends(get_db), _=Depends(require_permission("can_ledger"))) -> DuesRead:
+def dues(jalali_date_to: str = Query(...), db: Session = Depends(get_db), actor=Depends(require_any_permission("can_ledger", "can_cheques_reports"))) -> DuesRead:
     try:
         validated_date = validate_jalali_date(jalali_date_to)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return ledger_service.get_dues(db, validated_date)
+    return ledger_service.get_dues(db, validated_date, include_ledger=actor.is_superuser or actor.can_ledger, include_cheques=actor.is_superuser or actor.can_cheques_reports)
 
 
 @router.get("/due-reminders", response_model=DueRemindersRead)
@@ -110,7 +111,7 @@ def due_reminders(
     today_jalali: str = Query(...),
     through_jalali: str = Query(...),
     db: Session = Depends(get_db),
-    _=Depends(require_permission("can_ledger")),
+    actor=Depends(require_any_permission("can_ledger", "can_cheques_reports")),
 ) -> DueRemindersRead:
     try:
         today = validate_jalali_date(today_jalali)
@@ -119,14 +120,14 @@ def due_reminders(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if through < today:
         raise HTTPException(status_code=422, detail="پایان بازه یادآوری نمی‌تواند پیش از امروز باشد.")
-    return ledger_service.get_due_reminders(db, today, through)
+    return ledger_service.get_due_reminders(db, today, through, include_ledger=actor.is_superuser or actor.can_ledger, include_cheques=actor.is_superuser or actor.can_cheques_reports)
 
 
 @router.post("/cheques", response_model=ChequeRead, status_code=status.HTTP_201_CREATED)
 def create_cheque(
     payload: ChequeCreate,
     db: Session = Depends(get_db),
-    admin=Depends(require_superuser),
+    admin=Depends(require_permission("can_cheques_reports")),
 ) -> ChequeRead:
     return ledger_service.create_cheque(db, payload, admin)
 
@@ -136,7 +137,7 @@ def update_cheque(
     cheque_id: int,
     payload: ChequeUpdate,
     db: Session = Depends(get_db),
-    admin=Depends(require_superuser),
+    admin=Depends(require_permission("can_cheques_reports")),
 ) -> ChequeRead:
     return ledger_service.update_cheque(db, cheque_id, payload, admin)
 
@@ -146,7 +147,7 @@ def create_cheque_event(
     cheque_id: int,
     payload: ChequeEventCreate,
     db: Session = Depends(get_db),
-    admin=Depends(require_superuser),
+    admin=Depends(require_permission("can_cheques_reports")),
 ) -> ChequeRead:
     return ledger_service.add_cheque_event(db, cheque_id, payload, admin)
 
@@ -155,11 +156,16 @@ def create_cheque_event(
 def cheque_audits(
     cheque_id: int,
     db: Session = Depends(get_db),
-    _admin: object = Depends(require_superuser),
+    _admin: object = Depends(require_permission("can_cheques_reports")),
 ) -> list[ChequeAuditRead]:
     return ledger_service.list_cheque_audits(db, cheque_id)
 
 
 @router.get("/cheques", response_model=list[ChequeRead])
-def cheques(db: Session = Depends(get_db), _=Depends(require_superuser)) -> list[ChequeRead]:
+def cheques(db: Session = Depends(get_db), _=Depends(require_permission("can_cheques_reports"))) -> list[ChequeRead]:
     return ledger_service.list_cheques(db)
+
+
+@router.get("/cheques/form-options", response_model=list[ChequePersonOption])
+def cheque_form_options(db: Session = Depends(get_db), _=Depends(require_permission("can_cheques_reports"))) -> list[ChequePersonOption]:
+    return ledger_service.list_persons(db, include_inactive=False)

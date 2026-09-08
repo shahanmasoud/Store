@@ -15,7 +15,7 @@ from app.core.security import get_password_hash
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.ledger import LedgerActionAudit
+from app.models.ledger import Cheque, ChequeAudit, LedgerActionAudit
 from app.models.user import User, UserAdminAudit
 
 
@@ -72,6 +72,7 @@ def create_cashier(
     can_sales: bool = True,
     can_catalog_inventory: bool = False,
     can_ledger: bool = False,
+    can_cheques_reports: bool = False,
 ) -> dict:
     response = client.post(
         "/api/v1/users",
@@ -83,6 +84,7 @@ def create_cashier(
             "can_sales": can_sales,
             "can_catalog_inventory": can_catalog_inventory,
             "can_ledger": can_ledger,
+            "can_cheques_reports": can_cheques_reports,
             "reason": "ایجاد حساب برای شیفت فروش",
         },
     )
@@ -113,7 +115,7 @@ def test_users_require_authentication_and_superuser(client: TestClient, db_sessi
 
 @pytest.mark.parametrize(
     "forbidden_field,forbidden_value",
-    [("is_superuser", True), ("can_cheques_reports", True)],
+    [("is_superuser", True)],
 )
 def test_create_user_forbids_privilege_escalation_fields(
     client: TestClient, forbidden_field: str, forbidden_value: bool
@@ -240,7 +242,7 @@ def test_catalog_inventory_operator_matrix_and_adjustment_actor(client: TestClie
     # No implicit access is gained outside the granted section.
     assert client.get("/api/v1/sales", headers=headers).status_code == 403
     assert client.get("/api/v1/persons", headers=headers).status_code == 403
-    assert client.get("/api/v1/reports/inventory", headers=headers).status_code == 403
+    assert client.get("/api/v1/reports/inventory", headers=headers).status_code == 200
     assert client.get("/api/v1/online/channels", headers=headers).status_code == 403
 
 
@@ -431,6 +433,59 @@ def test_ledger_operator_can_manage_ledger_with_actor_audit_but_not_cheques_or_r
     )
     assert update.status_code == 200
     assert client.get("/api/v1/persons", headers={"Authorization": f"Bearer {old_token}"}).status_code == 401
+
+
+def test_cheque_report_operator_is_audited_and_cannot_cancel(client: TestClient, db_session: Session) -> None:
+    operator = create_cashier(
+        client,
+        username="cheques",
+        password="cheques-pass-123",
+        can_sales=False,
+        can_cheques_reports=True,
+    )
+    headers = {"Authorization": f"Bearer {login(client, 'cheques', 'cheques-pass-123')}"}
+    assert client.get("/api/v1/cheques/form-options", headers=headers).status_code == 200
+    created = client.post(
+        "/api/v1/cheques",
+        headers=headers,
+        json={
+            "cheque_type": "received",
+            "bank_name": "ملی",
+            "cheque_number": "۱۲۳۴۵",
+            "amount_rial": 500000,
+            "issue_jalali_date": "1405/06/20",
+            "due_jalali_date": "1405/06/25",
+            "local_time": "10:00",
+        },
+    )
+    assert created.status_code == 201, created.text
+    cheque_id = created.json()["id"]
+    assert client.get("/api/v1/cheques", headers=headers).status_code == 200
+    assert client.get("/api/v1/reports/customer-debts", headers=headers).status_code == 200
+    reminders = client.get(
+        "/api/v1/due-reminders?today_jalali=1405/06/20&through_jalali=1405/06/30", headers=headers
+    )
+    assert reminders.status_code == 200
+    assert {item["kind"] for item in reminders.json()["upcoming"]["items"]} == {"cheque"}
+    canceled = client.post(
+        f"/api/v1/cheques/{cheque_id}/events",
+        headers=headers,
+        json={"event_type": "canceled", "jalali_date": "1405/06/21", "local_time": "11:00"},
+    )
+    assert canceled.status_code == 403
+    assert db_session.get(Cheque, cheque_id).status == "pending"
+    audits = list(db_session.scalars(select(ChequeAudit).where(ChequeAudit.cheque_id == cheque_id)))
+    assert len(audits) == 1
+    assert audits[0].actor_user_id == operator["id"]
+
+    old_token = login(client, "cheques", "cheques-pass-123")
+    response = client.patch(
+        f"/api/v1/users/{operator['id']}",
+        headers=admin_headers(client),
+        json={"can_cheques_reports": False, "reason": "پایان مسئولیت چک"},
+    )
+    assert response.status_code == 200
+    assert client.get("/api/v1/cheques", headers={"Authorization": f"Bearer {old_token}"}).status_code == 401
 
 
 def test_0016_migration_preserves_legacy_users_with_deny_defaults(

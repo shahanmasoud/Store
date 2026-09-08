@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import require_superuser
+from app.api.v1.auth import require_any_permission, require_permission
 from app.core.time import validate_jalali_date
 from app.db.session import get_db
 from app.schemas.reports import (
@@ -13,7 +13,7 @@ from app.schemas.reports import (
 )
 from app.services import reports as report_service
 
-router = APIRouter(dependencies=[Depends(require_superuser)])
+router = APIRouter()
 
 
 def _valid_date(value: str) -> str:
@@ -31,7 +31,7 @@ def _valid_date_range(from_jalali: str, to_jalali: str) -> tuple[str, str]:
     return valid_from, valid_to
 
 
-@router.get("/reports/sales-summary", response_model=SalesSummaryRead)
+@router.get("/reports/sales-summary", response_model=SalesSummaryRead, dependencies=[Depends(require_permission("can_cheques_reports"))])
 def sales_summary(
     from_jalali: str = Query(...),
     to_jalali: str = Query(...),
@@ -41,7 +41,7 @@ def sales_summary(
     return report_service.sales_summary(db, valid_from, valid_to)
 
 
-@router.get("/reports/profit-loss", response_model=ProfitLossRead)
+@router.get("/reports/profit-loss", response_model=ProfitLossRead, dependencies=[Depends(require_permission("can_cheques_reports"))])
 def profit_loss(
     from_jalali: str = Query(...),
     to_jalali: str = Query(...),
@@ -51,16 +51,16 @@ def profit_loss(
     return report_service.profit_loss(db, valid_from, valid_to)
 
 
-@router.get("/reports/inventory", response_model=InventoryReportRead)
+@router.get("/reports/inventory", response_model=InventoryReportRead, dependencies=[Depends(require_any_permission("can_catalog_inventory", "can_cheques_reports"))])
 def inventory(db: Session = Depends(get_db)) -> InventoryReportRead:
     return report_service.inventory_report(db)
 
 
-@router.get("/reports/cashflow", response_model=CashflowReportRead)
+@router.get("/reports/cashflow", response_model=CashflowReportRead, dependencies=[Depends(require_permission("can_cheques_reports"))])
 def cashflow(jalali_date_to: str = Query(...), db: Session = Depends(get_db)) -> CashflowReportRead:
     return report_service.cashflow_report(db, _valid_date(jalali_date_to))
 
 
-@router.get("/reports/customer-debts", response_model=CustomerDebtReportRead)
+@router.get("/reports/customer-debts", response_model=CustomerDebtReportRead, dependencies=[Depends(require_permission("can_cheques_reports"))])
 def customer_debts(db: Session = Depends(get_db)) -> CustomerDebtReportRead:
     return report_service.customer_debts(db)

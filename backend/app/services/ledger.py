@@ -416,6 +416,8 @@ def update_cheque(db: Session, cheque_id: int, payload: ChequeUpdate, actor: Use
 
 def add_cheque_event(db: Session, cheque_id: int, payload: ChequeEventCreate, actor: User) -> Cheque:
     cheque = _cheque_or_404(db, cheque_id)
+    if payload.event_type == "canceled" and not actor.is_superuser:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="فقط مدیر اصلی اجازه ابطال چک را دارد.")
     allowed_transitions = {
         "pending": {"cleared", "bounced", "canceled"},
         "bounced": {"cleared", "canceled"},
@@ -479,31 +481,39 @@ def list_cheques(db: Session) -> list[Cheque]:
     )
 
 
-def get_dues(db: Session, jalali_date_to: str) -> DuesRead:
-    open_ledger_entries = list(
-        db.scalars(
-            select(LedgerEntry)
-            .where(
-                LedgerEntry.status == "open",
-                LedgerEntry.remaining_rial > 0,
-                LedgerEntry.due_jalali_date.is_not(None),
-                LedgerEntry.due_jalali_date <= jalali_date_to,
-                LedgerEntry.is_active.is_(True),
+def get_dues(db: Session, jalali_date_to: str, *, include_ledger: bool = True, include_cheques: bool = True) -> DuesRead:
+    open_ledger_entries = (
+        list(
+            db.scalars(
+                select(LedgerEntry)
+                .where(
+                    LedgerEntry.status == "open",
+                    LedgerEntry.remaining_rial > 0,
+                    LedgerEntry.due_jalali_date.is_not(None),
+                    LedgerEntry.due_jalali_date <= jalali_date_to,
+                    LedgerEntry.is_active.is_(True),
+                )
+                .order_by(LedgerEntry.due_jalali_date, LedgerEntry.jalali_date, LedgerEntry.local_time, LedgerEntry.id)
             )
-            .order_by(LedgerEntry.due_jalali_date, LedgerEntry.jalali_date, LedgerEntry.local_time, LedgerEntry.id)
         )
+        if include_ledger
+        else []
     )
-    pending_cheques = list(
-        db.scalars(
-            select(Cheque)
-            .options(selectinload(Cheque.events))
-            .where(
-                Cheque.status == "pending",
-                Cheque.due_jalali_date <= jalali_date_to,
-                Cheque.is_active.is_(True),
+    pending_cheques = (
+        list(
+            db.scalars(
+                select(Cheque)
+                .options(selectinload(Cheque.events))
+                .where(
+                    Cheque.status == "pending",
+                    Cheque.due_jalali_date <= jalali_date_to,
+                    Cheque.is_active.is_(True),
+                )
+                .order_by(Cheque.due_jalali_date, Cheque.id)
             )
-            .order_by(Cheque.due_jalali_date, Cheque.id)
         )
+        if include_cheques
+        else []
     )
     return DuesRead(
         jalali_date_to=jalali_date_to,
@@ -529,7 +539,7 @@ def _reminder_group(items: list[DueReminderItem]) -> DueReminderGroup:
     return DueReminderGroup(items=items, **_reminder_totals(items).model_dump())
 
 
-def get_due_reminders(db: Session, today_jalali: str, through_jalali: str) -> DueRemindersRead:
+def get_due_reminders(db: Session, today_jalali: str, through_jalali: str, *, include_ledger: bool = True, include_cheques: bool = True) -> DueRemindersRead:
     ledger_rows = db.execute(
         select(LedgerEntry, Person.name)
         .join(Person, Person.id == LedgerEntry.person_id)
@@ -540,7 +550,7 @@ def get_due_reminders(db: Session, today_jalali: str, through_jalali: str) -> Du
             LedgerEntry.due_jalali_date.is_not(None),
             LedgerEntry.due_jalali_date <= through_jalali,
         )
-    ).all()
+    ).all() if include_ledger else []
     cheque_rows = db.execute(
         select(Cheque, Person.name)
         .outerjoin(Person, Person.id == Cheque.person_id)
@@ -549,7 +559,7 @@ def get_due_reminders(db: Session, today_jalali: str, through_jalali: str) -> Du
             Cheque.status == "pending",
             Cheque.due_jalali_date <= through_jalali,
         )
-    ).all()
+    ).all() if include_cheques else []
 
     items = [
         DueReminderItem(
