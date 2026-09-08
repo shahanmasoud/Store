@@ -65,6 +65,22 @@ class LedgerDueAudit(Base):
     entry: Mapped[LedgerEntry] = relationship(back_populates="due_audits")
 
 
+class LedgerActionAudit(Base):
+    __tablename__ = "ledger_action_audits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    entity_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    action: Mapped[str] = mapped_column(String(30), nullable=False)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    actor_username: Mapped[str | None] = mapped_column(String(50))
+    actor_full_name: Mapped[str | None] = mapped_column(String(120))
+    before_json: Mapped[dict | None] = mapped_column(JSON)
+    after_json: Mapped[dict | None] = mapped_column(JSON)
+    reason: Mapped[str | None] = mapped_column(Text)
+    occurred_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
 class Settlement(Base, TimestampMixin):
     __tablename__ = "settlements"
 

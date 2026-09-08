@@ -11,7 +11,7 @@ export type User = {
   created_at_utc?: string;
   updated_at_utc?: string;
 };
-export type AdminUserAuditPayload = { full_name?: string | null; can_sales?: boolean; can_catalog_inventory?: boolean; reason: string; expected_updated_at?: string };
+export type AdminUserAuditPayload = { full_name?: string | null; can_sales?: boolean; can_catalog_inventory?: boolean; can_ledger?: boolean; reason: string; expected_updated_at?: string };
 
 export type LoginResponse = {
   access_token: string;
@@ -564,7 +564,7 @@ export const api = {
     });
   },
   users() { return request<User[]>("/users"); },
-  createUser(payload: { username: string; full_name: string; temporary_password: string; can_sales: boolean; can_catalog_inventory: boolean; reason: string }) { return request<User>("/users", { method: "POST", body: JSON.stringify(payload) }); },
+  createUser(payload: { username: string; full_name: string; temporary_password: string; can_sales: boolean; can_catalog_inventory: boolean; can_ledger: boolean; reason: string }) { return request<User>("/users", { method: "POST", body: JSON.stringify(payload) }); },
   updateUser(id: number | string, payload: AdminUserAuditPayload) { return request<User>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }); },
   deactivateUser(id: number | string, payload: { reason: string }) { return request<User>(`/users/${id}/deactivate`, { method: "POST", body: JSON.stringify(payload) }); },
   resetUserPassword(id: number | string, payload: { temporary_password: string; reason: string }) { return request<User>(`/users/${id}/reset-password`, { method: "POST", body: JSON.stringify(payload) }); },

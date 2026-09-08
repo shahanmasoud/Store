@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, selectinload
 from datetime import datetime, timezone
 
 from app.core.time import utc_now
-from app.models.ledger import Cheque, ChequeAudit, ChequeEvent, LedgerDueAudit, LedgerEntry, Person, Settlement
+from app.models.ledger import Cheque, ChequeAudit, ChequeEvent, LedgerActionAudit, LedgerDueAudit, LedgerEntry, Person, Settlement
 from app.models.user import User
 from app.schemas.ledger import (
     ChequeCreate,
@@ -42,7 +42,23 @@ def _cheque_or_404(db: Session, cheque_id: int) -> Cheque:
     return cheque
 
 
-def create_person(db: Session, payload: PersonCreate) -> Person:
+def _person_snapshot(person: Person) -> dict:
+    return {"id": person.id, "name": person.name, "phone": person.phone, "person_type": person.person_type, "note": person.note, "credit_status": person.credit_status, "is_active": person.is_active}
+
+
+def _entry_snapshot(entry: LedgerEntry) -> dict:
+    return {"id": entry.id, "person_id": entry.person_id, "entry_type": entry.entry_type, "amount_rial": entry.amount_rial, "remaining_rial": entry.remaining_rial, "source_type": entry.source_type, "source_id": entry.source_id, "jalali_date": entry.jalali_date, "due_jalali_date": entry.due_jalali_date, "local_time": entry.local_time, "description": entry.description, "status": entry.status, "is_active": entry.is_active}
+
+
+def _settlement_snapshot(settlement: Settlement) -> dict:
+    return {"id": settlement.id, "person_id": settlement.person_id, "entry_type": settlement.entry_type, "amount_rial": settlement.amount_rial, "jalali_date": settlement.jalali_date, "local_time": settlement.local_time, "note": settlement.note}
+
+
+def _audit_ledger(db: Session, *, entity_type: str, entity_id: int, action: str, actor: User, before: dict | None, after: dict | None, reason: str | None = None) -> None:
+    db.add(LedgerActionAudit(entity_type=entity_type, entity_id=entity_id, action=action, actor_user_id=actor.id, actor_username=actor.username, actor_full_name=actor.full_name, before_json=before, after_json=after, reason=reason))
+
+
+def create_person(db: Session, payload: PersonCreate, actor: User) -> Person:
     person = Person(
         name=payload.name,
         phone=payload.phone,
@@ -51,6 +67,8 @@ def create_person(db: Session, payload: PersonCreate) -> Person:
         credit_status=payload.credit_status,
     )
     db.add(person)
+    db.flush()
+    _audit_ledger(db, entity_type="person", entity_id=person.id, action="create", actor=actor, before=None, after=_person_snapshot(person), reason="ثبت شخص")
     db.commit()
     db.refresh(person)
     return person
@@ -63,21 +81,25 @@ def list_persons(db: Session, *, include_inactive: bool = False) -> list[Person]
     return list(db.scalars(statement.order_by(Person.name, Person.id)))
 
 
-def update_person(db: Session, person_id: int, payload: PersonUpdate) -> Person:
+def update_person(db: Session, person_id: int, payload: PersonUpdate, actor: User) -> Person:
     person = _person_or_404(db, person_id)
+    before = _person_snapshot(person)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(person, field, value)
+    _audit_ledger(db, entity_type="person", entity_id=person.id, action="update", actor=actor, before=before, after=_person_snapshot(person), reason="ویرایش مشخصات شخص")
     db.commit()
     db.refresh(person)
     return person
 
 
-def deactivate_person(db: Session, person_id: int) -> None:
+def deactivate_person(db: Session, person_id: int, actor: User) -> None:
     person = db.get(Person, person_id)
     if not person:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="شخص پیدا نشد.")
     if person.is_active:
+        before = _person_snapshot(person)
         person.is_active = False
+        _audit_ledger(db, entity_type="person", entity_id=person.id, action="deactivate", actor=actor, before=before, after=_person_snapshot(person), reason="غیرفعال‌سازی شخص")
         db.commit()
 
 
@@ -120,7 +142,7 @@ def get_person_account_summary(db: Session, person_id: int) -> dict[str, int]:
     }
 
 
-def create_manual_entry(db: Session, payload: LedgerEntryCreate) -> LedgerEntry:
+def create_manual_entry(db: Session, payload: LedgerEntryCreate, actor: User) -> LedgerEntry:
     _person_or_404(db, payload.person_id)
     entry = LedgerEntry(
         person_id=payload.person_id,
@@ -135,6 +157,8 @@ def create_manual_entry(db: Session, payload: LedgerEntryCreate) -> LedgerEntry:
         description=payload.description,
     )
     db.add(entry)
+    db.flush()
+    _audit_ledger(db, entity_type="ledger_entry", entity_id=entry.id, action="create", actor=actor, before=None, after=_entry_snapshot(entry), reason=payload.description or "ثبت سند دستی")
     db.commit()
     db.refresh(entry)
     return entry
@@ -208,7 +232,7 @@ def list_ledger_due_audits(db: Session, entry_id: int) -> list[LedgerDueAudit]:
     )
 
 
-def create_settlement(db: Session, payload: SettlementCreate) -> Settlement:
+def create_settlement(db: Session, payload: SettlementCreate, actor: User) -> Settlement:
     _person_or_404(db, payload.person_id)
     open_entries = list(
         db.scalars(
@@ -250,6 +274,8 @@ def create_settlement(db: Session, payload: SettlementCreate) -> Settlement:
         note=payload.note,
     )
     db.add(settlement)
+    db.flush()
+    _audit_ledger(db, entity_type="settlement", entity_id=settlement.id, action="create", actor=actor, before=None, after=_settlement_snapshot(settlement), reason=payload.note or "ثبت تسویه")
     db.commit()
     db.refresh(settlement)
     return settlement

@@ -15,6 +15,7 @@ from app.core.security import get_password_hash
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
+from app.models.ledger import LedgerActionAudit
 from app.models.user import User, UserAdminAudit
 
 
@@ -70,6 +71,7 @@ def create_cashier(
     password: str = "cashier-123",
     can_sales: bool = True,
     can_catalog_inventory: bool = False,
+    can_ledger: bool = False,
 ) -> dict:
     response = client.post(
         "/api/v1/users",
@@ -80,6 +82,7 @@ def create_cashier(
             "temporary_password": password,
             "can_sales": can_sales,
             "can_catalog_inventory": can_catalog_inventory,
+            "can_ledger": can_ledger,
             "reason": "ایجاد حساب برای شیفت فروش",
         },
     )
@@ -110,7 +113,7 @@ def test_users_require_authentication_and_superuser(client: TestClient, db_sessi
 
 @pytest.mark.parametrize(
     "forbidden_field,forbidden_value",
-    [("is_superuser", True), ("can_ledger", True), ("can_cheques_reports", True)],
+    [("is_superuser", True), ("can_cheques_reports", True)],
 )
 def test_create_user_forbids_privilege_escalation_fields(
     client: TestClient, forbidden_field: str, forbidden_value: bool
@@ -374,6 +377,60 @@ def test_admin_audits_have_safe_before_after_snapshots(client: TestClient, db_se
     assert "hash" not in encoded.lower()
     assert "token_version" not in encoded
     assert all(audit.reason for audit in audits)
+
+
+def test_ledger_operator_can_manage_ledger_with_actor_audit_but_not_cheques_or_reports(
+    client: TestClient, db_session: Session
+) -> None:
+    operator = create_cashier(
+        client,
+        username="ledger",
+        password="ledger-pass-123",
+        can_sales=False,
+        can_ledger=True,
+    )
+    headers = {"Authorization": f"Bearer {login(client, 'ledger', 'ledger-pass-123')}"}
+    person = client.post(
+        "/api/v1/persons",
+        headers=headers,
+        json={"name": "مشتری دفتر", "person_type": "customer", "credit_status": "normal"},
+    )
+    assert person.status_code == 201, person.text
+    person_id = person.json()["id"]
+    entry = client.post(
+        "/api/v1/ledger/manual-entry",
+        headers=headers,
+        json={"person_id": person_id, "entry_type": "debit", "amount_rial": 900000, "source_type": "manual", "jalali_date": "1405/06/18", "due_jalali_date": "1405/06/25", "local_time": "10:00", "description": "نسیه آزمایشی"},
+    )
+    assert entry.status_code == 201, entry.text
+    settlement = client.post(
+        "/api/v1/settlements",
+        headers=headers,
+        json={"person_id": person_id, "entry_type": "debit", "amount_rial": 100000, "jalali_date": "1405/06/19", "local_time": "11:00", "note": "دریافت بخشی"},
+    )
+    assert settlement.status_code == 201, settlement.text
+    assert client.get(f"/api/v1/ledger/persons/{person_id}", headers=headers).status_code == 200
+    assert client.get("/api/v1/due-reminders?today_jalali=1405/06/20&through_jalali=1405/06/30", headers=headers).status_code == 200
+    assert client.get("/api/v1/cheques", headers=headers).status_code == 403
+    assert client.get("/api/v1/reports/customer-debts", headers=headers).status_code == 403
+
+    audits = list(db_session.scalars(select(LedgerActionAudit).order_by(LedgerActionAudit.id)))
+    assert [(item.entity_type, item.action) for item in audits] == [
+        ("person", "create"),
+        ("ledger_entry", "create"),
+        ("settlement", "create"),
+    ]
+    assert all(item.actor_user_id == operator["id"] for item in audits)
+    assert all(item.actor_username == "ledger" for item in audits)
+
+    old_token = login(client, "ledger", "ledger-pass-123")
+    update = client.patch(
+        f"/api/v1/users/{operator['id']}",
+        headers=admin_headers(client),
+        json={"can_ledger": False, "reason": "پایان مسئولیت دفتر"},
+    )
+    assert update.status_code == 200
+    assert client.get("/api/v1/persons", headers={"Authorization": f"Bearer {old_token}"}).status_code == 401
 
 
 def test_0016_migration_preserves_legacy_users_with_deny_defaults(

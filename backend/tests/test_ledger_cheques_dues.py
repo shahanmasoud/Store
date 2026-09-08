@@ -1102,5 +1102,5 @@ def test_only_superuser_can_update_or_deactivate_person(
 
     assert patch_response.status_code == 403
     assert delete_response.status_code == 403
-    assert patch_response.json()["detail"] == "فقط مدیر اصلی اجازه انجام این عملیات را دارد."
-    assert delete_response.json()["detail"] == "فقط مدیر اصلی اجازه انجام این عملیات را دارد."
+    assert patch_response.json()["detail"] == "شما اجازه دسترسی به این بخش را ندارید."
+    assert delete_response.json()["detail"] == "شما اجازه دسترسی به این بخش را ندارید."
