@@ -280,10 +280,10 @@
 
 ### BAK-002 — بکاپ دوره‌ای اطلاعات مالی و فایل‌ها
 
-- وضعیت: `partial`
+- وضعیت: `implemented-local / activation-and-off-host-pending`
 - نیاز: سیستم در دوره‌های مشخص به‌صورت خودکار از داده‌های حساس بکاپ بگیرد.
-- وضعیت فعلی: فرمان مناسب Scheduled Tasks، retention واحد bundle، lock و checksum وجود دارد؛ task واقعی production، نسخه off-host و اعلان خطا هنوز وجود ندارند.
-- شکاف: فعال‌سازی job دوره‌ای، رمزگذاری off-host، پایش/اعلان شکست و ثبت آزمون بازیابی production لازم است.
+- وضعیت فعلی: wrapper مانیتورپذیر Scheduled Tasks با status اتمیک، exit code، خطای sanitize‌شده، retention پس از verify، lock و checksum وجود دارد؛ task واقعی production، نسخه off-host و کانال اعلان هنوز فعال نشده‌اند.
+- شکاف: فعال‌سازی کنترل‌شده job دوره‌ای، انتخاب و رمزگذاری مقصد off-host، اتصال status به کانال اعلان و ثبت آزمون بازیابی production لازم است.
 - وابستگی‌ها: BAK-001 و PRD-003 برای افزودن uploads به محدودهٔ بکاپ.
 - معیار پذیرش:
   - بکاپ روزانه و/یا هفتگی طبق سیاست مصوب اجرا شود.

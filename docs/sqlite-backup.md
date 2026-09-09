@@ -21,10 +21,10 @@ set +a
 دستور بالا مسیر دیتابیس و رسانه را از `DATABASE_URL` و `MEDIA_ROOT` می‌خواند. هر bundle شامل `store.db`، پوشه `media`، `manifest.json` و checksum اجباری manifest است. `--keep-days 30 --keep-last 7` نسخه‌های قدیمی را فقط پس از موفقیت نسخه تازه حذف می‌کند و همیشه هفت نسخه جدید را نگه می‌دارد.
 
 ```bash
-bash -lc 'set -a; source ~/.store.env; set +a; cd ~/Store/backend && ~/.virtualenvs/store/bin/python -m app.scripts.sqlite_backup bundle --keep-days 30 --keep-last 7 >> ~/store-backups/scheduled.log 2>&1'
+bash -lc 'set -a; source ~/.store.env; set +a; cd ~/Store/backend && ~/.virtualenvs/store/bin/python -m app.scripts.scheduled_backup --destination ~/store-backups --status-file ~/store-backups/status.json --keep-days 30 --keep-last 7 >> ~/store-backups/scheduled.log 2>&1'
 ```
 
-همین فرمان یک‌خطی برای PythonAnywhere Scheduled Tasks مناسب است. task باید روزانه اجرا شود؛ خروجی موفق با exit code صفر و عبارت `Backup bundle created and verified` پایان می‌یابد. خطا exit code غیرصفر دارد. فایل log را دوره‌ای rotate کنید و هیچ secretی در فرمان یا log ننویسید.
+همین فرمان یک‌خطی برای PythonAnywhere Scheduled Tasks مناسب است، اما در این فاز هنوز روی حساب واقعی فعال نشده است. wrapper پس از ساخت و verify موفق، retention را اجرا می‌کند و `status.json` را به‌صورت اتمیک با حالت `success` یا `failure` می‌نویسد. موفقیت exit code صفر و شکست exit code یک دارد؛ در شکست فقط نوع خطا ثبت می‌شود و متن exception که ممکن است شامل مسیر یا secret باشد وارد status/log نمی‌شود. مقصد و فایل status عمداً آرگومان اجباری‌اند. فایل log را دوره‌ای rotate کنید و هیچ secretی در فرمان یا log ننویسید.
 
 قفل مشترک مانع هم‌زمانی دو بکاپ و تغییر تصویر هنگام snapshot می‌شود؛ در زمان بکاپ، upload/delete تصویر ممکن است موقتاً پاسخ 503 بگیرد و قابل retry است. علاوه بر task روزانه، درست پیش از `git pull` یا migration یک bundle دستی بگیرید. پوشه و فایل‌ها در POSIX به‌ترتیب با permissionهای `700` و `600` محدود می‌شوند.
 

@@ -114,6 +114,15 @@ cd ~/Store/backend
 ~/.virtualenvs/store/bin/python -m app.scripts.sqlite_backup bundle --keep-days 30 --keep-last 7
 ```
 
+برای Scheduled Tasks از wrapper مانیتورپذیر استفاده کنید؛ فعال‌سازی واقعی باید بعد از بازبینی انجام شود:
+
+```bash
+~/.virtualenvs/store/bin/python -m app.scripts.scheduled_backup \
+  --destination ~/store-backups \
+  --status-file ~/store-backups/status.json \
+  --keep-days 30 --keep-last 7
+```
+
 فرمان `bundle` هم SQLite و هم `MEDIA_ROOT` را زیر قفل مشترک، همراه manifest و checksum، خارج از Git نگه می‌دارد. بکاپ قدیمی فقط-دیتابیس برای بازیابی کامل فروشگاه کافی نیست.
 
 راهنمای زمان‌بندی، نگهداری، اعتبارسنجی و بازیابی امن در
