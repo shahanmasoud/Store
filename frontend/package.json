@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "build:pythonanywhere": "tsc -b && vite build --outDir ../backend/app/frontend --emptyOutDir",
     "test:numbers": "node --experimental-strip-types --test tests/numberUtils.test.mjs",
+    "test:roles": "node --experimental-strip-types --test tests/roleAccess.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

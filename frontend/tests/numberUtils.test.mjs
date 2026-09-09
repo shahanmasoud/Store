@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   moneyInputValue,
+  canonicalDecimalInput,
+  formatDecimalInput,
   normalizeDecimal,
   normalizeMoney,
   toEnglishDigits,
@@ -12,6 +14,15 @@ import {
 test("normalizes Persian and Arabic digits without losing identifiers", () => {
   assert.equal(toEnglishDigits("۰۹١۲-۳"), "0912-3");
   assert.equal(toPersianDigits("0912-3"), "۰۹۱۲-۳");
+});
+
+test("keeps decimal editing canonical while formatting Persian grouped output", () => {
+  assert.equal(canonicalDecimalInput("۱٬۲۳۴٫۵۰"), "1234.50");
+  assert.equal(canonicalDecimalInput("0012."), "12.");
+  assert.equal(canonicalDecimalInput("1,2x3.4.5"), "123.45");
+  assert.equal(formatDecimalInput("1234567.50"), "۱٬۲۳۴٬۵۶۷٫۵۰");
+  assert.equal(formatDecimalInput("12."), "۱۲٫");
+  assert.equal(formatDecimalInput(""), "");
 });
 
 test("formats typed toman values and returns canonical rial", () => {

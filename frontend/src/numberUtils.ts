@@ -56,3 +56,27 @@ export function normalizeDecimal(value: unknown) {
   const parsed = Number(localized.replace(/[,٬]/g, "").replace("٫", "."));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
+
+/**
+ * Canonical editing contract for decimal fields: ASCII digits, at most one dot,
+ * and no grouping separators. A trailing dot is kept so decimal typing does not
+ * jump or lose the user's in-progress value.
+ */
+export function canonicalDecimalInput(value: unknown) {
+  const localized = toEnglishDigits(String(value ?? ""))
+    .replace(/[\s,٬،]/g, "")
+    .replace(/٫/g, ".")
+    .replace(/[^\d.]/g, "");
+  const [integer = "", ...fractionParts] = localized.split(".");
+  const hasDecimal = localized.includes(".");
+  const normalizedInteger = integer.replace(/^0+(?=\d)/, "");
+  return `${normalizedInteger}${hasDecimal ? `.${fractionParts.join("")}` : ""}`;
+}
+
+export function formatDecimalInput(value: unknown) {
+  const canonical = canonicalDecimalInput(value);
+  if (!canonical) return "";
+  const [integer, fraction] = canonical.split(".");
+  const grouped = (integer || "0").replace(/\B(?=(\d{3})+(?!\d))/g, "٬");
+  return toPersianDigits(`${grouped}${fraction !== undefined ? `٫${fraction}` : ""}`);
+}
