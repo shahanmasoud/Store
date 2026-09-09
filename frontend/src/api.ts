@@ -764,6 +764,9 @@ export const api = {
   personSummary(personId: number) {
     return request<PersonSummary>(`/ledger/persons/${personId}/summary`);
   },
+  salesCustomerSummary(personId: number) {
+    return request<PersonSummary>(`/sales/customers/${personId}/account-summary`);
+  },
   personLedger(personId: number) {
     return request<LedgerEntry[]>(`/ledger/persons/${personId}`);
   },

@@ -14,14 +14,19 @@ from app.schemas.sales import (
     SaleInvoiceRead,
     SalesFormOptionsRead,
 )
+from app.schemas.ledger import PersonAccountSummary
 from app.services import sales as sales_service
 
 router = APIRouter(dependencies=[Depends(require_permission("can_sales"))])
 
 
 @router.post("/sales", response_model=SaleInvoiceRead, status_code=status.HTTP_201_CREATED)
-def create_sale(payload: SaleInvoiceCreate, db: Session = Depends(get_db)) -> SaleInvoiceRead:
-    return sales_service.create_sale(db, payload)
+def create_sale(
+    payload: SaleInvoiceCreate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_permission("can_sales")),
+) -> SaleInvoiceRead:
+    return sales_service.create_sale(db, payload, actor)
 
 
 @router.get("/sales", response_model=list[SaleInvoiceRead])
@@ -32,6 +37,11 @@ def sales(db: Session = Depends(get_db)) -> list[SaleInvoiceRead]:
 @router.get("/sales/form-options", response_model=SalesFormOptionsRead)
 def sales_form_options(db: Session = Depends(get_db)) -> SalesFormOptionsRead:
     return sales_service.get_sales_form_options(db)
+
+
+@router.get("/sales/customers/{customer_id}/account-summary", response_model=PersonAccountSummary)
+def customer_account_summary(customer_id: int, db: Session = Depends(get_db)) -> PersonAccountSummary:
+    return sales_service.get_customer_account_summary(db, customer_id)
 
 
 @router.get("/sales/{invoice_id}", response_model=SaleInvoiceRead)
@@ -58,9 +68,13 @@ def payment_due_date_audits(
     return sales_service.list_payment_due_audits(db, payment_id)
 
 
-@router.post("/sales/{invoice_id}/cancel", response_model=SaleInvoiceRead, dependencies=[Depends(require_superuser)])
-def cancel_sale(invoice_id: int, db: Session = Depends(get_db)) -> SaleInvoiceRead:
-    return sales_service.cancel_sale(db, invoice_id)
+@router.post("/sales/{invoice_id}/cancel", response_model=SaleInvoiceRead)
+def cancel_sale(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_superuser),
+) -> SaleInvoiceRead:
+    return sales_service.cancel_sale(db, invoice_id, actor)
 
 
 @router.get("/daily-journal", response_model=DailyJournalRead)

@@ -15,7 +15,7 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.core.config import get_settings
-from app.models.ledger import Cheque, ChequeEvent, LedgerEntry, Person
+from app.models.ledger import Cheque, ChequeEvent, LedgerEntry, Person, SettlementAllocation
 from app.models.sales import Payment, SaleInvoice
 from app.models.user import User
 
@@ -185,6 +185,7 @@ def test_create_person_persists_note_and_credit_status(client: TestClient, auth_
 
 def test_settlement_reduces_oldest_open_entries_and_marks_settled(
     client: TestClient,
+    db_session: Session,
     auth_headers: dict[str, str],
 ) -> None:
     person = create_person(client, auth_headers)
@@ -210,6 +211,12 @@ def test_settlement_reduces_oldest_open_entries_and_marks_settled(
     assert by_id[old_entry["id"]]["status"] == "settled"
     assert by_id[new_entry["id"]]["remaining_rial"] == 500_000
     assert by_id[new_entry["id"]]["status"] == "open"
+    allocations = db_session.query(SettlementAllocation).order_by(SettlementAllocation.id).all()
+    assert [(item.ledger_entry_id, item.amount_rial) for item in allocations] == [
+        (old_entry["id"], 1_000_000),
+        (new_entry["id"], 250_000),
+    ]
+    assert all(item.settlement_id == response.json()["id"] for item in allocations)
 
 
 def test_over_settlement_returns_409(client: TestClient, auth_headers: dict[str, str]) -> None:

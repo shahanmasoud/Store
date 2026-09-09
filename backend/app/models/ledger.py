@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -26,6 +26,16 @@ class Person(Base, TimestampMixin):
 
 class LedgerEntry(Base, TimestampMixin):
     __tablename__ = "ledger_entries"
+    __table_args__ = (
+        Index(
+            "uq_ledger_entries_sale_source",
+            "source_type",
+            "source_id",
+            unique=True,
+            sqlite_where=text("source_type = 'sale' AND source_id IS NOT NULL"),
+            postgresql_where=text("source_type = 'sale' AND source_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     person_id: Mapped[int] = mapped_column(ForeignKey("persons.id"), nullable=False, index=True)
@@ -46,6 +56,10 @@ class LedgerEntry(Base, TimestampMixin):
         back_populates="entry",
         cascade="all, delete-orphan",
         order_by="LedgerDueAudit.id",
+    )
+    settlement_allocations: Mapped[list["SettlementAllocation"]] = relationship(
+        back_populates="ledger_entry",
+        order_by="SettlementAllocation.id",
     )
 
 
@@ -93,6 +107,26 @@ class Settlement(Base, TimestampMixin):
     note: Mapped[str | None] = mapped_column(Text)
 
     person: Mapped[Person] = relationship(back_populates="settlements")
+    allocations: Mapped[list["SettlementAllocation"]] = relationship(
+        back_populates="settlement",
+        order_by="SettlementAllocation.id",
+    )
+
+
+class SettlementAllocation(Base):
+    """Append-only evidence of how a settlement consumed ledger entries."""
+
+    __tablename__ = "settlement_allocations"
+    __table_args__ = (CheckConstraint("amount_rial > 0", name="ck_settlement_allocations_amount_positive"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    settlement_id: Mapped[int] = mapped_column(ForeignKey("settlements.id"), nullable=False, index=True)
+    ledger_entry_id: Mapped[int] = mapped_column(ForeignKey("ledger_entries.id"), nullable=False, index=True)
+    amount_rial: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    settlement: Mapped[Settlement] = relationship(back_populates="allocations")
+    ledger_entry: Mapped[LedgerEntry] = relationship(back_populates="settlement_allocations")
 
 
 class Cheque(Base, TimestampMixin):

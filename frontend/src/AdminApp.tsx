@@ -3030,6 +3030,9 @@ function SalesView({ onBack, focus, onFocusHandled }: { onBack: () => void; focu
   const [customersStatus, setCustomersStatus] = useState<"loading" | "ready" | "error">("loading");
   const [customersError, setCustomersError] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<Person | null>(null);
+  const [customerSummaryOpen, setCustomerSummaryOpen] = useState(false);
+  const [customerSummary, setCustomerSummary] = useState<PersonSummary | null>(null);
+  const [customerSummaryStatus, setCustomerSummaryStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [variantsStatus, setVariantsStatus] = useState<"loading" | "ready" | "error">("loading");
   const [variantsError, setVariantsError] = useState("");
   const [items, setItems] = useState<InvoiceDraftItem[]>([]);
@@ -3057,6 +3060,12 @@ function SalesView({ onBack, focus, onFocusHandled }: { onBack: () => void; focu
   const dueDateChanged = Boolean(duePayment) && (dueEnabled ? dueDraft : null) !== (duePayment?.due_jalali_date ?? null);
 
   async function loadRecentSales() { setRecentStatus("loading"); setRecentError(""); try { setRecentSales(await api.sales()); setRecentStatus("ready"); } catch (error) { setRecentStatus("error"); setRecentError(error instanceof Error ? error.message : "فاکتورهای اخیر دریافت نشدند."); } }
+  async function openCustomerSummary() {
+    if (!selectedCustomer) return;
+    setCustomerSummaryOpen(true); setCustomerSummary(null); setCustomerSummaryStatus("loading");
+    try { setCustomerSummary(await api.salesCustomerSummary(selectedCustomer.id)); setCustomerSummaryStatus("ready"); }
+    catch { setCustomerSummaryStatus("error"); }
+  }
   async function loadPaymentAudits(id: number) { setPaymentAuditsStatus("loading"); try { setPaymentAudits(await api.paymentDueAudits(id)); setPaymentAuditsStatus("ready"); } catch { setPaymentAuditsStatus("error"); } }
   function openPaymentDue(invoice: SaleInvoice, payment: SalePayment) { setDueInvoice(invoice); setDuePayment(payment); setDueEnabled(Boolean(payment.due_jalali_date)); setDueDraft(payment.due_jalali_date || currentJalaliDate()); setDueReason(""); setDueError(""); setDueStale(false); setPaymentAudits([]); void loadPaymentAudits(payment.id); }
   async function reloadDuePayment() { if (!dueInvoice || !duePayment) return; setDueSaving(true); try { const fresh = await api.sale(dueInvoice.id); const payment = fresh.payments.find((item) => item.id === duePayment.id); if (!payment || payment.status !== "pending" || fresh.status !== "active") { setDueInvoice(null); setDuePayment(null); setRecentError("این پرداخت دیگر قابل ویرایش نیست."); await loadRecentSales(); return; } openPaymentDue(fresh, payment); } catch (error) { setDueError(error instanceof Error ? error.message : "نسخه تازه دریافت نشد."); } finally { setDueSaving(false); } }
@@ -3265,6 +3274,11 @@ function SalesView({ onBack, focus, onFocusHandled }: { onBack: () => void; focu
       setSubmitMessage("جمع پرداخت‌ها نمی‌تواند از مبلغ فاکتور بیشتر باشد.");
       return;
     }
+    if (remaining > 0 && !selectedCustomer) {
+      setSubmitStatus("error");
+      setSubmitMessage("برای فروش نسیه یا دارای مانده، انتخاب مشتری الزامی است.");
+      return;
+    }
 
     const payloadPayments: PaymentCreate[] = validPayments.map((payment) => ({
       method: payment.method,
@@ -3331,13 +3345,13 @@ function SalesView({ onBack, focus, onFocusHandled }: { onBack: () => void; focu
 
       <div className="sales-grid">
         <Card variant="outlined" className="sale-panel sale-panel-main">
-          <div className="sales-section-heading"><div><ReceiptLongRounded /><div><h3>مشخصات و پرداخت فاکتور</h3><p>اطلاعات مشتری اختیاری است.</p></div></div><Chip label={`${items.length.toLocaleString("fa-IR")} ردیف`} color={items.length ? "primary" : "default"} variant="outlined" /></div>
+          <div className="sales-section-heading"><div><ReceiptLongRounded /><div><h3>مشخصات و پرداخت فاکتور</h3><p>برای فروش نقدی مشتری اختیاری و برای فروش دارای مانده الزامی است.</p></div></div><Chip label={`${items.length.toLocaleString("fa-IR")} ردیف`} color={items.length ? "primary" : "default"} variant="outlined" /></div>
           <form className="sale-meta-grid" onSubmit={handleSubmitSale}>
             <div className="sale-customer-field">
               <Autocomplete
                 options={customers}
                 value={selectedCustomer}
-                onChange={(_event, customer) => setSelectedCustomer(customer)}
+                onChange={(_event, customer) => { setSelectedCustomer(customer); setCustomerSummaryOpen(false); setCustomerSummary(null); setSubmitStatus("idle"); setSubmitMessage(""); }}
                 getOptionLabel={(customer) => customer.name}
                 isOptionEqualToValue={(option, value) => option.id === value.id}
                 filterOptions={(options, state) => { const needle = toEnglishDigits(state.inputValue).trim().toLocaleLowerCase("fa-IR"); return needle ? options.filter((customer) => `${customer.name} ${toEnglishDigits(customer.phone ?? "")}`.toLocaleLowerCase("fa-IR").includes(needle)) : options; }}
@@ -3352,7 +3366,8 @@ function SalesView({ onBack, focus, onFocusHandled }: { onBack: () => void; focu
                 renderInput={(params) => <TextField {...params} label="مشتری (اختیاری)" placeholder="نام یا شماره تماس را جست‌وجو کنید" helperText={customersStatus === "ready" && customers.length === 0 ? "می‌توانید فاکتور را بدون مشتری ثبت کنید." : "برای فروش بدون مشتری، انتخاب را خالی بگذارید."} slotProps={{ ...params.slotProps, input: { ...params.slotProps.input, endAdornment: <>{customersStatus === "loading" ? <CircularProgress color="inherit" size={18} /> : null}{params.slotProps.input.endAdornment}</> } }} />}
               />
               {customersStatus === "error" ? <Alert severity="error" action={<Button color="inherit" size="small" onClick={loadCustomers}>تلاش دوباره</Button>}>{customersError}</Alert> : null}
-              {selectedCustomer ? <div className={`selected-customer-card credit-${selectedCustomer.credit_status}`}><div><strong>{selectedCustomer.name}</strong><Chip size="small" color={selectedCustomer.credit_status === "good" ? "success" : selectedCustomer.credit_status === "watch" ? "warning" : "default"} label={selectedCustomer.credit_status === "good" ? "خوش‌حساب" : selectedCustomer.credit_status === "watch" ? "نیازمند توجه" : "عادی"} /></div><p>{selectedCustomer.note || "برای این مشتری توضیحی ثبت نشده است."}</p>{selectedCustomer.phone ? <small>شماره تماس: {toPersianDigits(selectedCustomer.phone)}</small> : null}</div> : null}
+              {selectedCustomer ? <div className={`selected-customer-card credit-${selectedCustomer.credit_status}`}><div><strong>{selectedCustomer.name}</strong><Chip size="small" color={selectedCustomer.credit_status === "good" ? "success" : selectedCustomer.credit_status === "watch" ? "warning" : "default"} label={selectedCustomer.credit_status === "good" ? "خوش‌حساب" : selectedCustomer.credit_status === "watch" ? "نیازمند توجه" : "عادی"} /></div><p>{selectedCustomer.note || "برای این مشتری توضیحی ثبت نشده است."}</p>{selectedCustomer.phone ? <small>شماره تماس: {toPersianDigits(selectedCustomer.phone)}</small> : null}<Button type="button" variant="outlined" size="small" startIcon={<AccountBalanceWalletRounded />} onClick={() => void openCustomerSummary()}>مشاهده مانده حساب</Button></div> : null}
+              {selectedCustomer?.credit_status === "watch" ? <Alert severity="warning">این مشتری «نیازمند توجه» علامت‌گذاری شده است؛ پیش از ثبت فروش مدت‌دار، مانده و توضیحات او را بررسی کنید.</Alert> : null}
             </div>
             <JalaliDateField label="تاریخ شمسی" value={saleDate} onChange={setSaleDate} required />
             <TextField label="ساعت" value={toPersianDigits(saleTime)} onChange={(event) => setSaleTime(toEnglishDigits(event.target.value))} placeholder="۱۴:۳۰" required disabled={submitStatus === "loading"} inputMode="numeric" />
@@ -3373,7 +3388,7 @@ function SalesView({ onBack, focus, onFocusHandled }: { onBack: () => void; focu
                 <strong className="text-ok">{formatRial(receivedTotal)}</strong>
               </div>
               <div>
-                <span>مانده مشتری</span>
+                <span>مانده همین فاکتور</span>
                 <strong className={remaining > 0 ? "text-danger" : "text-ok"}>{formatRial(remaining)}</strong>
               </div>
               <div><span>سود تخمینی</span><strong className={estimatedProfit < 0 ? "text-danger" : "text-ok"}>{formatRial(estimatedProfit)}</strong></div>
@@ -3408,6 +3423,16 @@ function SalesView({ onBack, focus, onFocusHandled }: { onBack: () => void; focu
             <Button type="submit" variant="contained" size="large" className="submit-sale-button" startIcon={submitStatus === "loading" ? <CircularProgress size={20} color="inherit" /> : <PointOfSaleRounded />} disabled={submitStatus === "loading" || variantsStatus !== "ready"}>{submitStatus === "loading" ? "در حال ثبت فروش…" : "ثبت نهایی فروش"}</Button>
           </form>
         </Card>
+
+        <Dialog open={customerSummaryOpen} onClose={() => customerSummaryStatus !== "loading" && setCustomerSummaryOpen(false)} fullScreen={isMobile} fullWidth maxWidth="xs" className="sale-customer-summary-dialog">
+          <DialogTitle className="dialog-title-with-action"><span>حساب {selectedCustomer?.name}</span><IconButton aria-label="بستن خلاصه حساب" onClick={() => setCustomerSummaryOpen(false)}><CloseRounded /></IconButton></DialogTitle>
+          <DialogContent dividers className="person-summary-content">
+            {customerSummaryStatus === "loading" ? <div className="record-state"><CircularProgress size={28} /><span>در حال محاسبه مانده حساب…</span></div> : null}
+            {customerSummaryStatus === "error" ? <div className="record-state record-state-error"><strong>مانده حساب دریافت نشد</strong><Button variant="outlined" startIcon={<RefreshRounded />} onClick={() => void openCustomerSummary()}>تلاش دوباره</Button></div> : null}
+            {customerSummaryStatus === "ready" && customerSummary ? <><div className="person-summary-grid"><div><small>مانده بدهکار</small><strong>{formatRial(customerSummary.debit_open_rial)}</strong></div><div><small>مانده بستانکار</small><strong>{formatRial(customerSummary.credit_open_rial)}</strong></div><div className="person-summary-net"><small>مانده خالص</small><strong>{formatRial(Math.abs(customerSummary.net_balance_rial))}</strong><span>{customerSummary.net_balance_rial > 0 ? "مشتری به فروشگاه بدهکار است" : customerSummary.net_balance_rial < 0 ? "فروشگاه به مشتری بدهکار است" : "حساب تسویه است"}</span></div></div>{customerSummary.open_entries_count === 0 ? <Alert severity="success">این مشتری مانده باز ندارد.</Alert> : <Alert severity="info">{customerSummary.open_entries_count.toLocaleString("fa-IR")} سند باز در حساب او وجود دارد.</Alert>}</> : null}
+          </DialogContent>
+          <DialogActions className="sale-customer-summary-actions"><Button size="large" variant="contained" onClick={() => setCustomerSummaryOpen(false)}>بستن</Button></DialogActions>
+        </Dialog>
 
         <Card variant="outlined" component="aside" className="sale-panel sale-items-panel">
           <div className="mini-section-header">

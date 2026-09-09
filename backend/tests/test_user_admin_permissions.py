@@ -15,7 +15,7 @@ from app.core.security import get_password_hash
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.ledger import Cheque, ChequeAudit, LedgerActionAudit
+from app.models.ledger import Cheque, ChequeAudit, LedgerActionAudit, LedgerEntry, Person
 from app.models.user import User, UserAdminAudit
 
 
@@ -433,6 +433,60 @@ def test_ledger_operator_can_manage_ledger_with_actor_audit_but_not_cheques_or_r
     )
     assert update.status_code == 200
     assert client.get("/api/v1/persons", headers={"Authorization": f"Bearer {old_token}"}).status_code == 401
+
+
+def test_sales_customer_summary_is_minimal_and_does_not_leak_without_sales_permission(
+    client: TestClient, db_session: Session
+) -> None:
+    sales_user = create_cashier(client, username="sales-summary", password="sales-pass-123", can_sales=True)
+    ledger_user = create_cashier(
+        client,
+        username="ledger-summary",
+        password="ledger-pass-456",
+        can_sales=False,
+        can_ledger=True,
+    )
+    customer = Person(name="مشتری خلاصه", person_type="customer", is_active=True)
+    supplier = Person(name="تأمین‌کننده خلاصه", person_type="supplier", is_active=True)
+    inactive = Person(name="مشتری غیرفعال", person_type="customer", is_active=False)
+    db_session.add_all([customer, supplier, inactive])
+    db_session.flush()
+    db_session.add(
+        LedgerEntry(
+            person_id=customer.id,
+            entry_type="debit",
+            amount_rial=700_000,
+            remaining_rial=700_000,
+            source_type="manual",
+            jalali_date="1405/06/20",
+            local_time="10:00",
+            description="جزئیات محرمانه گردش",
+        )
+    )
+    db_session.commit()
+    sales_headers = {"Authorization": f"Bearer {login(client, 'sales-summary', 'sales-pass-123')}"}
+    ledger_headers = {"Authorization": f"Bearer {login(client, 'ledger-summary', 'ledger-pass-456')}"}
+
+    response = client.get(f"/api/v1/sales/customers/{customer.id}/account-summary", headers=sales_headers)
+    assert response.status_code == 200
+    assert response.json() == {
+        "person_id": customer.id,
+        "debit_open_rial": 700_000,
+        "credit_open_rial": 0,
+        "net_balance_rial": 700_000,
+        "open_entries_count": 1,
+    }
+    assert "description" not in response.text and "محرمانه" not in response.text
+    assert client.get(
+        f"/api/v1/sales/customers/{customer.id}/account-summary", headers=ledger_headers
+    ).status_code == 403
+    assert client.get(
+        f"/api/v1/sales/customers/{supplier.id}/account-summary", headers=sales_headers
+    ).status_code == 404
+    assert client.get(
+        f"/api/v1/sales/customers/{inactive.id}/account-summary", headers=sales_headers
+    ).status_code == 404
+    assert sales_user["id"] != ledger_user["id"]
 
 
 def test_cheque_report_operator_is_audited_and_cannot_cancel(client: TestClient, db_session: Session) -> None:

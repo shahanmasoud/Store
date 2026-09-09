@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, selectinload
 from datetime import datetime, timezone
 
 from app.core.time import utc_now
-from app.models.ledger import Cheque, ChequeAudit, ChequeEvent, LedgerActionAudit, LedgerDueAudit, LedgerEntry, Person, Settlement
+from app.models.ledger import Cheque, ChequeAudit, ChequeEvent, LedgerActionAudit, LedgerDueAudit, LedgerEntry, Person, Settlement, SettlementAllocation
 from app.models.sales import Payment, SaleInvoice
 from app.models.user import User
 from app.schemas.ledger import (
@@ -256,16 +256,6 @@ def create_settlement(db: Session, payload: SettlementCreate, actor: User) -> Se
             detail=f"مبلغ تسویه از مانده {side} بیشتر است.",
         )
 
-    remaining_settlement = payload.amount_rial
-    for entry in open_entries:
-        if remaining_settlement <= 0:
-            break
-        applied = min(entry.remaining_rial, remaining_settlement)
-        entry.remaining_rial -= applied
-        remaining_settlement -= applied
-        if entry.remaining_rial == 0:
-            entry.status = "settled"
-
     settlement = Settlement(
         person_id=payload.person_id,
         entry_type=payload.entry_type,
@@ -276,6 +266,23 @@ def create_settlement(db: Session, payload: SettlementCreate, actor: User) -> Se
     )
     db.add(settlement)
     db.flush()
+
+    remaining_settlement = payload.amount_rial
+    for entry in open_entries:
+        if remaining_settlement <= 0:
+            break
+        applied = min(entry.remaining_rial, remaining_settlement)
+        entry.remaining_rial -= applied
+        remaining_settlement -= applied
+        db.add(
+            SettlementAllocation(
+                settlement_id=settlement.id,
+                ledger_entry_id=entry.id,
+                amount_rial=applied,
+            )
+        )
+        if entry.remaining_rial == 0:
+            entry.status = "settled"
     _audit_ledger(db, entity_type="settlement", entity_id=settlement.id, action="create", actor=actor, before=None, after=_settlement_snapshot(settlement), reason=payload.note or "ثبت تسویه")
     db.commit()
     db.refresh(settlement)

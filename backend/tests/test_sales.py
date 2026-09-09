@@ -15,8 +15,7 @@ from app.db.session import get_db
 from app.main import app
 from app.models.catalog import Category, Product, ProductVariant, Unit
 from app.models.purchases import InventoryItem, InventoryTransaction
-from app.models.ledger import Person
-from app.models.ledger import LedgerEntry
+from app.models.ledger import LedgerActionAudit, LedgerEntry, Person
 from app.models.sales import Payment, PaymentDueAudit, SaleInvoice, SaleInvoiceItem
 from app.models.user import User
 from app.core.time import utc_now
@@ -168,6 +167,16 @@ def test_create_sale_links_active_customer_and_uses_canonical_name_snapshot(
     assert invoice is not None
     assert invoice.customer_id == customer.id
     assert invoice.customer_name == "مشتری اصلی"
+    sale_entries = db_session.query(LedgerEntry).filter_by(source_type="sale", source_id=invoice.id).all()
+    assert len(sale_entries) == 1
+    assert sale_entries[0].entry_type == "debit"
+    assert sale_entries[0].amount_rial == 850_000
+    assert sale_entries[0].remaining_rial == 850_000
+    assert sale_entries[0].person_id == customer.id
+    audit = db_session.query(LedgerActionAudit).filter_by(
+        entity_type="sale_invoice", entity_id=invoice.id, action="create"
+    ).one()
+    assert audit.actor_username == "admin"
     customer.name = "نام جدید مشتری"
     db_session.commit()
     fetched = client.get(f"/api/v1/sales/{invoice.id}", headers=auth_headers)
@@ -264,6 +273,46 @@ def test_cancel_sale_excludes_invoice_and_payments_from_daily_journal(
     assert second_cancel.status_code == 200
     assert str(inventory.quantity_on_hand) == "10.000"
     assert db_session.query(InventoryTransaction).filter_by(transaction_type="cancel_sale").count() == 1
+
+
+def test_cancel_customer_credit_sale_cancels_untouched_ledger_entry_and_rejects_partial_settlement(
+    client: TestClient,
+    db_session: Session,
+    auth_headers: dict[str, str],
+) -> None:
+    customer = Person(name="مشتری نسیه", person_type="customer")
+    db_session.add(customer)
+    db_session.commit()
+    first = client.post(
+        "/api/v1/sales", json=sale_payload() | {"customer_id": customer.id}, headers=auth_headers
+    ).json()
+    entry = db_session.query(LedgerEntry).filter_by(source_type="sale", source_id=first["id"]).one()
+
+    canceled = client.post(f"/api/v1/sales/{first['id']}/cancel", headers=auth_headers)
+    assert canceled.status_code == 200
+    db_session.refresh(entry)
+    assert (entry.status, entry.is_active, entry.remaining_rial) == ("canceled", False, 0)
+
+    second = client.post(
+        "/api/v1/sales", json=sale_payload() | {"customer_id": customer.id}, headers=auth_headers
+    ).json()
+    settled = client.post(
+        "/api/v1/settlements",
+        json={
+            "person_id": customer.id,
+            "entry_type": "debit",
+            "amount_rial": 100_000,
+            "jalali_date": "1405/06/01",
+            "local_time": "10:00",
+        },
+        headers=auth_headers,
+    )
+    assert settled.status_code == 201
+    rejected = client.post(f"/api/v1/sales/{second['id']}/cancel", headers=auth_headers)
+    assert rejected.status_code == 409
+    assert "تسویه" in rejected.json()["detail"]
+    invoice = db_session.get(SaleInvoice, second["id"])
+    assert invoice.status == "active" and invoice.is_active is True
 
 
 def test_cancel_legacy_sale_without_linked_stock_out_does_not_inflate_inventory(

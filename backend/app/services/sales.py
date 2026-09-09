@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.time import utc_now
 from app.models.catalog import ProductVariant
 from app.models.purchases import InventoryItem, InventoryTransaction
-from app.models.ledger import Person
+from app.models.ledger import LedgerActionAudit, LedgerEntry, Person
 from app.models.sales import Payment, PaymentDueAudit, SaleInvoice, SaleInvoiceItem
 from app.models.user import User
 from app.schemas.sales import DailyJournalPaymentBreakdown, DailyJournalRead, PaymentCreate, PaymentDueDateUpdate, SaleInvoiceCreate
@@ -31,6 +31,13 @@ def get_sales_form_options(db: Session) -> SalesFormOptionsRead:
             if person.person_type in {"customer", "both"}
         ],
     )
+
+
+def get_customer_account_summary(db: Session, customer_id: int) -> dict[str, int]:
+    customer = db.get(Person, customer_id)
+    if customer is None or not customer.is_active or customer.person_type not in {"customer", "both"}:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مشتری فعال پیدا نشد.")
+    return ledger_service.get_person_account_summary(db, customer_id)
 
 
 def _gross_line_total(quantity: Decimal, unit_price_rial: int) -> int:
@@ -151,7 +158,34 @@ def _get_invoice_or_404(db: Session, invoice_id: int) -> SaleInvoice:
     return invoice
 
 
-def create_sale(db: Session, payload: SaleInvoiceCreate) -> SaleInvoice:
+def _audit_sale_action(
+    db: Session,
+    *,
+    entity_type: str,
+    entity_id: int,
+    action: str,
+    actor: User | None,
+    before: dict | None,
+    after: dict | None,
+) -> None:
+    if actor is None:
+        return
+    db.add(
+        LedgerActionAudit(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            action=action,
+            actor_user_id=actor.id,
+            actor_username=actor.username,
+            actor_full_name=actor.full_name,
+            before_json=before,
+            after_json=after,
+            reason="ثبت فروش" if action == "create" else "لغو فروش",
+        )
+    )
+
+
+def create_sale(db: Session, payload: SaleInvoiceCreate, actor: User | None = None) -> SaleInvoice:
     customer_name = payload.customer_name
     if payload.customer_id is not None:
         customer = db.get(Person, payload.customer_id)
@@ -298,6 +332,54 @@ def create_sale(db: Session, payload: SaleInvoiceCreate) -> SaleInvoice:
             )
         )
 
+    if invoice.customer_id is not None and due_total > 0:
+        pending_due_dates = [
+            payment.due_jalali_date
+            for payment in payload.payments
+            if _default_payment_status(payment) == "pending" and payment.due_jalali_date is not None
+        ]
+        entry = LedgerEntry(
+            person_id=invoice.customer_id,
+            entry_type="debit",
+            amount_rial=due_total,
+            remaining_rial=due_total,
+            source_type="sale",
+            source_id=invoice.id,
+            jalali_date=invoice.jalali_date,
+            due_jalali_date=min(pending_due_dates) if pending_due_dates else None,
+            local_time=invoice.local_time,
+            description=f"مطالبه فاکتور {invoice.invoice_number}",
+        )
+        db.add(entry)
+        db.flush()
+        _audit_sale_action(
+            db,
+            entity_type="ledger_entry",
+            entity_id=entry.id,
+            action="create",
+            actor=actor,
+            before=None,
+            after={
+                "id": entry.id,
+                "person_id": entry.person_id,
+                "amount_rial": entry.amount_rial,
+                "remaining_rial": entry.remaining_rial,
+                "source_type": entry.source_type,
+                "source_id": entry.source_id,
+                "status": entry.status,
+                "is_active": entry.is_active,
+            },
+        )
+    _audit_sale_action(
+        db,
+        entity_type="sale_invoice",
+        entity_id=invoice.id,
+        action="create",
+        actor=actor,
+        before=None,
+        after={"id": invoice.id, "customer_id": invoice.customer_id, "total_rial": total, "due_total_rial": due_total},
+    )
+
     db.commit()
     return _get_invoice_or_404(db, invoice.id)
 
@@ -316,9 +398,30 @@ def get_sale(db: Session, invoice_id: int) -> SaleInvoice:
     return _get_invoice_or_404(db, invoice_id)
 
 
-def cancel_sale(db: Session, invoice_id: int) -> SaleInvoice:
+def cancel_sale(db: Session, invoice_id: int, actor: User | None = None) -> SaleInvoice:
     invoice = _get_invoice_or_404(db, invoice_id)
     if invoice.status != "canceled":
+        sale_entry = db.scalar(
+            select(LedgerEntry).where(
+                LedgerEntry.source_type == "sale",
+                LedgerEntry.source_id == invoice.id,
+            )
+        )
+        if sale_entry is not None and (
+            not sale_entry.is_active
+            or sale_entry.status != "open"
+            or sale_entry.remaining_rial != sale_entry.amount_rial
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="فاکتور دارای تسویه ثبت‌شده است و قابل لغو نیست.",
+            )
+        before = {
+            "id": invoice.id,
+            "status": invoice.status,
+            "is_active": invoice.is_active,
+            "due_total_rial": invoice.due_total_rial,
+        }
         for item in invoice.items:
             sale_out = db.scalar(
                 select(InventoryTransaction).where(
@@ -368,6 +471,33 @@ def cancel_sale(db: Session, invoice_id: int) -> SaleInvoice:
         invoice.status = "canceled"
         invoice.is_active = False
         invoice.canceled_at_utc = utc_now()
+        if sale_entry is not None:
+            entry_before = {
+                "remaining_rial": sale_entry.remaining_rial,
+                "status": sale_entry.status,
+                "is_active": sale_entry.is_active,
+            }
+            sale_entry.remaining_rial = 0
+            sale_entry.status = "canceled"
+            sale_entry.is_active = False
+            _audit_sale_action(
+                db,
+                entity_type="ledger_entry",
+                entity_id=sale_entry.id,
+                action="cancel",
+                actor=actor,
+                before=entry_before,
+                after={"remaining_rial": 0, "status": "canceled", "is_active": False},
+            )
+        _audit_sale_action(
+            db,
+            entity_type="sale_invoice",
+            entity_id=invoice.id,
+            action="cancel",
+            actor=actor,
+            before=before,
+            after={"id": invoice.id, "status": "canceled", "is_active": False, "due_total_rial": invoice.due_total_rial},
+        )
         db.commit()
     return _get_invoice_or_404(db, invoice_id)
 

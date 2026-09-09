@@ -94,6 +94,7 @@ def _ledger_components(db: Session, jalali_date_to: str) -> tuple[int, int]:
         select(Person, LedgerEntry).join(LedgerEntry, LedgerEntry.person_id == Person.id).where(
             LedgerEntry.status == "open",
             LedgerEntry.remaining_rial > 0,
+            LedgerEntry.source_type != "sale",
             LedgerEntry.jalali_date <= jalali_date_to,
             LedgerEntry.is_active.is_(True),
         )

@@ -306,6 +306,30 @@ def test_cashflow_keeps_unallocated_invoice_due_visible(
     assert report.json()["net_expected_rial"] == 1_900_000
 
 
+def test_cashflow_does_not_double_count_customer_sale_ledger_receivable(
+    client: TestClient,
+    db_session: Session,
+    auth_headers: dict[str, str],
+) -> None:
+    seed_sale_inventory(db_session)
+    customer = create_person(client, auth_headers, "Linked Customer")
+    created = client.post(
+        "/api/v1/sales",
+        json=sale_payload() | {"customer_id": customer["id"]},
+        headers=auth_headers,
+    )
+    assert created.status_code == 201
+
+    cashflow = client.get("/api/v1/reports/cashflow?jalali_date_to=1405/06/30", headers=auth_headers)
+    debts = client.get("/api/v1/reports/customer-debts", headers=auth_headers)
+
+    assert cashflow.status_code == 200
+    assert cashflow.json()["total_sales_receivables_rial"] == 1_500_000
+    assert cashflow.json()["open_customer_receivables_rial"] == 0
+    assert cashflow.json()["net_expected_rial"] == 1_500_000
+    assert debts.json()["total_remaining_rial"] == 1_500_000
+
+
 def test_undated_pending_payment_remains_unallocated_receivable(
     client: TestClient,
     db_session: Session,

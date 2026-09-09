@@ -1374,6 +1374,10 @@ button {
 .selected-customer-card > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .selected-customer-card p { margin: 0; color: #40534d; line-height: 1.8; overflow-wrap: anywhere; }
 .selected-customer-card small { color: #687a74; }
+.selected-customer-card > .MuiButton-root { justify-self: start; margin-top: 3px; }
+.dialog-title-with-action { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dialog-title-with-action .MuiIconButton-root { min-width: 44px; min-height: 44px; }
+.sale-customer-summary-actions { position: sticky; bottom: 0; z-index: 1; padding: 12px 24px !important; background: #fff; border-top: 1px solid #dce7e2; }
 
 .sale-meta-grid .date-field {
   min-width: 0;
@@ -6855,4 +6859,5 @@ textarea:focus {
   .person-summary-net, .person-profile-details .wide { grid-column: auto; }
   .person-summary-actions { display: grid; grid-template-columns: 1fr; padding: 12px 20px 20px; }
   .person-summary-actions .MuiButton-root { width: 100%; min-height: 44px; margin: 0; }
+  .sale-customer-summary-actions .MuiButton-root { width: 100%; }
 }
