@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException, status
-from sqlalchemy import exists, select, update
+from sqlalchemy import exists, func, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.time import utc_now
@@ -71,6 +71,33 @@ def _get_payment_or_404(db: Session, payment_id: int) -> Payment:
     return payment
 
 
+def _sync_open_sale_ledger_due_date(db: Session, invoice_id: int) -> None:
+    """Keep an existing open canonical receivable aligned with pending payments.
+
+    This intentionally never creates a missing entry and never revives or mutates
+    a settled/canceled entry.  Reconciliation of legacy inconsistencies remains a
+    separate, explicitly reviewed operation.
+    """
+    earliest_pending_due = db.scalar(
+        select(func.min(Payment.due_jalali_date)).where(
+            Payment.invoice_id == invoice_id,
+            Payment.status == "pending",
+            Payment.due_jalali_date.is_not(None),
+        )
+    )
+    db.execute(
+        update(LedgerEntry)
+        .where(
+            LedgerEntry.source_type == "sale",
+            LedgerEntry.source_id == invoice_id,
+            LedgerEntry.status == "open",
+            LedgerEntry.is_active.is_(True),
+        )
+        .values(due_jalali_date=earliest_pending_due)
+        .execution_options(synchronize_session=False)
+    )
+
+
 def update_payment_due_date(
     db: Session,
     payment_id: int,
@@ -121,18 +148,23 @@ def update_payment_due_date(
             status_code=status.HTTP_409_CONFLICT,
             detail="این پرداخت پس از باز شدن فرم تغییر کرده است؛ اطلاعات را دوباره دریافت کنید.",
         )
-    db.add(
-        PaymentDueAudit(
-            payment_id=payment.id,
-            actor_user_id=actor.id,
-            actor_username=actor.username,
-            actor_full_name=actor.full_name,
-            before_due_date=before_due_date,
-            after_due_date=payload.due_jalali_date,
-            reason=payload.reason,
+    try:
+        db.add(
+            PaymentDueAudit(
+                payment_id=payment.id,
+                actor_user_id=actor.id,
+                actor_username=actor.username,
+                actor_full_name=actor.full_name,
+                before_due_date=before_due_date,
+                after_due_date=payload.due_jalali_date,
+                reason=payload.reason,
+            )
         )
-    )
-    db.commit()
+        _sync_open_sale_ledger_due_date(db, payment.invoice_id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return _get_payment_or_404(db, payment.id)
 
 
