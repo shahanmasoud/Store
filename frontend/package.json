@@ -9,6 +9,7 @@
     "build:pythonanywhere": "tsc -b && vite build --outDir ../backend/app/frontend --emptyOutDir",
     "test:numbers": "node --experimental-strip-types --test tests/numberUtils.test.mjs",
     "test:roles": "node --experimental-strip-types --test tests/roleAccess.test.mjs",
+    "test:e2e": "node tests/e2e/run.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -21,6 +22,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.55.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
