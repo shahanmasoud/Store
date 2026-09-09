@@ -56,6 +56,36 @@ def test_verify_detects_tampering(tmp_path: Path) -> None:
         verify_backup(backup)
 
 
+def test_verify_rejects_missing_checksum(tmp_path: Path) -> None:
+    source = tmp_path / "source.db"
+    _database(source)
+    backup = create_backup(source, tmp_path / "backups")
+    backup.with_suffix(".db.sha256").unlink()
+
+    with pytest.raises(RuntimeError, match="checksum is missing"):
+        verify_backup(backup)
+
+
+def test_backup_checksum_publish_failure_leaves_no_partial_backup(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "source.db"
+    destination = tmp_path / "backups"
+    _database(source)
+    real_replace = os.replace
+    calls = 0
+
+    def fail_second_replace(source_path, target_path):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("simulated checksum publish failure")
+        return real_replace(source_path, target_path)
+
+    monkeypatch.setattr("app.scripts.sqlite_backup.os.replace", fail_second_replace)
+    with pytest.raises(OSError, match="simulated checksum"):
+        create_backup(source, destination)
+    assert list(destination.iterdir()) == []
+
+
 def test_retention_only_removes_matching_old_backups(tmp_path: Path) -> None:
     backup_dir = tmp_path / "backups"
     source = tmp_path / "source.db"

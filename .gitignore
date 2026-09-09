@@ -27,6 +27,7 @@ vite.config.d.ts
 *.sqlite
 *.sqlite3
 *.db
+.store-data.lock
 
 # Logs and OS files
 *.log

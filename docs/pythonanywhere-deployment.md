@@ -111,10 +111,10 @@ pa website reload --domain <USERNAME>.pythonanywhere.com
 
 ```bash
 cd ~/Store/backend
-~/.virtualenvs/store/bin/python -m app.scripts.sqlite_backup backup
+~/.virtualenvs/store/bin/python -m app.scripts.sqlite_backup bundle --keep-days 30 --keep-last 7
 ```
 
-پس از فعال‌شدن تصویر کالا، پوشه `~/store-data/media` نیز بخشی از داده عملیاتی است. آن را همراه همان snapshot دیتابیس و خارج از Git آرشیو کنید؛ بکاپ فقط-دیتابیس برای بازیابی کامل فروشگاه کافی نیست.
+فرمان `bundle` هم SQLite و هم `MEDIA_ROOT` را زیر قفل مشترک، همراه manifest و checksum، خارج از Git نگه می‌دارد. بکاپ قدیمی فقط-دیتابیس برای بازیابی کامل فروشگاه کافی نیست.
 
 راهنمای زمان‌بندی، نگهداری، اعتبارسنجی و بازیابی امن در
 [`sqlite-backup.md`](sqlite-backup.md) قرار دارد. بکاپ‌ها در `~/store-backups` و خارج از Git ذخیره می‌شوند.

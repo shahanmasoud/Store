@@ -4,7 +4,7 @@
 
 اطلاعات مالی یا فایل دیتابیس را در Git و GitHub قرار ندهید. فایل‌های `*.db`، `*.sqlite` و `*.sqlite3` در `.gitignore` هستند، اما محل پشتیبان نیز باید کاملاً بیرون از پوشه پروژه باشد.
 
-> از فاز تصویر کالا به بعد، این ابزار فقط بخش SQLite را پشتیبان می‌گیرد. بازیابی کامل علاوه بر فایل دیتابیس به snapshot هماهنگ پوشه `MEDIA_ROOT` نیاز دارد. تا پیاده‌سازی ابزار bundle خودکار، دیتابیس و media را با یک شناسه زمانی مشترک آرشیو و manifest شامل نام، اندازه و SHA-256 فایل‌ها نگهداری کنید؛ هیچ‌کدام وارد Git نشوند.
+فرمان قدیمی `backup` فقط SQLite را پوشش می‌دهد. برای داده عملیاتی از فرمان `bundle` استفاده کنید؛ این فرمان دیتابیس و کل `MEDIA_ROOT` را زیر یک قفل مشترک در staging می‌سازد، همه فایل‌ها و manifest را بررسی می‌کند و فقط سپس پوشه نهایی را اتمیک منتشر می‌کند.
 
 ## PythonAnywhere
 
@@ -15,18 +15,18 @@ cd ~/Store/backend
 set -a
 source ~/.store.env
 set +a
-~/.virtualenvs/store/bin/python -m app.scripts.sqlite_backup backup
+~/.virtualenvs/store/bin/python -m app.scripts.sqlite_backup bundle --keep-days 30 --keep-last 7
 ```
 
-دستور بالا مسیر دیتابیس را از `DATABASE_URL` می‌خواند، نسخه را بیرون مخزن می‌سازد، یکپارچگی را بررسی می‌کند و SHA-256 را چاپ می‌کند. برای نگهداری فقط ۳۰ روز از نسخه‌های روزانه‌ای که نام استاندارد ابزار را دارند:
+دستور بالا مسیر دیتابیس و رسانه را از `DATABASE_URL` و `MEDIA_ROOT` می‌خواند. هر bundle شامل `store.db`، پوشه `media`، `manifest.json` و checksum اجباری manifest است. `--keep-days 30 --keep-last 7` نسخه‌های قدیمی را فقط پس از موفقیت نسخه تازه حذف می‌کند و همیشه هفت نسخه جدید را نگه می‌دارد.
 
 ```bash
-~/.virtualenvs/store/bin/python -m app.scripts.sqlite_backup backup --keep-days 30
+bash -lc 'set -a; source ~/.store.env; set +a; cd ~/Store/backend && ~/.virtualenvs/store/bin/python -m app.scripts.sqlite_backup bundle --keep-days 30 --keep-last 7 >> ~/store-backups/scheduled.log 2>&1'
 ```
 
-حذف نسخه‌های قدیمی اختیاری است. ابزار فقط فایل‌های `store-*.db` همان پوشه و checksum متناظر را حذف می‌کند و `--keep-days` کمتر از یک را نمی‌پذیرد.
+همین فرمان یک‌خطی برای PythonAnywhere Scheduled Tasks مناسب است. task باید روزانه اجرا شود؛ خروجی موفق با exit code صفر و عبارت `Backup bundle created and verified` پایان می‌یابد. خطا exit code غیرصفر دارد. فایل log را دوره‌ای rotate کنید و هیچ secretی در فرمان یا log ننویسید.
 
-پیشنهاد زمان‌بندی: این فرمان را در Scheduled Tasks حساب روزانه اجرا کنید و علاوه بر آن، درست پیش از `git pull` یا اجرای migration یک نسخه دستی بگیرید. پوشه و فایل‌ها در سیستم‌های POSIX به‌ترتیب با permissionهای `700` و `600` محدود می‌شوند.
+قفل مشترک مانع هم‌زمانی دو بکاپ و تغییر تصویر هنگام snapshot می‌شود؛ در زمان بکاپ، upload/delete تصویر ممکن است موقتاً پاسخ 503 بگیرد و قابل retry است. علاوه بر task روزانه، درست پیش از `git pull` یا migration یک bundle دستی بگیرید. پوشه و فایل‌ها در POSIX به‌ترتیب با permissionهای `700` و `600` محدود می‌شوند.
 
 ## اجرای محلی ویندوز
 
@@ -34,8 +34,9 @@ set +a
 
 ```powershell
 cd C:\path\to\Store\backend
-.\.venv\Scripts\python.exe -m app.scripts.sqlite_backup backup `
+ .\.venv\Scripts\python.exe -m app.scripts.sqlite_backup bundle `
   --source .\store.db `
+  --media-root .\media `
   --destination "$env:USERPROFILE\StoreBackups"
 ```
 
@@ -46,23 +47,25 @@ cd C:\path\to\Store\backend
 بررسی یک نسخه هیچ داده‌ای را تغییر نمی‌دهد:
 
 ```bash
-python -m app.scripts.sqlite_backup verify ~/store-backups/store-TIMESTAMP.db
+python -m app.scripts.sqlite_backup verify-bundle ~/store-backups/store-bundle-TIMESTAMP
 ```
 
 ابتدا همیشه در یک مسیر تازه بازیابی آزمایشی انجام دهید:
 
 ```bash
-python -m app.scripts.sqlite_backup restore \
-  ~/store-backups/store-TIMESTAMP.db \
-  ~/store-restore-test/store.db
+python -m app.scripts.sqlite_backup restore-bundle \
+  ~/store-backups/store-bundle-TIMESTAMP \
+  ~/store-restore-test/store.db \
+  ~/store-restore-test/media
 ```
 
-اگر فایل مقصد وجود داشته باشد، ابزار بدون `--replace` متوقف می‌شود. برای جایگزینی واقعی دیتابیس، ابتدا وب‌اپ را متوقف کنید، از دیتابیس فعلی یک بکاپ تازه بگیرید و فقط سپس با آگاهی کامل `--replace` بدهید. هرگز روی دیتابیس در حال استفاده restore انجام ندهید.
+هر دو مقصد restore باید تازه و ناموجود باشند؛ ابزار هرگز داده موجود را جایگزین نمی‌کند. پس از restore، integrity دیتابیس و وجود تمام تصاویر ارجاع‌شده دوباره بررسی می‌شود. جایگزینی production بخشی از این ابزار نیست: ابتدا وب‌اپ را متوقف کنید، از وضعیت فعلی bundle تازه بگیرید و فقط با runbook جدا و تأیید انسانی جابه‌جایی را انجام دهید.
 
 ## کنترل دوره‌ای
 
-- روزانه: موفقیت فرمان backup و ایجاد فایل `.sha256` را بررسی کنید.
+- روزانه: موفقیت فرمان bundle، exit code، manifest و checksum را بررسی کنید.
 - ماهانه: یک restore آزمایشی در مسیر جدا انجام دهید و برنامه را با کپی آزمایشی بالا بیاورید.
 - پیش از هر migration: بکاپ مستقل بگیرید و نام آن را در گزارش استقرار ثبت کنید.
-- پس از هر تغییر تصویر و دست‌کم روزانه: snapshot پوشه media را کنار بکاپ هم‌زمان دیتابیس نگه دارید و ماهانه وجود فایل هر `image_url` را در restore آزمایشی بررسی کنید.
+- verifier وجود فایل متناظر هر `products.image_filename` را کنترل می‌کند؛ smoke test فروشگاه پس از restore همچنان الزامی است.
+- اعلان خودکار شکست و نسخه رمزنگاری‌شده off-host هنوز پیاده نشده‌اند؛ تا آن زمان log روزانه دستی بررسی و یک کپی رمزنگاری‌شده روی دستگاه دیگری نگهداری شود.
 - فایل‌های بکاپ و لاگ‌ها نباید حاوی `SECRET_KEY`، توکن بله یا محتوای `~/.store.env` باشند.

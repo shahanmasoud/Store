@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.catalog import Product
+from app.services.data_lock import data_lock_path, exclusive_data_lock
 
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 FORMAT_EXTENSION = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp"}
@@ -112,6 +113,29 @@ def replace_product_image(
     content: bytes,
     content_type: str | None,
 ) -> Product:
+    settings = get_settings()
+    try:
+        with exclusive_data_lock(data_lock_path(settings.media_root)):
+            return _replace_product_image_locked(
+                db,
+                product_id=product_id,
+                content=content,
+                content_type=content_type,
+            )
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ذخیره تصویر موقتاً در حال پشتیبان‌گیری است؛ کمی بعد دوباره تلاش کنید.",
+        ) from exc
+
+
+def _replace_product_image_locked(
+    db: Session,
+    *,
+    product_id: int,
+    content: bytes,
+    content_type: str | None,
+) -> Product:
     product = _active_product(db, product_id)
     sanitized, extension = _validated_and_sanitized_image(content, content_type)
     directory = _product_directory()
@@ -145,6 +169,18 @@ def replace_product_image(
 
 
 def remove_product_image(db: Session, *, product_id: int) -> Product:
+    settings = get_settings()
+    try:
+        with exclusive_data_lock(data_lock_path(settings.media_root)):
+            return _remove_product_image_locked(db, product_id=product_id)
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="حذف تصویر موقتاً در حال پشتیبان‌گیری است؛ کمی بعد دوباره تلاش کنید.",
+        ) from exc
+
+
+def _remove_product_image_locked(db: Session, *, product_id: int) -> Product:
     product = _active_product(db, product_id)
     old_path = _safe_existing_path(product.image_filename)
     quarantined_path: Path | None = None
