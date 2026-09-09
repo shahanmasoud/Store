@@ -1,16 +1,18 @@
 from collections import defaultdict
+from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import exists, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.time import utc_now
 from app.models.catalog import ProductVariant
 from app.models.purchases import InventoryItem, InventoryTransaction
 from app.models.ledger import Person
-from app.models.sales import Payment, SaleInvoice, SaleInvoiceItem
-from app.schemas.sales import DailyJournalPaymentBreakdown, DailyJournalRead, PaymentCreate, SaleInvoiceCreate
+from app.models.sales import Payment, PaymentDueAudit, SaleInvoice, SaleInvoiceItem
+from app.models.user import User
+from app.schemas.sales import DailyJournalPaymentBreakdown, DailyJournalRead, PaymentCreate, PaymentDueDateUpdate, SaleInvoiceCreate
 from app.schemas.sales import SalesFormOptionsRead
 from app.services import catalog as catalog_service
 from app.services import ledger as ledger_service
@@ -45,6 +47,97 @@ def _default_payment_status(payload: PaymentCreate) -> str:
     if payload.method in RECEIVED_BY_DEFAULT:
         return "received"
     return "pending"
+
+
+def _normalized_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _get_payment_or_404(db: Session, payment_id: int) -> Payment:
+    payment = db.scalar(
+        select(Payment).options(selectinload(Payment.invoice)).where(Payment.id == payment_id)
+    )
+    if payment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="پرداخت فروش پیدا نشد.")
+    return payment
+
+
+def update_payment_due_date(
+    db: Session,
+    payment_id: int,
+    payload: PaymentDueDateUpdate,
+    actor: User,
+) -> Payment:
+    payment = _get_payment_or_404(db, payment_id)
+    if payment.status != "pending" or payment.invoice.status != "active" or not payment.invoice.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="فقط سررسید پرداخت بازِ فاکتور فعال قابل تغییر است.",
+        )
+    if payment.updated_at_utc is None or _normalized_utc(payment.updated_at_utc) != _normalized_utc(payload.expected_updated_at):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="این پرداخت پس از باز شدن فرم تغییر کرده است؛ اطلاعات را دوباره دریافت کنید.",
+        )
+    if payment.due_jalali_date == payload.due_jalali_date:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="سررسید جدید با مقدار فعلی یکسان است.")
+
+    before_due_date = payment.due_jalali_date
+    next_updated_at = utc_now()
+    result = db.execute(
+        update(Payment)
+        .where(
+            Payment.id == payment.id,
+            Payment.status == "pending",
+            Payment.updated_at_utc == payload.expected_updated_at,
+            exists().where(
+                SaleInvoice.id == Payment.invoice_id,
+                SaleInvoice.status == "active",
+                SaleInvoice.is_active.is_(True),
+            ),
+        )
+        .values(due_jalali_date=payload.due_jalali_date, updated_at_utc=next_updated_at)
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        db.expire_all()
+        current = _get_payment_or_404(db, payment_id)
+        if current.status != "pending" or current.invoice.status != "active" or not current.invoice.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="فقط سررسید پرداخت بازِ فاکتور فعال قابل تغییر است.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="این پرداخت پس از باز شدن فرم تغییر کرده است؛ اطلاعات را دوباره دریافت کنید.",
+        )
+    db.add(
+        PaymentDueAudit(
+            payment_id=payment.id,
+            actor_user_id=actor.id,
+            actor_username=actor.username,
+            actor_full_name=actor.full_name,
+            before_due_date=before_due_date,
+            after_due_date=payload.due_jalali_date,
+            reason=payload.reason,
+        )
+    )
+    db.commit()
+    return _get_payment_or_404(db, payment.id)
+
+
+def list_payment_due_audits(db: Session, payment_id: int) -> list[PaymentDueAudit]:
+    _get_payment_or_404(db, payment_id)
+    return list(
+        db.scalars(
+            select(PaymentDueAudit)
+            .where(PaymentDueAudit.payment_id == payment_id)
+            .order_by(PaymentDueAudit.occurred_at_utc, PaymentDueAudit.id)
+        )
+    )
 
 
 def _get_invoice_or_404(db: Session, invoice_id: int) -> SaleInvoice:
@@ -188,6 +281,7 @@ def create_sale(db: Session, payload: SaleInvoiceCreate) -> SaleInvoice:
             )
         )
 
+    payment_updated_at = utc_now()
     for payment_payload in payload.payments:
         db.add(
             Payment(
@@ -200,6 +294,7 @@ def create_sale(db: Session, payload: SaleInvoiceCreate) -> SaleInvoice:
                 local_time=payment_payload.local_time or payload.local_time,
                 due_jalali_date=payment_payload.due_jalali_date,
                 note=payment_payload.note,
+                updated_at_utc=payment_updated_at,
             )
         )
 

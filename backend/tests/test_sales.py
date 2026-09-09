@@ -1,7 +1,10 @@
 from collections.abc import Generator
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 import pytest
 from fastapi.testclient import TestClient
+from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -13,8 +16,12 @@ from app.main import app
 from app.models.catalog import Category, Product, ProductVariant, Unit
 from app.models.purchases import InventoryItem, InventoryTransaction
 from app.models.ledger import Person
-from app.models.sales import SaleInvoice, SaleInvoiceItem
+from app.models.ledger import LedgerEntry
+from app.models.sales import Payment, PaymentDueAudit, SaleInvoice, SaleInvoiceItem
 from app.models.user import User
+from app.core.time import utc_now
+from app.schemas.sales import PaymentDueDateUpdate
+from app.services.sales import update_payment_due_date
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 
@@ -358,3 +365,256 @@ def test_daily_journal_rejects_bad_jalali_date(client: TestClient, auth_headers:
     response = client.get("/api/v1/daily-journal?jalali_date=2026-08-20", headers=auth_headers)
 
     assert response.status_code == 422
+
+
+def test_pending_sale_payment_due_date_set_change_clear_is_audited_without_ledger_changes(
+    client: TestClient,
+    db_session: Session,
+    auth_headers: dict[str, str],
+) -> None:
+    created = client.post("/api/v1/sales", json=sale_payload(), headers=auth_headers).json()
+    payment = next(item for item in created["payments"] if item["status"] == "pending")
+    ledger_count = db_session.query(LedgerEntry).count()
+
+    set_due = client.patch(
+        f"/api/v1/sales/payments/{payment['id']}/due-date",
+        json={
+            "due_jalali_date": "۱۴۰۵/۰۶/۲۰",
+            "reason": "  توافق با مشتری  ",
+            "expected_updated_at": payment["updated_at_utc"],
+        },
+        headers=auth_headers,
+    )
+    assert set_due.status_code == 200
+    assert set_due.json()["due_jalali_date"] == "1405/06/20"
+    first_version = set_due.json()["updated_at_utc"]
+    assert first_version != payment["updated_at_utc"]
+
+    changed = client.patch(
+        f"/api/v1/sales/payments/{payment['id']}/due-date",
+        json={
+            "due_jalali_date": "1405/06/25",
+            "reason": "تمدید موعد",
+            "expected_updated_at": first_version,
+        },
+        headers=auth_headers,
+    )
+    assert changed.status_code == 200
+    cleared = client.patch(
+        f"/api/v1/sales/payments/{payment['id']}/due-date",
+        json={
+            "due_jalali_date": None,
+            "reason": "حذف موعد اشتباه",
+            "expected_updated_at": changed.json()["updated_at_utc"],
+        },
+        headers=auth_headers,
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["due_jalali_date"] is None
+
+    audits = client.get(
+        f"/api/v1/sales/payments/{payment['id']}/due-date/audits",
+        headers=auth_headers,
+    )
+    assert audits.status_code == 200
+    assert [item["before_due_date"] for item in audits.json()] == [None, "1405/06/20", "1405/06/25"]
+    assert [item["after_due_date"] for item in audits.json()] == ["1405/06/20", "1405/06/25", None]
+    assert [item["reason"] for item in audits.json()] == ["توافق با مشتری", "تمدید موعد", "حذف موعد اشتباه"]
+    assert all(item["actor_username"] == "admin" for item in audits.json())
+    assert db_session.query(PaymentDueAudit).count() == 3
+    assert db_session.query(LedgerEntry).count() == ledger_count
+
+
+def test_sale_payment_due_date_uses_optimistic_concurrency_and_rejects_noop(
+    client: TestClient,
+    db_session: Session,
+    auth_headers: dict[str, str],
+) -> None:
+    created = client.post("/api/v1/sales", json=sale_payload(), headers=auth_headers).json()
+    payment = next(item for item in created["payments"] if item["status"] == "pending")
+    payload = {
+        "due_jalali_date": "1405/06/20",
+        "reason": "ثبت موعد",
+        "expected_updated_at": payment["updated_at_utc"],
+    }
+    current = client.patch(
+        f"/api/v1/sales/payments/{payment['id']}/due-date",
+        json=payload,
+        headers=auth_headers,
+    )
+    assert current.status_code == 200
+
+    stale = client.patch(
+        f"/api/v1/sales/payments/{payment['id']}/due-date",
+        json={**payload, "due_jalali_date": "1405/06/21"},
+        headers=auth_headers,
+    )
+    assert stale.status_code == 409
+    assert "دوباره دریافت" in stale.json()["detail"]
+    no_op = client.patch(
+        f"/api/v1/sales/payments/{payment['id']}/due-date",
+        json={**payload, "expected_updated_at": current.json()["updated_at_utc"]},
+        headers=auth_headers,
+    )
+    assert no_op.status_code == 409
+    assert db_session.query(PaymentDueAudit).count() == 1
+
+
+def test_sale_payment_due_date_rejects_received_canceled_invalid_and_missing(
+    client: TestClient,
+    db_session: Session,
+    auth_headers: dict[str, str],
+) -> None:
+    created = client.post("/api/v1/sales", json=sale_payload(), headers=auth_headers).json()
+    received = next(item for item in created["payments"] if item["status"] == "received")
+    pending = next(item for item in created["payments"] if item["status"] == "pending")
+
+    received_response = client.patch(
+        f"/api/v1/sales/payments/{received['id']}/due-date",
+        json={"due_jalali_date": "1405/06/20", "reason": "نامعتبر", "expected_updated_at": received["updated_at_utc"]},
+        headers=auth_headers,
+    )
+    assert received_response.status_code == 409
+    assert client.post(f"/api/v1/sales/{created['id']}/cancel", headers=auth_headers).status_code == 200
+    canceled_response = client.patch(
+        f"/api/v1/sales/payments/{pending['id']}/due-date",
+        json={"due_jalali_date": "1405/06/20", "reason": "نامعتبر", "expected_updated_at": pending["updated_at_utc"]},
+        headers=auth_headers,
+    )
+    assert canceled_response.status_code == 409
+    assert client.patch(
+        "/api/v1/sales/payments/99999/due-date",
+        json={"due_jalali_date": "1405/06/20", "reason": "ناموجود", "expected_updated_at": pending["updated_at_utc"]},
+        headers=auth_headers,
+    ).status_code == 404
+    assert client.patch(
+        f"/api/v1/sales/payments/{pending['id']}/due-date",
+        json={"due_jalali_date": "1405/13/01", "reason": "نامعتبر", "expected_updated_at": pending["updated_at_utc"]},
+        headers=auth_headers,
+    ).status_code == 422
+    assert db_session.query(PaymentDueAudit).count() == 0
+
+
+def test_sale_payment_due_date_requires_sales_permission_and_records_subadmin_actor(
+    client: TestClient,
+    db_session: Session,
+    auth_headers: dict[str, str],
+) -> None:
+    created = client.post("/api/v1/sales", json=sale_payload(), headers=auth_headers).json()
+    payment = next(item for item in created["payments"] if item["status"] == "pending")
+    assert client.patch(
+        f"/api/v1/sales/payments/{payment['id']}/due-date",
+        json={"due_jalali_date": "1405/06/20", "reason": "بدون نشست", "expected_updated_at": payment["updated_at_utc"]},
+    ).status_code == 401
+
+    from app.core.security import get_password_hash
+
+    db_session.add_all([
+        User(username="sales-due", full_name="مسئول فروش", hashed_password=get_password_hash("operator123"), is_active=True, is_superuser=False, can_sales=True),
+        User(username="ledger-due", full_name="مسئول دفتر", hashed_password=get_password_hash("operator123"), is_active=True, is_superuser=False, can_ledger=True),
+    ])
+    db_session.commit()
+    sales_token = client.post("/api/v1/auth/login", json={"username": "sales-due", "password": "operator123"}).json()["access_token"]
+    ledger_token = client.post("/api/v1/auth/login", json={"username": "ledger-due", "password": "operator123"}).json()["access_token"]
+    payload = {"due_jalali_date": "1405/06/20", "reason": "پیگیری فروش", "expected_updated_at": payment["updated_at_utc"]}
+    assert client.patch(
+        f"/api/v1/sales/payments/{payment['id']}/due-date",
+        json=payload,
+        headers={"Authorization": f"Bearer {ledger_token}"},
+    ).status_code == 403
+    updated = client.patch(
+        f"/api/v1/sales/payments/{payment['id']}/due-date",
+        json=payload,
+        headers={"Authorization": f"Bearer {sales_token}"},
+    )
+    assert updated.status_code == 200
+    audits = client.get(
+        f"/api/v1/sales/payments/{payment['id']}/due-date/audits",
+        headers={"Authorization": f"Bearer {sales_token}"},
+    ).json()
+    assert audits[0]["actor_username"] == "sales-due"
+    assert audits[0]["actor_full_name"] == "مسئول فروش"
+    assert client.get(
+        f"/api/v1/sales/payments/{payment['id']}/due-date/audits",
+        headers={"Authorization": f"Bearer {ledger_token}"},
+    ).status_code == 403
+
+
+def test_concurrent_sale_payment_due_updates_have_exactly_one_winner(tmp_path) -> None:
+    database_path = tmp_path / "payment-due-race.db"
+    engine = create_engine(
+        f"sqlite:///{database_path.as_posix()}",
+        connect_args={"check_same_thread": False},
+    )
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    initial_version = utc_now()
+    with SessionLocal() as setup:
+        actor = User(
+            username="race-sales",
+            full_name="مسئول فروش هم‌زمان",
+            hashed_password=get_password_hash("operator123"),
+            is_active=True,
+            is_superuser=False,
+            can_sales=True,
+        )
+        invoice = SaleInvoice(
+            invoice_number="S-RACE",
+            subtotal_rial=1_000_000,
+            discount_amount_rial=0,
+            total_rial=1_000_000,
+            paid_total_rial=0,
+            due_total_rial=1_000_000,
+            status="active",
+            is_active=True,
+            jalali_date="1405/06/01",
+            local_time="10:00",
+        )
+        setup.add_all([actor, invoice])
+        setup.flush()
+        payment = Payment(
+            invoice_id=invoice.id,
+            method="credit",
+            amount_rial=1_000_000,
+            status="pending",
+            jalali_date="1405/06/01",
+            local_time="10:00",
+            updated_at_utc=initial_version,
+        )
+        setup.add(payment)
+        setup.commit()
+        actor_id, payment_id = actor.id, payment.id
+
+    ready = Barrier(2)
+
+    def attempt(due_date: str) -> int:
+        with SessionLocal() as db:
+            # Keep the same original entity version in both identity maps. This
+            # recreates the stale read that a read-then-write implementation misses.
+            db.get(Payment, payment_id)
+            actor = db.get(User, actor_id)
+            assert actor is not None
+            ready.wait()
+            try:
+                update_payment_due_date(
+                    db,
+                    payment_id,
+                    PaymentDueDateUpdate(
+                        due_jalali_date=due_date,
+                        reason=f"رقابت برای {due_date}",
+                        expected_updated_at=initial_version,
+                    ),
+                    actor,
+                )
+                return 200
+            except HTTPException as exc:
+                return exc.status_code
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        statuses = list(executor.map(attempt, ["1405/06/20", "1405/06/21"]))
+
+    assert sorted(statuses) == [200, 409]
+    with SessionLocal() as verify:
+        assert verify.query(PaymentDueAudit).count() == 1
+        assert verify.get(Payment, payment_id).due_jalali_date in {"1405/06/20", "1405/06/21"}
+    engine.dispose()

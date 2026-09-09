@@ -75,3 +75,23 @@ class Payment(Base, TimestampMixin):
     note: Mapped[str | None] = mapped_column(Text)
 
     invoice: Mapped[SaleInvoice] = relationship(back_populates="payments")
+    due_audits: Mapped[list["PaymentDueAudit"]] = relationship(
+        back_populates="payment",
+        order_by="PaymentDueAudit.id",
+    )
+
+
+class PaymentDueAudit(Base):
+    __tablename__ = "payment_due_audits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    payment_id: Mapped[int] = mapped_column(ForeignKey("payments.id"), nullable=False, index=True)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    actor_username: Mapped[str | None] = mapped_column(String(50))
+    actor_full_name: Mapped[str | None] = mapped_column(String(120))
+    before_due_date: Mapped[str | None] = mapped_column(String(10))
+    after_due_date: Mapped[str | None] = mapped_column(String(10))
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    occurred_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    payment: Mapped[Payment] = relationship(back_populates="due_audits")

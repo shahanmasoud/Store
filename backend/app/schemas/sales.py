@@ -1,4 +1,5 @@
 from decimal import Decimal, ROUND_HALF_UP
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -95,6 +96,40 @@ class PaymentRead(BaseModel):
     timezone: str
     due_jalali_date: str | None
     note: str | None
+    updated_at_utc: datetime | None
+
+
+class PaymentDueDateUpdate(BaseModel):
+    due_jalali_date: str | None
+    reason: str = Field(min_length=1, max_length=2000)
+    expected_updated_at: datetime
+
+    @field_validator("due_jalali_date")
+    @classmethod
+    def due_date_format(cls, value: str | None) -> str | None:
+        return validate_jalali_date(value) if value is not None else None
+
+    @field_validator("reason")
+    @classmethod
+    def reason_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("دلیل تغییر سررسید الزامی است.")
+        return value
+
+
+class PaymentDueAuditRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    payment_id: int
+    actor_user_id: int | None
+    actor_username: str | None
+    actor_full_name: str | None
+    before_due_date: str | None
+    after_due_date: str | None
+    reason: str
+    occurred_at_utc: datetime
 
 
 class SaleInvoiceCreate(BaseModel):

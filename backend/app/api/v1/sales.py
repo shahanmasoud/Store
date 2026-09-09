@@ -4,7 +4,16 @@ from sqlalchemy.orm import Session
 from app.api.v1.auth import require_permission, require_superuser
 from app.core.time import validate_jalali_date
 from app.db.session import get_db
-from app.schemas.sales import DailyJournalRead, SaleInvoiceCreate, SaleInvoiceRead, SalesFormOptionsRead
+from app.models.user import User
+from app.schemas.sales import (
+    DailyJournalRead,
+    PaymentDueAuditRead,
+    PaymentDueDateUpdate,
+    PaymentRead,
+    SaleInvoiceCreate,
+    SaleInvoiceRead,
+    SalesFormOptionsRead,
+)
 from app.services import sales as sales_service
 
 router = APIRouter(dependencies=[Depends(require_permission("can_sales"))])
@@ -28,6 +37,25 @@ def sales_form_options(db: Session = Depends(get_db)) -> SalesFormOptionsRead:
 @router.get("/sales/{invoice_id}", response_model=SaleInvoiceRead)
 def sale(invoice_id: int, db: Session = Depends(get_db)) -> SaleInvoiceRead:
     return sales_service.get_sale(db, invoice_id)
+
+
+@router.patch("/sales/payments/{payment_id}/due-date", response_model=PaymentRead)
+def update_payment_due_date(
+    payment_id: int,
+    payload: PaymentDueDateUpdate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_permission("can_sales")),
+) -> PaymentRead:
+    return sales_service.update_payment_due_date(db, payment_id, payload, actor)
+
+
+@router.get("/sales/payments/{payment_id}/due-date/audits", response_model=list[PaymentDueAuditRead])
+def payment_due_date_audits(
+    payment_id: int,
+    db: Session = Depends(get_db),
+    _actor: User = Depends(require_permission("can_sales")),
+) -> list[PaymentDueAuditRead]:
+    return sales_service.list_payment_due_audits(db, payment_id)
 
 
 @router.post("/sales/{invoice_id}/cancel", response_model=SaleInvoiceRead, dependencies=[Depends(require_superuser)])

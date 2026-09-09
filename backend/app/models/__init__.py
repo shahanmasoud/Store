@@ -10,7 +10,7 @@ from app.models.purchases import (
     PurchaseLot,
     Supplier,
 )
-from app.models.sales import Payment, SaleInvoice, SaleInvoiceItem
+from app.models.sales import Payment, PaymentDueAudit, SaleInvoice, SaleInvoiceItem
 from app.models.user import User, UserAdminAudit
 
 __all__ = [
@@ -30,6 +30,7 @@ __all__ = [
     "OnlineOrderItem",
     "OnlinePriceRule",
     "Payment",
+    "PaymentDueAudit",
     "Person",
     "PriceList",
     "PriceRule",
