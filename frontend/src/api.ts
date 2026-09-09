@@ -385,8 +385,13 @@ export type ChequeAudit = {
 };
 export type Dues = { jalali_date_to: string; open_ledger_entries: LedgerEntry[]; pending_cheques: Cheque[] };
 export type DueReminderItem = {
-  kind: "ledger_entry" | "cheque";
+  kind: "ledger_entry" | "cheque" | "sale_payment";
   record_id: number;
+  payment_id?: number | null;
+  invoice_id?: number | null;
+  invoice_number?: string | null;
+  customer_id?: number | null;
+  customer_name?: string | null;
   person_id?: number | null;
   person_name?: string | null;
   direction: "receivable" | "payable";
@@ -777,8 +782,11 @@ export const api = {
   dues(jalaliDateTo: string) {
     return request<Dues>(`/dues?jalali_date_to=${encodeURIComponent(jalaliDateTo)}`);
   },
-  dueReminders(todayJalali: string, throughJalali: string) {
-    return request<DueReminders>(`/due-reminders?today_jalali=${encodeURIComponent(todayJalali)}&through_jalali=${encodeURIComponent(throughJalali)}`);
+  dueReminders(todayJalali: string, throughJalali: string, filters?: { person_id?: number; kind?: DueReminderItem["kind"] }) {
+    const params = new URLSearchParams({ today_jalali: todayJalali, through_jalali: throughJalali });
+    if (filters?.person_id) params.set("person_id", String(filters.person_id));
+    if (filters?.kind) params.set("kind", filters.kind);
+    return request<DueReminders>(`/due-reminders?${params.toString()}`);
   },
   cheques() {
     return request<Cheque[]>("/cheques");

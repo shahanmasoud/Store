@@ -15,7 +15,8 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.core.config import get_settings
-from app.models.ledger import Cheque, ChequeEvent, LedgerEntry
+from app.models.ledger import Cheque, ChequeEvent, LedgerEntry, Person
+from app.models.sales import Payment, SaleInvoice
 from app.models.user import User
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -901,6 +902,8 @@ def test_due_reminders_group_boundaries_totals_nullable_person_and_stable_order(
     ]
     assert data["upcoming"]["items"][0] == {
         "kind": "cheque", "record_id": upcoming_cheque["id"], "person_id": None, "person_name": None,
+        "payment_id": None, "invoice_id": None, "invoice_number": None,
+        "customer_id": None, "customer_name": None,
         "direction": "receivable", "record_type": "received", "amount_rial": 750_000,
         "due_jalali_date": "1405/06/15", "status": "pending", "description": "چک بدون شخص",
         "cheque_number": "reminder-1", "bank_name": "ملت",
@@ -981,7 +984,151 @@ def test_due_reminders_exclusions_auth_range_and_query_count(
         for item in response.json()[group]["items"]
     ]
     # One auth lookup plus one joined query per financial source; no person N+1 queries.
-    assert statement_count == 3
+    assert statement_count == 4
+
+
+def test_due_reminders_include_sale_payments_group_filter_and_avoid_legacy_double_count(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    db_session: Session,
+) -> None:
+    customer = Person(name="مشتری فروش", person_type="customer")
+    other = Person(name="مشتری دیگر", person_type="customer")
+    db_session.add_all([customer, other])
+    db_session.flush()
+
+    def invoice(number: str, person: Person, *, status: str = "active", is_active: bool = True) -> SaleInvoice:
+        row = SaleInvoice(
+            invoice_number=number,
+            customer_id=person.id,
+            customer_name=person.name,
+            subtotal_rial=1_000,
+            discount_amount_rial=0,
+            total_rial=1_000,
+            paid_total_rial=0,
+            due_total_rial=1_000,
+            status=status,
+            is_active=is_active,
+            jalali_date="1405/06/01",
+            local_time="09:00",
+        )
+        db_session.add(row)
+        db_session.flush()
+        return row
+
+    overdue_invoice = invoice("S-DUE-1", customer)
+    today_invoice = invoice("S-DUE-2", customer)
+    upcoming_invoice = invoice("S-DUE-3", other)
+    canceled_invoice = invoice("S-CANCELED", customer, status="canceled", is_active=False)
+    inactive_invoice = invoice("S-INACTIVE", customer, is_active=False)
+    payments = [
+        Payment(invoice_id=overdue_invoice.id, method="credit", amount_rial=1_000, status="pending", jalali_date="1405/06/01", local_time="09:00", due_jalali_date="1405/06/09", note="قسط عقب‌افتاده"),
+        Payment(invoice_id=today_invoice.id, method="cheque", amount_rial=2_000, status="pending", jalali_date="1405/06/01", local_time="09:00", due_jalali_date="1405/06/10"),
+        Payment(invoice_id=upcoming_invoice.id, method="voucher", amount_rial=3_000, status="pending", jalali_date="1405/06/01", local_time="09:00", due_jalali_date="1405/06/15"),
+        Payment(invoice_id=overdue_invoice.id, method="cash", amount_rial=4_000, status="received", jalali_date="1405/06/01", local_time="09:00", due_jalali_date="1405/06/09"),
+        Payment(invoice_id=canceled_invoice.id, method="credit", amount_rial=5_000, status="pending", jalali_date="1405/06/01", local_time="09:00", due_jalali_date="1405/06/09"),
+        Payment(invoice_id=inactive_invoice.id, method="credit", amount_rial=6_000, status="pending", jalali_date="1405/06/01", local_time="09:00", due_jalali_date="1405/06/09"),
+    ]
+    db_session.add_all(payments)
+    db_session.flush()
+    # A legacy sale ledger row for the same invoice must not duplicate its payment reminder.
+    db_session.add(
+        LedgerEntry(
+            person_id=customer.id,
+            entry_type="debit",
+            amount_rial=1_000,
+            remaining_rial=1_000,
+            source_type="sale",
+            source_id=overdue_invoice.id,
+            jalali_date="1405/06/01",
+            due_jalali_date="1405/06/09",
+            local_time="09:00",
+            status="open",
+            is_active=True,
+        )
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/api/v1/due-reminders?today_jalali=1405/06/10&through_jalali=1405/06/15",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert [item["payment_id"] for item in data["overdue"]["items"]] == [payments[0].id]
+    assert [item["payment_id"] for item in data["today"]["items"]] == [payments[1].id]
+    assert [item["payment_id"] for item in data["upcoming"]["items"]] == [payments[2].id]
+    sale_item = data["overdue"]["items"][0]
+    assert sale_item["kind"] == "sale_payment"
+    assert sale_item["record_id"] == payments[0].id
+    assert sale_item["invoice_id"] == overdue_invoice.id
+    assert sale_item["invoice_number"] == "S-DUE-1"
+    assert sale_item["person_id"] == customer.id == sale_item["customer_id"]
+    assert sale_item["person_name"] == customer.name == sale_item["customer_name"]
+    assert sale_item["direction"] == "receivable"
+    assert sale_item["record_type"] == "credit"
+    assert data["totals"] == {
+        "count": 3, "total_rial": 6_000,
+        "receivable_count": 3, "receivable_total_rial": 6_000,
+        "payable_count": 0, "payable_total_rial": 0,
+    }
+
+    filtered = client.get(
+        f"/api/v1/due-reminders?today_jalali=1405/06/10&through_jalali=1405/06/15&kind=sale_payment&person_id={customer.id}",
+        headers=auth_headers,
+    ).json()
+    assert filtered["totals"]["count"] == 2
+    assert {item["payment_id"] for group in ("overdue", "today", "upcoming") for item in filtered[group]["items"]} == {payments[0].id, payments[1].id}
+    assert client.get(
+        "/api/v1/due-reminders?today_jalali=1405/06/10&through_jalali=1405/06/15&kind=invalid",
+        headers=auth_headers,
+    ).status_code == 422
+
+
+def test_due_reminder_permissions_are_source_scoped_and_union_without_leakage(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    db_session: Session,
+) -> None:
+    person = Person(name="مشتری نقش", person_type="customer")
+    db_session.add(person)
+    db_session.flush()
+    invoice = SaleInvoice(
+        invoice_number="S-ROLE-DUE", customer_id=person.id, customer_name=person.name,
+        subtotal_rial=100, discount_amount_rial=0, total_rial=100,
+        paid_total_rial=0, due_total_rial=100, status="active", is_active=True,
+        jalali_date="1405/06/01", local_time="09:00",
+    )
+    db_session.add(invoice)
+    db_session.flush()
+    db_session.add_all([
+        Payment(invoice_id=invoice.id, method="credit", amount_rial=100, status="pending", jalali_date="1405/06/01", local_time="09:00", due_jalali_date="1405/06/10"),
+        LedgerEntry(person_id=person.id, entry_type="debit", amount_rial=200, remaining_rial=200, source_type="manual", jalali_date="1405/06/01", due_jalali_date="1405/06/10", local_time="09:00", status="open", is_active=True),
+        Cheque(cheque_type="received", person_id=person.id, bank_name="ملی", cheque_number="role-due", amount_rial=300, issue_jalali_date="1405/06/01", due_jalali_date="1405/06/10", status="pending", is_active=True),
+    ])
+    for username, permissions in [
+        ("due-sales", {"can_sales": True}),
+        ("due-ledger", {"can_ledger": True}),
+        ("due-cheque", {"can_cheques_reports": True}),
+        ("due-union", {"can_sales": True, "can_ledger": True}),
+    ]:
+        db_session.add(User(username=username, full_name=username, hashed_password=get_password_hash("operator123"), is_active=True, is_superuser=False, **permissions))
+    db_session.commit()
+
+    expected = {
+        "due-sales": {"sale_payment"},
+        "due-ledger": {"ledger_entry"},
+        "due-cheque": {"cheque"},
+        "due-union": {"sale_payment", "ledger_entry"},
+    }
+    url = "/api/v1/due-reminders?today_jalali=1405/06/10&through_jalali=1405/06/10"
+    for username, expected_kinds in expected.items():
+        token = client.post("/api/v1/auth/login", json={"username": username, "password": "operator123"}).json()["access_token"]
+        result = client.get(url, headers={"Authorization": f"Bearer {token}"})
+        assert result.status_code == 200
+        items = result.json()["today"]["items"]
+        assert {item["kind"] for item in items} == expected_kinds
+        assert result.json()["totals"]["count"] == len(expected_kinds)
 
 
 def test_person_update_validation_and_soft_delete_preserve_financial_history(

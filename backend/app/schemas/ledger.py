@@ -417,16 +417,23 @@ class DuesRead(BaseModel):
     pending_cheques: list[ChequeRead]
 
 
-DueReminderKind = Literal["ledger_entry", "cheque"]
+DueReminderKind = Literal["ledger_entry", "cheque", "sale_payment"]
 DueReminderDirection = Literal["receivable", "payable"]
-DueReminderRecordType = Literal["debit", "credit", "received", "paid"]
+DueReminderRecordType = Literal[
+    "debit", "credit", "received", "paid", "cash", "card", "transfer", "cheque", "voucher"
+]
 
 
 class DueReminderItem(BaseModel):
     kind: DueReminderKind
     record_id: int
+    payment_id: int | None = None
+    invoice_id: int | None = None
+    invoice_number: str | None = None
     person_id: int | None
     person_name: str | None
+    customer_id: int | None = None
+    customer_name: str | None = None
     direction: DueReminderDirection
     record_type: DueReminderRecordType
     amount_rial: int

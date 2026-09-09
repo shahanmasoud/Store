@@ -87,6 +87,7 @@ type AppView = AdminView;
 
 const viewMeta: Record<AppView, { title: string; eyebrow: string; help: string }> = {
   dashboard: { title: "خانه مدیریت", eyebrow: "نمای کلی فروشگاه", help: "از کارهای سریع شروع کن یا وضعیت امروز را مرور کن." },
+  reminders: { title: "یادآوری‌های سررسید", eyebrow: "کارهای نیازمند پیگیری", help: "سررسیدهای عقب‌افتاده و نزدیک را بر اساس نوع یا شخص فیلتر و پیگیری کن." },
   sales: { title: "ثبت فروش", eyebrow: "فروش روزانه", help: "ابتدا کالاها را اضافه کن، سپس روش پرداخت را مشخص و فاکتور را ثبت کن." },
   purchase: { title: "ثبت خرید", eyebrow: "خرید و تامین", help: "تامین‌کننده و کالاها را وارد کن؛ موجودی بعد از ثبت به‌روز می‌شود." },
   inventory: { title: "مدیریت انبار", eyebrow: "موجودی و ارزش کالا", help: "کالاهای کم‌موجود را بررسی کن و برای خرید بعدی تصمیم بگیر." },
@@ -352,6 +353,7 @@ function JalaliDateField({
 function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
   const [status, setStatus] = useState<AuthStatus>("checking");
   const [view, setView] = useState<AppView>("dashboard");
+  const [salesFocus, setSalesFocus] = useState<{ invoiceId: number; paymentId: number } | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loginError, setLoginError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -504,6 +506,7 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
           <DashboardRounded aria-hidden="true" />
           خانه مدیریت
         </button>
+        {canAccessAdminView(user, "reminders") ? <button type="button" className={`sidebar-link ${view === "reminders" ? "active" : ""}`} aria-current={view === "reminders" ? "page" : undefined} onClick={() => navigateView("reminders")}><FactCheckRounded aria-hidden="true" />یادآوری‌های سررسید</button> : null}
         {moduleCards.filter((card) => canAccessAdminView(user, card.key as AppView)).map((card) => {
           const target = card.key as AppView;
           const Icon = card.key === "sales" ? PointOfSaleRounded :
@@ -661,12 +664,13 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
         </aside>
       ) : null}
 
-      {view === "sales" ? <SalesView onBack={() => navigateView("dashboard")} /> : null}
+      {view === "sales" ? <SalesView onBack={() => navigateView("dashboard")} focus={salesFocus} onFocusHandled={() => setSalesFocus(null)} /> : null}
+      {view === "reminders" && user ? <RemindersView user={user} onBack={() => navigateView("dashboard")} onOpenSales={(invoiceId, paymentId) => { setSalesFocus({ invoiceId, paymentId }); navigateView("sales"); }} onOpenLedger={() => navigateView("ledger")} onOpenCheques={() => navigateView("cheques")} /> : null}
       {view === "purchase" ? <PurchaseView onBack={() => navigateView("dashboard")} onOpenInventory={() => navigateView("inventory")} /> : null}
       {view === "inventory" ? <InventoryView onBack={() => navigateView("dashboard")} /> : null}
       {view === "products" ? <ProductsView onBack={() => navigateView("dashboard")} isSuperuser={Boolean(user?.is_superuser)} /> : null}
       {view === "ledger" ? <LedgerView onBack={() => navigateView("dashboard")} /> : null}
-      {view === "cheques" && (user?.is_superuser || user?.can_cheques_reports) ? <ChequesView onBack={() => navigateView("dashboard")} onOpenLedger={() => navigateView("ledger")} isSuperuser={Boolean(user?.is_superuser)} /> : null}
+      {view === "cheques" && (user?.is_superuser || user?.can_cheques_reports) ? <ChequesView onBack={() => navigateView("dashboard")} isSuperuser={Boolean(user?.is_superuser)} /> : null}
       {view === "reports" && (user?.is_superuser || user?.can_cheques_reports) ? <ReportsView onBack={() => navigateView("dashboard")} /> : null}
       {view === "online" ? <OnlineView onBack={() => navigateView("dashboard")} /> : null}
       {view === "users" && user?.is_superuser ? <UsersView onBack={() => navigateView("dashboard")} currentUserId={user.id} /> : null}
@@ -678,6 +682,7 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
           onOpenProducts={() => navigateView("products")}
           onOpenLedger={() => navigateView("ledger")}
           onOpenCheques={() => navigateView("cheques")}
+          onOpenReminders={() => navigateView("reminders")}
           onOpenReports={() => navigateView("reports")}
           onOpenOnline={() => navigateView("online")}
         /> : user ? <RoleHome user={user} onOpenSales={() => navigateView("sales")} onOpenProducts={() => navigateView("products")} onOpenPurchase={() => navigateView("purchase")} onOpenInventory={() => navigateView("inventory")} onOpenLedger={() => navigateView("ledger")} onOpenCheques={() => navigateView("cheques")} onOpenReports={() => navigateView("reports")} /> : null
@@ -727,6 +732,7 @@ function DashboardView({
   onOpenProducts,
   onOpenLedger,
   onOpenCheques,
+  onOpenReminders,
   onOpenReports,
   onOpenOnline,
 }: {
@@ -736,6 +742,7 @@ function DashboardView({
   onOpenProducts: () => void;
   onOpenLedger: () => void;
   onOpenCheques: () => void;
+  onOpenReminders: () => void;
   onOpenReports: () => void;
   onOpenOnline: () => void;
 }) {
@@ -817,7 +824,7 @@ function DashboardView({
             <Card><CardContent><Stack direction="row" sx={{ justifyContent: "space-between" }}><Typography color="text.secondary">فروش امروز</Typography><PointOfSaleRounded color="primary" /></Stack><Typography variant="h5">{formatRial(snapshot.journal.sales_total_rial)}</Typography><Chip size="small" label={`${toPersianDigits(snapshot.journal.invoice_count.toLocaleString("fa-IR"))} فاکتور`} color="primary" variant="outlined" /></CardContent></Card>
             <Card><CardContent><Stack direction="row" sx={{ justifyContent: "space-between" }}><Typography color="text.secondary">دریافت واقعی</Typography><ReceiptLongRounded color="info" /></Stack><Typography variant="h5">{formatRial(snapshot.journal.received_total_rial)}</Typography><LinearProgress aria-label="نسبت مبلغ دریافت‌شده به فروش امروز" variant="determinate" value={snapshot.journal.sales_total_rial > 0 ? Math.min(100, snapshot.journal.received_total_rial / snapshot.journal.sales_total_rial * 100) : 0} sx={{ mt: 1.5 }} /></CardContent></Card>
             <Card><CardContent><Stack direction="row" sx={{ justifyContent: "space-between" }}><Typography color="text.secondary">هشدار موجودی</Typography><Inventory2Rounded color="warning" /></Stack><Typography variant="h5">{toPersianDigits(snapshot.inventory.low_stock_count.toLocaleString("fa-IR"))} کالا</Typography><Button size="small" onClick={onOpenInventory}>{snapshot.inventory.low_stock_count ? "بررسی موجودی" : "انبار بدون هشدار"}</Button></CardContent></Card>
-            <Card><CardContent><Stack direction="row" sx={{ justifyContent: "space-between" }}><Typography color="text.secondary">کارهای سررسید امروز</Typography><PaymentsRounded color="secondary" /></Stack><Typography variant="h5">{toPersianDigits((snapshot.reminders.overdue.count + snapshot.reminders.today.count).toLocaleString("fa-IR"))} مورد</Typography><Button size="small" onClick={onOpenCheques}>{snapshot.reminders.overdue.count + snapshot.reminders.today.count ? "پیگیری سررسیدها" : "کار عقب‌افتاده‌ای نیست"}</Button></CardContent></Card>
+            <Card><CardContent><Stack direction="row" sx={{ justifyContent: "space-between" }}><Typography color="text.secondary">کارهای سررسید امروز</Typography><PaymentsRounded color="secondary" /></Stack><Typography variant="h5">{toPersianDigits((snapshot.reminders.overdue.count + snapshot.reminders.today.count).toLocaleString("fa-IR"))} مورد</Typography><Button size="small" onClick={onOpenReminders}>{snapshot.reminders.overdue.count + snapshot.reminders.today.count ? "پیگیری سررسیدها" : "کار عقب‌افتاده‌ای نیست"}</Button></CardContent></Card>
           </Box>
         ) : null}
       </Box>
@@ -2489,7 +2496,50 @@ function LedgerView({ onBack }: { onBack: () => void }) {
   );
 }
 
-function ChequesView({ onBack, onOpenLedger, isSuperuser }: { onBack: () => void; onOpenLedger: () => void; isSuperuser: boolean }) {
+function RemindersView({ user, onBack, onOpenSales, onOpenLedger, onOpenCheques }: { user: User; onBack: () => void; onOpenSales: (invoiceId: number, paymentId: number) => void; onOpenLedger: () => void; onOpenCheques: () => void }) {
+  const [horizon, setHorizon] = useState(7);
+  const [kind, setKind] = useState<"" | DueReminderItem["kind"]>("");
+  const [personId, setPersonId] = useState("");
+  const [data, setData] = useState<DueReminders | null>(null);
+  const [people, setPeople] = useState<Array<{ id: number; name: string }>>([]);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [error, setError] = useState("");
+  const canSales = Boolean(user.is_superuser || user.can_sales);
+  const canLedger = Boolean(user.is_superuser || user.can_ledger);
+  const canCheques = Boolean(user.is_superuser || user.can_cheques_reports);
+
+  async function load(days = horizon, nextKind = kind, nextPersonId = personId) {
+    setStatus("loading"); setError("");
+    try {
+      const result = await api.dueReminders(currentJalaliDate(), jalaliDateAfterDays(days), { kind: nextKind || undefined, person_id: Number(nextPersonId) || undefined });
+      setData(result); setStatus("ready");
+      if (!nextKind && !nextPersonId) {
+        const byId = new Map<number, string>();
+        for (const group of [result.overdue, result.today, result.upcoming]) for (const item of group.items) {
+          const id = item.person_id ?? item.customer_id; const name = item.person_name ?? item.customer_name;
+          if (id && name) byId.set(id, name);
+        }
+        setPeople([...byId].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, "fa")));
+      }
+    } catch (reason) { setStatus("error"); setError(reason instanceof Error ? reason.message : "یادآوری‌ها دریافت نشدند."); }
+  }
+  useEffect(() => { void load(7, "", ""); }, []);
+
+  function openItem(item: DueReminderItem) {
+    if (item.kind === "sale_payment" && canSales && item.invoice_id && item.payment_id) { onOpenSales(item.invoice_id, item.payment_id); return; }
+    if (item.kind === "ledger_entry" && canLedger) { if (item.person_id) sessionStorage.setItem("store_focus_ledger_person", String(item.person_id)); onOpenLedger(); return; }
+    if (item.kind === "cheque" && canCheques) onOpenCheques();
+  }
+
+  return <CrudWorkspace title="یادآوری‌های سررسید" eyebrow="پیگیری روزانه" onBack={onBack}><section className="sale-panel due-reminder-center reminders-standalone" aria-busy={status === "loading"}>
+    <div className="due-reminder-heading"><div><strong>کارهای سررسید</strong><small>امروز {toPersianDigits(currentJalaliDate())} به وقت تهران</small></div><div className="due-reminder-filters"><TextField select size="small" label="نوع کار" value={kind} onChange={(event) => { const value = event.target.value as typeof kind; setKind(value); void load(horizon, value, personId); }} disabled={status === "loading"}><MenuItem value="">همه نوع‌ها</MenuItem>{canLedger ? <MenuItem value="ledger_entry">سند حساب</MenuItem> : null}{canCheques ? <MenuItem value="cheque">چک</MenuItem> : null}{canSales ? <MenuItem value="sale_payment">پرداخت فروش</MenuItem> : null}</TextField><TextField select size="small" label="شخص" value={personId} onChange={(event) => { setPersonId(event.target.value); void load(horizon, kind, event.target.value); }} disabled={status === "loading"}><MenuItem value="">همه اشخاص</MenuItem>{people.map((person) => <MenuItem key={person.id} value={String(person.id)}>{person.name}</MenuItem>)}</TextField><TextField select size="small" label="افق پیگیری" value={horizon} onChange={(event) => { const days = Number(event.target.value); setHorizon(days); void load(days, kind, personId); }} disabled={status === "loading"}><MenuItem value={7}>۷ روز آینده</MenuItem><MenuItem value={14}>۱۴ روز آینده</MenuItem><MenuItem value={30}>۳۰ روز آینده</MenuItem></TextField></div></div>
+    {status === "loading" ? <div className="due-reminder-loading" role="status"><LinearProgress /><div><span /><span /><span /></div><small>در حال مرتب‌کردن کارهای سررسید…</small></div> : null}
+    {status === "error" ? <Alert severity="error" action={<Button color="inherit" onClick={() => void load()}>تلاش دوباره</Button>}>{error}</Alert> : null}
+    {status === "ready" && data ? <><div className="due-reminder-kpis"><article className="overdue"><small>عقب‌افتاده</small><strong>{toPersianDigits(data.overdue.count)} مورد</strong><span>{formatRial(data.overdue.total_rial)}</span></article><article className="today"><small>امروز</small><strong>{toPersianDigits(data.today.count)} مورد</strong><span>{formatRial(data.today.total_rial)}</span></article><article className="upcoming"><small>آینده نزدیک</small><strong>{toPersianDigits(data.upcoming.count)} مورد</strong><span>{formatRial(data.upcoming.total_rial)}</span></article></div>{data.totals.count === 0 ? <div className="record-state due-reminder-empty">{kind || personId ? <SearchRounded /> : <FactCheckRounded />}<strong>{kind || personId ? "موردی با این فیلتر پیدا نشد" : "در این بازه کاری برای پیگیری نیست"}</strong><span>{kind || personId ? "فیلتر نوع یا شخص را تغییر دهید." : "افق پیگیری را بیشتر کنید."}</span></div> : <div className="due-reminder-groups">{([ ["overdue", "عقب‌افتاده"], ["today", "امروز"], ["upcoming", "آینده نزدیک"] ] as const).map(([key, label]) => { const group = data[key]; return group.items.length ? <section className={`due-reminder-group ${key}`} key={key}><header><strong>{label}</strong><Chip size="small" label={`${toPersianDigits(group.count)} مورد`} /></header><div>{group.items.map((item) => { const accessible = item.kind === "sale_payment" ? canSales : item.kind === "ledger_entry" ? canLedger : canCheques; return <article key={`${item.kind}-${item.record_id}`}><div className="due-reminder-main"><span className={`due-reminder-kind ${item.kind === "sale_payment" ? "sale" : ""}`}>{item.kind === "sale_payment" ? <ReceiptLongRounded /> : item.kind === "cheque" ? <PaymentsRounded /> : <AccountBalanceWalletRounded />}</span><div><strong>{item.customer_name || item.person_name || "بدون شخص"}</strong><small>{item.kind === "sale_payment" ? `فاکتور ${toPersianDigits(item.invoice_number || item.invoice_id || "—")}` : item.kind === "cheque" ? `${item.bank_name || "بانک نامشخص"} • ${toPersianDigits(item.cheque_number || "—")}` : item.description || "سند حساب"}</small></div></div><div className="due-reminder-meta"><span><small>مبلغ</small><strong>{formatRial(item.amount_rial)}</strong></span><span><small>سررسید</small><strong>{toPersianDigits(item.due_jalali_date)}</strong></span></div>{accessible ? <Button size="large" variant="outlined" onClick={() => openItem(item)}>پیگیری</Button> : <small className="due-reminder-manager-note">برای پیگیری مدیر</small>}</article>; })}</div></section> : null; })}</div>}</> : null}
+  </section></CrudWorkspace>;
+}
+
+function ChequesView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser: boolean }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [people, setPeople] = useState<Person[]>([]);
@@ -2534,10 +2584,6 @@ function ChequesView({ onBack, onOpenLedger, isSuperuser }: { onBack: () => void
   const [editStale, setEditStale] = useState(false);
   const [chequeAudits, setChequeAudits] = useState<ChequeAudit[]>([]);
   const [chequeAuditsStatus, setChequeAuditsStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  const [reminderHorizon, setReminderHorizon] = useState(7);
-  const [reminders, setReminders] = useState<DueReminders | null>(null);
-  const [remindersStatus, setRemindersStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [remindersError, setRemindersError] = useState("");
 
   async function load() {
     setStatus("loading");
@@ -2549,21 +2595,7 @@ function ChequesView({ onBack, onOpenLedger, isSuperuser }: { onBack: () => void
     try { setDues(await api.dues(date)); setDuesStatus("ready"); }
     catch (error) { setDuesStatus("error"); setNotice({ type: "error", text: error instanceof Error ? error.message : "سررسیدها دریافت نشدند." }); }
   }
-  async function loadReminders(days = reminderHorizon) {
-    setRemindersStatus("loading"); setRemindersError("");
-    try { setReminders(await api.dueReminders(currentJalaliDate(), jalaliDateAfterDays(days))); setRemindersStatus("ready"); }
-    catch (error) { setRemindersStatus("error"); setRemindersError(error instanceof Error ? error.message : "کارهای سررسید دریافت نشدند."); }
-  }
-  useEffect(() => { load(); loadDues(); void loadReminders(7); }, []);
-
-  function openReminder(item: DueReminderItem) {
-    if (item.kind === "ledger_entry") {
-      if (item.person_id) sessionStorage.setItem("store_focus_ledger_person", String(item.person_id));
-      onOpenLedger(); return;
-    }
-    setSearch(""); setTypeFilter(""); setStatusFilter(""); setDueFilter("all");
-    window.setTimeout(() => document.getElementById(`cheque-${item.record_id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
-  }
+  useEffect(() => { load(); loadDues(); }, []);
 
   const pendingReceived = cheques.filter((cheque) => cheque.status === "pending" && cheque.cheque_type === "received");
   const pendingPaid = cheques.filter((cheque) => cheque.status === "pending" && cheque.cheque_type === "paid");
@@ -2651,16 +2683,6 @@ function ChequesView({ onBack, onOpenLedger, isSuperuser }: { onBack: () => void
     <CrudWorkspace title="دفتر چک‌ها و سررسیدها" eyebrow="دریافتی و پرداختی" onBack={onBack}>
       {notice ? <Alert severity={notice.type} onClose={() => setNotice(null)}>{notice.text}</Alert> : null}
       <div className="cheque-kpis"><div><small>دریافتی در انتظار</small><strong>{formatRial(pendingReceived.reduce((sum, item) => sum + item.amount_rial, 0))}</strong><span>{pendingReceived.length.toLocaleString("fa-IR")} فقره</span></div><div><small>پرداختی در انتظار</small><strong>{formatRial(pendingPaid.reduce((sum, item) => sum + item.amount_rial, 0))}</strong><span>{pendingPaid.length.toLocaleString("fa-IR")} فقره</span></div><div className="warning"><small>سررسید تا تاریخ پیگیری</small><strong>{duePending.length.toLocaleString("fa-IR")} فقره</strong><span>{toPersianDigits(duesDate)}</span></div><div><small>کل مبلغ در انتظار</small><strong>{formatRial(pendingTotal)}</strong><span>دریافتی و پرداختی</span></div></div>
-      <section className="sale-panel due-reminder-center" aria-labelledby="due-reminder-title" aria-busy={remindersStatus === "loading"}>
-        <div className="due-reminder-heading"><div><strong id="due-reminder-title">کارهای سررسید</strong><small>امروز {toPersianDigits(currentJalaliDate())} به وقت تهران</small></div><TextField select size="small" label="افق پیگیری" value={reminderHorizon} onChange={(event) => { const days = Number(event.target.value); setReminderHorizon(days); void loadReminders(days); }} disabled={remindersStatus === "loading"}><MenuItem value={7}>۷ روز آینده</MenuItem><MenuItem value={14}>۱۴ روز آینده</MenuItem><MenuItem value={30}>۳۰ روز آینده</MenuItem></TextField></div>
-        {remindersStatus === "loading" ? <div className="due-reminder-loading" role="status"><LinearProgress /><div><span /><span /><span /></div><small>در حال مرتب‌کردن کارهای سررسید…</small></div> : null}
-        {remindersStatus === "error" ? <Alert severity="error" action={<Button color="inherit" startIcon={<RefreshRounded />} onClick={() => void loadReminders()}>تلاش دوباره</Button>}>{remindersError}</Alert> : null}
-        {remindersStatus === "ready" && reminders ? <>
-          <div className="due-reminder-kpis"><article className="overdue"><small>عقب‌افتاده</small><strong>{toPersianDigits(reminders.overdue.count.toLocaleString("fa-IR"))} مورد</strong><span>{formatRial(reminders.overdue.total_rial)}</span></article><article className="today"><small>امروز</small><strong>{toPersianDigits(reminders.today.count.toLocaleString("fa-IR"))} مورد</strong><span>{formatRial(reminders.today.total_rial)}</span></article><article className="upcoming"><small>آینده نزدیک</small><strong>{toPersianDigits(reminders.upcoming.count.toLocaleString("fa-IR"))} مورد</strong><span>{formatRial(reminders.upcoming.total_rial)}</span></article></div>
-          {reminders.totals.count === 0 ? <div className="record-state due-reminder-empty"><FactCheckRounded /><strong>در این بازه کاری برای پیگیری نیست</strong><span>افق پیگیری را بیشتر کنید یا بعداً دوباره بررسی کنید.</span></div> : null}
-          <div className="due-reminder-groups">{([ ["overdue", "عقب‌افتاده"], ["today", "امروز"], ["upcoming", "آینده نزدیک"] ] as const).map(([key, label]) => { const group = reminders[key]; if (!group.items.length) return null; return <section key={key} className={`due-reminder-group ${key}`}><header><strong>{label}</strong><Chip size="small" label={`${toPersianDigits(group.count.toLocaleString("fa-IR"))} مورد`} color={key === "overdue" ? "error" : key === "today" ? "warning" : "info"} /></header><div>{group.items.map((item) => <article key={`${item.kind}-${item.record_id}`}><div className="due-reminder-main"><span className="due-reminder-kind">{item.kind === "cheque" ? <PaymentsRounded /> : <AccountBalanceWalletRounded />}</span><div><strong>{item.person_name || (item.kind === "cheque" ? "چک بدون شخص" : "شخص نامشخص")}</strong><small>{item.kind === "cheque" ? `${item.bank_name || "بانک ثبت نشده"} • شماره ${item.cheque_number ? toPersianDigits(item.cheque_number) : "—"}` : item.description || "سند حساب"}</small></div></div><div className="due-reminder-meta"><span><small>مبلغ</small><strong>{formatRial(item.amount_rial)}</strong></span><span><small>سررسید</small><strong>{toPersianDigits(item.due_jalali_date)}</strong></span><Chip size="small" variant="outlined" label={item.direction === "receivable" ? "دریافتنی" : "پرداختنی"} color={item.direction === "receivable" ? "success" : "secondary"} /></div><Button size="large" variant="outlined" onClick={() => openReminder(item)} startIcon={item.kind === "cheque" ? <PaymentsRounded /> : <HistoryRounded />}>{item.kind === "cheque" ? "نمایش چک" : "بازکردن دفتر شخص"}</Button></article>)}</div></section>; })}</div>
-        </> : null}
-      </section>
       <div className="cheque-layout">
         <form className="sale-panel cheque-create-form" onSubmit={submitCheque} noValidate><div className="ledger-section-heading"><div><strong>ثبت چک جدید</strong><small>اطلاعات روی برگه چک را وارد کنید</small></div></div><div className="cheque-form-grid"><TextField select label="نوع چک" value={chequeType} onChange={(event) => setChequeType(event.target.value as "received" | "paid")} disabled={saving}><MenuItem value="received">دریافتی</MenuItem><MenuItem value="paid">پرداختی</MenuItem></TextField><TextField select label="شخص مرتبط (اختیاری)" value={personId} onChange={(event) => setPersonId(event.target.value)} disabled={saving}><MenuItem value="">بدون شخص</MenuItem>{people.map((person) => <MenuItem value={person.id} key={person.id}>{person.name}</MenuItem>)}</TextField><TextField label="نام بانک" value={bank} onChange={(event) => setBank(event.target.value)} required disabled={saving} error={bank.length > 0 && !bank.trim()} /><TextField label="شماره چک" value={toPersianDigits(number)} onChange={(event) => setNumber(toEnglishDigits(event.target.value))} required disabled={saving} slotProps={{ htmlInput: { dir: "ltr", inputMode: "numeric" } }} /><MoneyField label="مبلغ (تومان)" valueRial={normalizeMoney(amount)} onValueRialChange={(value) => setAmount(moneyInputValue(value))} required disabled={saving} /><JalaliDateField label="تاریخ صدور" value={issueDate} onChange={setIssueDate} required /><JalaliDateField label="تاریخ سررسید" value={dueDate} onChange={setDueDate} required /><TextField label="یادداشت (اختیاری)" value={note} onChange={(event) => setNote(event.target.value)} disabled={saving} /></div>{dueDate < issueDate ? <Alert severity="error">تاریخ سررسید نمی‌تواند پیش از تاریخ صدور باشد.</Alert> : null}<Button type="submit" variant="contained" size="large" disabled={saving || !bank.trim() || !number.trim() || normalizeMoney(amount) <= 0 || dueDate < issueDate} startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <AddRounded />}>{saving ? "در حال ثبت…" : "ثبت چک"}</Button></form>
         <section className="sale-panel dues-panel"><div className="ledger-section-heading"><div><strong>سررسیدها</strong><small>تعهدهای باز تا تاریخ انتخابی</small></div></div><div className="dues-controls"><JalaliDateField label="تا تاریخ" value={duesDate} onChange={setDuesDate} /><Button variant="outlined" size="large" onClick={() => loadDues(duesDate)} disabled={duesStatus === "loading"}>{duesStatus === "loading" ? <CircularProgress size={18} /> : "به‌روزرسانی"}</Button></div>{duesStatus === "error" ? <div className="record-state record-state-error"><span>سررسیدها دریافت نشدند.</span><Button onClick={() => loadDues()}>تلاش دوباره</Button></div> : null}{duesStatus === "ready" && dues && dues.open_ledger_entries.length + dues.pending_cheques.length === 0 ? <div className="record-state"><FactCheckRounded /><strong>تعهد بازی تا این تاریخ نیست</strong></div> : null}{duesStatus === "ready" && dues ? <div className="dues-summary"><div><span>مانده بدهکار سررسیدشده</span><strong>{formatRial(duesDebitRial)}</strong><small>مطالبات فروشگاه</small></div><div><span>مانده بستانکار سررسیدشده</span><strong>{formatRial(duesCreditRial)}</strong><small>تعهد فروشگاه</small></div><div><span>خالص اسناد باز</span><strong>{formatRial(Math.abs(duesDebitRial - duesCreditRial))}</strong><small>{duesDebitRial > duesCreditRial ? "بدهکار" : duesCreditRial > duesDebitRial ? "بستانکار" : "تسویه"}</small></div><div><span>چک در انتظار</span><strong>{dues.pending_cheques.length.toLocaleString("fa-IR")} فقره</strong><small>{formatRial(dues.pending_cheques.reduce((sum, item) => sum + item.amount_rial, 0))}</small></div></div> : null}</section>
@@ -3000,7 +3022,7 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: string[][] })
   );
 }
 
-function SalesView({ onBack }: { onBack: () => void }) {
+function SalesView({ onBack, focus, onFocusHandled }: { onBack: () => void; focus: { invoiceId: number; paymentId: number } | null; onFocusHandled: () => void }) {
   const theme = useTheme(); const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -3030,6 +3052,7 @@ function SalesView({ onBack }: { onBack: () => void }) {
   const [journalStatus, setJournalStatus] = useState<"idle" | "loading" | "error">("loading");
   const [journalError, setJournalError] = useState("");
   const [recentSales, setRecentSales] = useState<SaleInvoice[]>([]); const [recentStatus, setRecentStatus] = useState<"loading" | "ready" | "error">("loading"); const [recentError, setRecentError] = useState(""); const [expandedSaleId, setExpandedSaleId] = useState<number | null>(null);
+  const [highlightedPaymentId, setHighlightedPaymentId] = useState<number | null>(null);
   const [dueInvoice, setDueInvoice] = useState<SaleInvoice | null>(null); const [duePayment, setDuePayment] = useState<SalePayment | null>(null); const [dueEnabled, setDueEnabled] = useState(false); const [dueDraft, setDueDraft] = useState(currentJalaliDate); const [dueReason, setDueReason] = useState(""); const [dueSaving, setDueSaving] = useState(false); const [dueError, setDueError] = useState(""); const [dueStale, setDueStale] = useState(false); const [paymentAudits, setPaymentAudits] = useState<PaymentDueAudit[]>([]); const [paymentAuditsStatus, setPaymentAuditsStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const dueDateChanged = Boolean(duePayment) && (dueEnabled ? dueDraft : null) !== (duePayment?.due_jalali_date ?? null);
 
@@ -3112,6 +3135,16 @@ function SalesView({ onBack }: { onBack: () => void }) {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!focus || recentStatus !== "ready") return;
+    const invoice = recentSales.find((item) => item.id === focus.invoiceId);
+    if (!invoice?.payments.some((item) => item.id === focus.paymentId)) return;
+    setExpandedSaleId(focus.invoiceId); setHighlightedPaymentId(focus.paymentId); onFocusHandled();
+    const scrollTimer = window.setTimeout(() => document.getElementById(`sale-payment-${focus.paymentId}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+    const highlightTimer = window.setTimeout(() => setHighlightedPaymentId(null), 3500);
+    return () => { window.clearTimeout(scrollTimer); window.clearTimeout(highlightTimer); };
+  }, [focus, recentSales, recentStatus, onFocusHandled]);
 
   const subtotal = useMemo(() => {
     return items.reduce((sum, item) => {
@@ -3486,7 +3519,7 @@ function SalesView({ onBack }: { onBack: () => void }) {
         {recentStatus === "loading" ? <div className="record-state"><CircularProgress size={28} /><span>در حال دریافت فاکتورها…</span></div> : null}
         {recentStatus === "error" ? <Alert severity="error" action={<Button color="inherit" onClick={() => void loadRecentSales()}>تلاش دوباره</Button>}>{recentError}</Alert> : null}
         {recentStatus === "ready" && recentSales.length === 0 ? <div className="record-state"><ReceiptLongRounded /><strong>هنوز فاکتوری ثبت نشده است</strong></div> : null}
-        <div className="recent-sale-list">{recentSales.map((invoice) => <article className="recent-sale-card" key={invoice.id}><button type="button" className="recent-sale-summary" onClick={() => setExpandedSaleId(expandedSaleId === invoice.id ? null : invoice.id)} aria-expanded={expandedSaleId === invoice.id}><span><strong>فاکتور {toPersianDigits(invoice.invoice_number ?? invoice.id)}</strong><small>{invoice.customer_name || "فروش بدون مشتری"} • {toPersianDigits(invoice.jalali_date)}</small></span><span><strong>{formatRial(invoice.total_rial)}</strong><Chip size="small" label={invoice.status === "active" ? "فعال" : "لغوشده"} color={invoice.status === "active" ? "success" : "default"} /></span></button>{expandedSaleId === invoice.id ? <div className="recent-payment-list">{invoice.payments.length === 0 ? <div className="record-state"><PaymentsRounded /><strong>پرداختی ثبت نشده است</strong></div> : invoice.payments.map((payment) => <div className="recent-payment-card" key={payment.id}><div><strong>{paymentLabels[payment.method]}</strong><small>{payment.status === "pending" ? "در انتظار" : "دریافت‌شده"}</small></div><div><strong>{formatRial(payment.amount_rial)}</strong><small>{payment.due_jalali_date ? `سررسید ${toPersianDigits(payment.due_jalali_date)}` : "بدون سررسید"}</small></div>{payment.status === "pending" && invoice.status === "active" && invoice.is_active ? <Button variant="outlined" size="large" startIcon={<EditRounded />} onClick={() => openPaymentDue(invoice, payment)}>ویرایش سررسید</Button> : null}</div>)}</div> : null}</article>)}</div>
+        <div className="recent-sale-list">{recentSales.map((invoice) => <article className="recent-sale-card" key={invoice.id}><button type="button" className="recent-sale-summary" onClick={() => setExpandedSaleId(expandedSaleId === invoice.id ? null : invoice.id)} aria-expanded={expandedSaleId === invoice.id}><span><strong>فاکتور {toPersianDigits(invoice.invoice_number ?? invoice.id)}</strong><small>{invoice.customer_name || "فروش بدون مشتری"} • {toPersianDigits(invoice.jalali_date)}</small></span><span><strong>{formatRial(invoice.total_rial)}</strong><Chip size="small" label={invoice.status === "active" ? "فعال" : "لغوشده"} color={invoice.status === "active" ? "success" : "default"} /></span></button>{expandedSaleId === invoice.id ? <div className="recent-payment-list">{invoice.payments.length === 0 ? <div className="record-state"><PaymentsRounded /><strong>پرداختی ثبت نشده است</strong></div> : invoice.payments.map((payment) => <div id={`sale-payment-${payment.id}`} className={`recent-payment-card ${highlightedPaymentId === payment.id ? "focus-highlight" : ""}`} key={payment.id}><div><strong>{paymentLabels[payment.method]}</strong><small>{payment.status === "pending" ? "در انتظار" : "دریافت‌شده"}</small></div><div><strong>{formatRial(payment.amount_rial)}</strong><small>{payment.due_jalali_date ? `سررسید ${toPersianDigits(payment.due_jalali_date)}` : "بدون سررسید"}</small></div>{payment.status === "pending" && invoice.status === "active" && invoice.is_active ? <Button variant="outlined" size="large" startIcon={<EditRounded />} onClick={() => openPaymentDue(invoice, payment)}>ویرایش سررسید</Button> : null}</div>)}</div> : null}</article>)}</div>
       </Card>
       <Dialog open={duePayment !== null} onClose={() => { if (!dueSaving) { setDuePayment(null); setDueInvoice(null); } }} fullWidth maxWidth="sm" fullScreen={isMobile} className="payment-due-dialog" aria-labelledby="payment-due-title"><form className="payment-due-dialog-form" onSubmit={savePaymentDue} noValidate><DialogTitle id="payment-due-title"><div className="payment-due-title-row"><span>ویرایش سررسید پرداخت</span><IconButton aria-label="بستن" onClick={() => { setDuePayment(null); setDueInvoice(null); }} disabled={dueSaving}><CloseRounded /></IconButton></div></DialogTitle><DialogContent dividers className="dialog-form payment-due-content">
         <Alert severity="info">فقط تاریخ سررسید تغییر می‌کند؛ مبلغ و وضعیت پرداخت ثابت می‌مانند.</Alert>{dueError ? <Alert severity="error" action={dueStale ? <Button color="inherit" onClick={() => void reloadDuePayment()}>دریافت نسخه تازه</Button> : undefined}>{dueError}</Alert> : null}

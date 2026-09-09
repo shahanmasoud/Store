@@ -13,6 +13,7 @@ from app.schemas.ledger import (
     ChequeUpdate,
     DuesRead,
     DueRemindersRead,
+    DueReminderKind,
     LedgerEntryCreate,
     LedgerEntryRead,
     LedgerDueAuditRead,
@@ -110,8 +111,10 @@ def dues(jalali_date_to: str = Query(...), db: Session = Depends(get_db), actor=
 def due_reminders(
     today_jalali: str = Query(...),
     through_jalali: str = Query(...),
+    person_id: int | None = Query(default=None, gt=0),
+    kind: DueReminderKind | None = Query(default=None),
     db: Session = Depends(get_db),
-    actor=Depends(require_any_permission("can_ledger", "can_cheques_reports")),
+    actor=Depends(require_any_permission("can_sales", "can_ledger", "can_cheques_reports")),
 ) -> DueRemindersRead:
     try:
         today = validate_jalali_date(today_jalali)
@@ -120,7 +123,16 @@ def due_reminders(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if through < today:
         raise HTTPException(status_code=422, detail="پایان بازه یادآوری نمی‌تواند پیش از امروز باشد.")
-    return ledger_service.get_due_reminders(db, today, through, include_ledger=actor.is_superuser or actor.can_ledger, include_cheques=actor.is_superuser or actor.can_cheques_reports)
+    return ledger_service.get_due_reminders(
+        db,
+        today,
+        through,
+        include_sales=actor.is_superuser or actor.can_sales,
+        include_ledger=actor.is_superuser or actor.can_ledger,
+        include_cheques=actor.is_superuser or actor.can_cheques_reports,
+        person_id=person_id,
+        kind=kind,
+    )
 
 
 @router.post("/cheques", response_model=ChequeRead, status_code=status.HTTP_201_CREATED)

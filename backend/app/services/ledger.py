@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from app.core.time import utc_now
 from app.models.ledger import Cheque, ChequeAudit, ChequeEvent, LedgerActionAudit, LedgerDueAudit, LedgerEntry, Person, Settlement
+from app.models.sales import Payment, SaleInvoice
 from app.models.user import User
 from app.schemas.ledger import (
     ChequeCreate,
@@ -539,28 +540,63 @@ def _reminder_group(items: list[DueReminderItem]) -> DueReminderGroup:
     return DueReminderGroup(items=items, **_reminder_totals(items).model_dump())
 
 
-def get_due_reminders(db: Session, today_jalali: str, through_jalali: str, *, include_ledger: bool = True, include_cheques: bool = True) -> DueRemindersRead:
+def get_due_reminders(
+    db: Session,
+    today_jalali: str,
+    through_jalali: str,
+    *,
+    include_sales: bool = True,
+    include_ledger: bool = True,
+    include_cheques: bool = True,
+    person_id: int | None = None,
+    kind: str | None = None,
+) -> DueRemindersRead:
+    include_sales = include_sales and kind in {None, "sale_payment"}
+    include_ledger = include_ledger and kind in {None, "ledger_entry"}
+    include_cheques = include_cheques and kind in {None, "cheque"}
+
+    ledger_filters = [
+        LedgerEntry.is_active.is_(True),
+        LedgerEntry.status == "open",
+        LedgerEntry.remaining_rial > 0,
+        LedgerEntry.due_jalali_date.is_not(None),
+        LedgerEntry.due_jalali_date <= through_jalali,
+    ]
+    cheque_filters = [
+        Cheque.is_active.is_(True),
+        Cheque.status == "pending",
+        Cheque.due_jalali_date <= through_jalali,
+    ]
+    sale_filters = [
+        Payment.status == "pending",
+        Payment.due_jalali_date.is_not(None),
+        Payment.due_jalali_date <= through_jalali,
+        SaleInvoice.status == "active",
+        SaleInvoice.is_active.is_(True),
+    ]
+    if person_id is not None:
+        ledger_filters.append(LedgerEntry.person_id == person_id)
+        cheque_filters.append(Cheque.person_id == person_id)
+        sale_filters.append(SaleInvoice.customer_id == person_id)
+
     ledger_rows = db.execute(
         select(LedgerEntry, Person.name)
         .join(Person, Person.id == LedgerEntry.person_id)
-        .where(
-            LedgerEntry.is_active.is_(True),
-            LedgerEntry.status == "open",
-            LedgerEntry.remaining_rial > 0,
-            LedgerEntry.due_jalali_date.is_not(None),
-            LedgerEntry.due_jalali_date <= through_jalali,
-        )
+        .where(*ledger_filters)
     ).all() if include_ledger else []
     cheque_rows = db.execute(
         select(Cheque, Person.name)
         .outerjoin(Person, Person.id == Cheque.person_id)
-        .where(
-            Cheque.is_active.is_(True),
-            Cheque.status == "pending",
-            Cheque.due_jalali_date <= through_jalali,
-        )
+        .where(*cheque_filters)
     ).all() if include_cheques else []
+    sale_rows = db.execute(
+        select(Payment, SaleInvoice, Person.name)
+        .join(SaleInvoice, SaleInvoice.id == Payment.invoice_id)
+        .outerjoin(Person, Person.id == SaleInvoice.customer_id)
+        .where(*sale_filters)
+    ).all() if include_sales else []
 
+    sale_invoice_ids = {invoice.id for _, invoice, _ in sale_rows}
     items = [
         DueReminderItem(
             kind="ledger_entry",
@@ -577,6 +613,7 @@ def get_due_reminders(db: Session, today_jalali: str, through_jalali: str, *, in
             bank_name=None,
         )
         for entry, person_name in ledger_rows
+        if not (entry.source_type == "sale" and entry.source_id in sale_invoice_ids)
     ]
     items.extend(
         DueReminderItem(
@@ -594,6 +631,28 @@ def get_due_reminders(db: Session, today_jalali: str, through_jalali: str, *, in
             bank_name=cheque.bank_name,
         )
         for cheque, person_name in cheque_rows
+    )
+    items.extend(
+        DueReminderItem(
+            kind="sale_payment",
+            record_id=payment.id,
+            payment_id=payment.id,
+            invoice_id=invoice.id,
+            invoice_number=invoice.invoice_number,
+            person_id=invoice.customer_id,
+            person_name=person_name or invoice.customer_name,
+            customer_id=invoice.customer_id,
+            customer_name=person_name or invoice.customer_name,
+            direction="receivable",
+            record_type=payment.method,
+            amount_rial=payment.amount_rial,
+            due_jalali_date=payment.due_jalali_date,
+            status=payment.status,
+            description=payment.note or f"مطالبه فاکتور {invoice.invoice_number or invoice.id}",
+            cheque_number=None,
+            bank_name=None,
+        )
+        for payment, invoice, person_name in sale_rows
     )
     items.sort(key=lambda item: (item.due_jalali_date, item.kind, item.record_id))
     overdue = [item for item in items if item.due_jalali_date < today_jalali]

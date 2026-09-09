@@ -2235,6 +2235,8 @@ button {
 .due-reminder-heading > div > strong { color: #17332b; font-size: 1.12rem; }
 .due-reminder-heading small { color: #687a74; }
 .due-reminder-heading .MuiTextField-root { min-width: 170px; }
+.due-reminder-filters { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 10px; }
+.due-reminder-filters .MuiInputBase-root { min-height: 44px; }
 .due-reminder-loading { display: grid; gap: 12px; color: #687a74; }
 .due-reminder-loading > div { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .due-reminder-loading > div > span { min-height: 82px; border-radius: 14px; background: linear-gradient(90deg, #f0f5f2, #fafcfb, #f0f5f2); background-size: 200% 100%; animation: reminder-shimmer 1.4s infinite; }
@@ -2253,6 +2255,8 @@ button {
 .due-reminder-main > div { display: grid; min-width: 0; gap: 3px; }
 .due-reminder-main small { color: #687a74; overflow-wrap: anywhere; }
 .due-reminder-kind { display: grid; flex: 0 0 42px; width: 42px; height: 42px; place-items: center; color: #087f5b; border-radius: 12px; background: #eaf6f1; }
+.due-reminder-kind.sale { color: #5b4ba8; background: #f0edff; }
+.due-reminder-manager-note { color: #687a74; }
 .due-reminder-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) auto; align-items: center; gap: 8px; }
 .due-reminder-meta > span { display: grid; min-width: 0; gap: 2px; }
 .due-reminder-meta small { color: #71817c; }
@@ -2543,6 +2547,7 @@ button {
 }
 
 @media (max-width: 560px) {
+  .due-reminder-filters { grid-template-columns: 1fr; width: 100%; }
   .purchase-workspace {
     gap: 14px;
   }
@@ -6721,6 +6726,8 @@ textarea:focus {
 .recent-payment-card { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(180px, 1fr) auto; align-items: center; gap: 12px; padding: 12px; border-top: 1px solid #e3ebe7; }
 .recent-payment-card > div { display: grid; min-width: 0; gap: 3px; }
 .recent-payment-card .MuiButton-root { min-height: 44px; }
+.recent-payment-card.focus-highlight { border-radius: 12px; background: #fff4cc; box-shadow: 0 0 0 3px rgba(220, 139, 24, 0.25); animation: payment-focus-pulse 900ms ease-out 2; }
+@keyframes payment-focus-pulse { 50% { box-shadow: 0 0 0 6px rgba(220, 139, 24, 0.12); } }
 .payment-due-dialog-form { display: flex; min-height: 100%; flex-direction: column; }
 .payment-due-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .payment-due-title-row .MuiIconButton-root { min-width: 44px; min-height: 44px; }
