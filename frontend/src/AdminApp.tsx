@@ -62,6 +62,8 @@ import {
   type PaymentCreate,
   type PaymentMethod,
   type PaymentStatus,
+  type SalePayment,
+  type PaymentDueAudit,
   type PriceList,
   type PriceRule,
   type PriceType,
@@ -2999,6 +3001,7 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: string[][] })
 }
 
 function SalesView({ onBack }: { onBack: () => void }) {
+  const theme = useTheme(); const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [customers, setCustomers] = useState<Person[]>([]);
@@ -3026,6 +3029,15 @@ function SalesView({ onBack }: { onBack: () => void }) {
   const [journal, setJournal] = useState<DailyJournal | null>(null);
   const [journalStatus, setJournalStatus] = useState<"idle" | "loading" | "error">("loading");
   const [journalError, setJournalError] = useState("");
+  const [recentSales, setRecentSales] = useState<SaleInvoice[]>([]); const [recentStatus, setRecentStatus] = useState<"loading" | "ready" | "error">("loading"); const [recentError, setRecentError] = useState(""); const [expandedSaleId, setExpandedSaleId] = useState<number | null>(null);
+  const [dueInvoice, setDueInvoice] = useState<SaleInvoice | null>(null); const [duePayment, setDuePayment] = useState<SalePayment | null>(null); const [dueEnabled, setDueEnabled] = useState(false); const [dueDraft, setDueDraft] = useState(currentJalaliDate); const [dueReason, setDueReason] = useState(""); const [dueSaving, setDueSaving] = useState(false); const [dueError, setDueError] = useState(""); const [dueStale, setDueStale] = useState(false); const [paymentAudits, setPaymentAudits] = useState<PaymentDueAudit[]>([]); const [paymentAuditsStatus, setPaymentAuditsStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const dueDateChanged = Boolean(duePayment) && (dueEnabled ? dueDraft : null) !== (duePayment?.due_jalali_date ?? null);
+
+  async function loadRecentSales() { setRecentStatus("loading"); setRecentError(""); try { setRecentSales(await api.sales()); setRecentStatus("ready"); } catch (error) { setRecentStatus("error"); setRecentError(error instanceof Error ? error.message : "فاکتورهای اخیر دریافت نشدند."); } }
+  async function loadPaymentAudits(id: number) { setPaymentAuditsStatus("loading"); try { setPaymentAudits(await api.paymentDueAudits(id)); setPaymentAuditsStatus("ready"); } catch { setPaymentAuditsStatus("error"); } }
+  function openPaymentDue(invoice: SaleInvoice, payment: SalePayment) { setDueInvoice(invoice); setDuePayment(payment); setDueEnabled(Boolean(payment.due_jalali_date)); setDueDraft(payment.due_jalali_date || currentJalaliDate()); setDueReason(""); setDueError(""); setDueStale(false); setPaymentAudits([]); void loadPaymentAudits(payment.id); }
+  async function reloadDuePayment() { if (!dueInvoice || !duePayment) return; setDueSaving(true); try { const fresh = await api.sale(dueInvoice.id); const payment = fresh.payments.find((item) => item.id === duePayment.id); if (!payment || payment.status !== "pending" || fresh.status !== "active") { setDueInvoice(null); setDuePayment(null); setRecentError("این پرداخت دیگر قابل ویرایش نیست."); await loadRecentSales(); return; } openPaymentDue(fresh, payment); } catch (error) { setDueError(error instanceof Error ? error.message : "نسخه تازه دریافت نشد."); } finally { setDueSaving(false); } }
+  async function savePaymentDue(event: FormEvent) { event.preventDefault(); if (!duePayment || !dueDateChanged || (dueEnabled && !dueDraft) || !dueReason.trim() || !duePayment.updated_at_utc) return; setDueSaving(true); setDueError(""); setDueStale(false); try { await api.updatePaymentDueDate(duePayment.id, { due_jalali_date: dueEnabled ? dueDraft : null, reason: dueReason.trim(), expected_updated_at: duePayment.updated_at_utc }); setDueInvoice(null); setDuePayment(null); await loadRecentSales(); } catch (error) { if (error instanceof ApiError && error.status === 409) { setDueStale(true); setDueError("این پرداخت هم‌زمان تغییر کرده است. نسخه تازه را دریافت و دوباره بررسی کنید."); } else setDueError(error instanceof Error ? error.message : "سررسید ذخیره نشد."); } finally { setDueSaving(false); } }
 
   function loadSellableProducts() {
     setVariantsError("");
@@ -3095,6 +3107,7 @@ function SalesView({ onBack }: { onBack: () => void }) {
         setJournalStatus("error");
         setJournalError("اطلاعات دفتر روزانه دریافت نشد؛ دوباره تلاش کنید.");
       });
+    void loadRecentSales();
     return () => {
       isMounted = false;
     };
@@ -3468,6 +3481,19 @@ function SalesView({ onBack }: { onBack: () => void }) {
           </div>
         ) : null}
       </Card>
+      <Card variant="outlined" component="section" className="recent-sales-panel">
+        <div className="recent-sales-heading"><div><p className="eyebrow">پیگیری فروش</p><h2>فاکتورهای اخیر</h2><small>برای مشاهده پرداخت‌ها، کارت فاکتور را باز کنید.</small></div><Button variant="outlined" startIcon={<RefreshRounded />} onClick={() => void loadRecentSales()} disabled={recentStatus === "loading"}>تازه‌سازی</Button></div>
+        {recentStatus === "loading" ? <div className="record-state"><CircularProgress size={28} /><span>در حال دریافت فاکتورها…</span></div> : null}
+        {recentStatus === "error" ? <Alert severity="error" action={<Button color="inherit" onClick={() => void loadRecentSales()}>تلاش دوباره</Button>}>{recentError}</Alert> : null}
+        {recentStatus === "ready" && recentSales.length === 0 ? <div className="record-state"><ReceiptLongRounded /><strong>هنوز فاکتوری ثبت نشده است</strong></div> : null}
+        <div className="recent-sale-list">{recentSales.map((invoice) => <article className="recent-sale-card" key={invoice.id}><button type="button" className="recent-sale-summary" onClick={() => setExpandedSaleId(expandedSaleId === invoice.id ? null : invoice.id)} aria-expanded={expandedSaleId === invoice.id}><span><strong>فاکتور {toPersianDigits(invoice.invoice_number ?? invoice.id)}</strong><small>{invoice.customer_name || "فروش بدون مشتری"} • {toPersianDigits(invoice.jalali_date)}</small></span><span><strong>{formatRial(invoice.total_rial)}</strong><Chip size="small" label={invoice.status === "active" ? "فعال" : "لغوشده"} color={invoice.status === "active" ? "success" : "default"} /></span></button>{expandedSaleId === invoice.id ? <div className="recent-payment-list">{invoice.payments.length === 0 ? <div className="record-state"><PaymentsRounded /><strong>پرداختی ثبت نشده است</strong></div> : invoice.payments.map((payment) => <div className="recent-payment-card" key={payment.id}><div><strong>{paymentLabels[payment.method]}</strong><small>{payment.status === "pending" ? "در انتظار" : "دریافت‌شده"}</small></div><div><strong>{formatRial(payment.amount_rial)}</strong><small>{payment.due_jalali_date ? `سررسید ${toPersianDigits(payment.due_jalali_date)}` : "بدون سررسید"}</small></div>{payment.status === "pending" && invoice.status === "active" && invoice.is_active ? <Button variant="outlined" size="large" startIcon={<EditRounded />} onClick={() => openPaymentDue(invoice, payment)}>ویرایش سررسید</Button> : null}</div>)}</div> : null}</article>)}</div>
+      </Card>
+      <Dialog open={duePayment !== null} onClose={() => { if (!dueSaving) { setDuePayment(null); setDueInvoice(null); } }} fullWidth maxWidth="sm" fullScreen={isMobile} className="payment-due-dialog" aria-labelledby="payment-due-title"><form className="payment-due-dialog-form" onSubmit={savePaymentDue} noValidate><DialogTitle id="payment-due-title"><div className="payment-due-title-row"><span>ویرایش سررسید پرداخت</span><IconButton aria-label="بستن" onClick={() => { setDuePayment(null); setDueInvoice(null); }} disabled={dueSaving}><CloseRounded /></IconButton></div></DialogTitle><DialogContent dividers className="dialog-form payment-due-content">
+        <Alert severity="info">فقط تاریخ سررسید تغییر می‌کند؛ مبلغ و وضعیت پرداخت ثابت می‌مانند.</Alert>{dueError ? <Alert severity="error" action={dueStale ? <Button color="inherit" onClick={() => void reloadDuePayment()}>دریافت نسخه تازه</Button> : undefined}>{dueError}</Alert> : null}
+        <div className="payment-due-summary"><span><small>فاکتور</small><strong>{toPersianDigits(dueInvoice?.invoice_number ?? dueInvoice?.id ?? "")}</strong></span><span><small>مشتری</small><strong>{dueInvoice?.customer_name || "بدون مشتری"}</strong></span><span><small>روش</small><strong>{duePayment ? paymentLabels[duePayment.method] : "—"}</strong></span><span><small>مبلغ</small><strong>{formatRial(duePayment?.amount_rial ?? 0)}</strong></span></div>
+        <Button type="button" className="due-toggle-button" variant={dueEnabled ? "contained" : "outlined"} onClick={() => setDueEnabled((value) => !value)} disabled={dueSaving}>{dueEnabled ? "حذف سررسید" : "تعیین سررسید"}</Button>{dueEnabled ? <JalaliDateField label="تاریخ سررسید" value={dueDraft} onChange={setDueDraft} required /> : <Alert severity="warning" icon={false}>این پرداخت بدون سررسید ذخیره می‌شود.</Alert>}<TextField label="دلیل تغییر" value={dueReason} onChange={(event) => { setDueReason(event.target.value); setDueError(""); setDueStale(false); }} required multiline minRows={2} disabled={dueSaving} helperText="دلیل برای سابقه حسابرسی الزامی است." slotProps={{ htmlInput: { maxLength: 2000 } }} />
+        <section className="payment-due-audits"><strong>تاریخچه تغییرات</strong>{paymentAuditsStatus === "loading" ? <div className="record-state"><CircularProgress size={24} /><span>در حال دریافت تاریخچه…</span></div> : null}{paymentAuditsStatus === "error" ? <div className="record-state record-state-error"><span>تاریخچه دریافت نشد.</span><Button onClick={() => duePayment && void loadPaymentAudits(duePayment.id)}>تلاش دوباره</Button></div> : null}{paymentAuditsStatus === "ready" && paymentAudits.length === 0 ? <div className="record-state"><HistoryRounded /><strong>هنوز تغییری ثبت نشده است</strong></div> : null}<div className="payment-due-audit-list">{paymentAudits.map((audit) => <article key={audit.id}><header><strong>{audit.actor_full_name || audit.actor_username || "کاربر مدیریت"}</strong><small>{toPersianDigits(new Date(audit.occurred_at_utc).toLocaleString("fa-IR", { timeZone: "Asia/Tehran" }))}</small></header><div><span>{audit.before_due_date ? toPersianDigits(audit.before_due_date) : "بدون سررسید"}</span><ArrowBackRounded /><span>{audit.after_due_date ? toPersianDigits(audit.after_due_date) : "بدون سررسید"}</span></div><p>{audit.reason}</p></article>)}</div></section>
+      </DialogContent><DialogActions className="payment-due-actions"><Button size="large" onClick={() => { setDuePayment(null); setDueInvoice(null); }} disabled={dueSaving}>انصراف</Button><Button size="large" type="submit" variant="contained" disabled={dueSaving || dueStale || !dueDateChanged || (dueEnabled && !dueDraft) || !dueReason.trim() || !duePayment?.updated_at_utc} startIcon={dueSaving ? <CircularProgress size={18} color="inherit" /> : <FactCheckRounded />}>{dueSaving ? "در حال ذخیره…" : "ذخیره سررسید"}</Button></DialogActions></form></Dialog>
     </section>
   );
 }

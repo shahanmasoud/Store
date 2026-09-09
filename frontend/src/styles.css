@@ -6706,6 +6706,37 @@ textarea:focus {
   background: #fff;
   box-shadow: 0 10px 30px rgba(22, 56, 45, 0.065);
 }
+.recent-sales-panel { display: grid; gap: 14px; padding: 20px; }
+.recent-sales-heading { display: flex; justify-content: space-between; align-items: center; gap: 14px; }
+.recent-sales-heading h2, .recent-sales-heading p { margin: 0; }
+.recent-sales-heading small { color: #687a74; }
+.recent-sales-heading .MuiButton-root { min-height: 44px; }
+.recent-sale-list, .recent-payment-list { display: grid; gap: 10px; }
+.recent-sale-card { overflow: hidden; border: 1px solid #dfe9e4; border-radius: 16px; background: #fbfdfc; }
+.recent-sale-summary { display: flex; width: 100%; min-height: 72px; justify-content: space-between; align-items: center; gap: 14px; padding: 14px; color: #17332b; text-align: right; border: 0; background: transparent; cursor: pointer; }
+.recent-sale-summary > span { display: grid; min-width: 0; gap: 4px; }
+.recent-sale-summary > span:last-child { justify-items: end; }
+.recent-sale-summary small, .recent-payment-card small { color: #687a74; }
+.recent-payment-list { padding: 0 14px 14px; }
+.recent-payment-card { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(180px, 1fr) auto; align-items: center; gap: 12px; padding: 12px; border-top: 1px solid #e3ebe7; }
+.recent-payment-card > div { display: grid; min-width: 0; gap: 3px; }
+.recent-payment-card .MuiButton-root { min-height: 44px; }
+.payment-due-dialog-form { display: flex; min-height: 100%; flex-direction: column; }
+.payment-due-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.payment-due-title-row .MuiIconButton-root { min-width: 44px; min-height: 44px; }
+.payment-due-content { flex: 1; align-content: start; overflow-x: hidden; }
+.payment-due-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.payment-due-summary > span { display: grid; min-width: 0; gap: 3px; padding: 12px; border-radius: 13px; background: #f5f9f7; }
+.payment-due-summary small { color: #687a74; }
+.payment-due-summary strong { overflow-wrap: anywhere; }
+.payment-due-audits, .payment-due-audit-list { display: grid; gap: 10px; }
+.payment-due-audit-list article { display: grid; gap: 8px; padding: 12px; border: 1px solid #e1eae6; border-radius: 13px; }
+.payment-due-audit-list header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.payment-due-audit-list header small { color: #687a74; }
+.payment-due-audit-list article > div { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
+.payment-due-audit-list p { margin: 0; overflow-wrap: anywhere; }
+.payment-due-actions { gap: 8px; flex-wrap: wrap; padding: 14px 24px 20px !important; border-top: 1px solid #e2ebe7; background: #fff; }
+.payment-due-actions .MuiButton-root { min-height: 44px; }
 
 .sales-workspace .sale-meta-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -6766,6 +6797,15 @@ textarea:focus {
 }
 
 @media (max-width: 560px) {
+  .recent-sales-panel { padding: 15px; }
+  .recent-sales-heading, .recent-sale-summary { align-items: stretch; flex-direction: column; }
+  .recent-sale-summary > span:last-child { justify-items: start; }
+  .recent-payment-card, .payment-due-summary { grid-template-columns: 1fr; }
+  .recent-payment-card .MuiButton-root { width: 100%; }
+  .payment-due-actions { position: sticky; bottom: 0; display: grid; grid-template-columns: 1fr 1fr; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)) !important; z-index: 2; }
+  .payment-due-actions .MuiButton-root { width: 100%; }
+  .payment-due-audit-list article > div { grid-template-columns: 1fr; }
+  .payment-due-audit-list article > div > svg { transform: rotate(-90deg); justify-self: center; }
   .sales-workspace .sale-panel,
   .sales-workspace .journal-panel {
     border-radius: 18px;

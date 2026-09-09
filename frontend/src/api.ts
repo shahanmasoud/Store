@@ -176,8 +176,12 @@ export type SaleInvoice = {
     status: PaymentStatus;
     reference_number?: string | null;
     due_jalali_date?: string | null;
+    note?: string | null;
+    updated_at_utc?: string | null;
   }>;
 };
+export type SalePayment = SaleInvoice["payments"][number];
+export type PaymentDueAudit = { id: number; payment_id: number; actor_user_id?: number | null; actor_username?: string | null; actor_full_name?: string | null; before_due_date?: string | null; after_due_date?: string | null; reason: string; occurred_at_utc: string };
 
 export type DailyJournalPayment = {
   method: PaymentMethod;
@@ -625,6 +629,10 @@ export const api = {
   inventory() {
     return request<InventoryItem[]>("/inventory");
   },
+  sales() { return request<SaleInvoice[]>("/sales"); },
+  sale(id: number) { return request<SaleInvoice>(`/sales/${id}`); },
+  updatePaymentDueDate(id: number, payload: { due_jalali_date: string | null; reason: string; expected_updated_at: string }) { return request<SalePayment>(`/sales/payments/${id}/due-date`, { method: "PATCH", body: JSON.stringify(payload) }); },
+  paymentDueAudits(id: number) { return request<PaymentDueAudit[]>(`/sales/payments/${id}/due-date/audits`); },
   updateInventory(id: number, payload: { reorder_level: number | null }) {
     return request<InventoryItem>(`/inventory/${id}`, {
       method: "PATCH",
