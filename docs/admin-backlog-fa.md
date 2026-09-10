@@ -30,6 +30,14 @@
 - فرمان: از پوشه `frontend` دستور `pnpm test:e2e` اجرا شود.
 - سند جزئیات: `docs/phase-33-isolated-browser-qa.md`.
 
+### QA-002 — کنترل اندازه و تفکیک bundle frontend
+
+- وضعیت: `done-local`
+- وضعیت فعلی: lazy loading صفحه مدیریت حفظ و dependencyهای React، Material UI/Emotion، آیکن‌ها و vendorهای عمومی به chunkهای مستقل تفکیک شدند. build با ۹۷۸ ماژول بدون هشدار بیش از ۵۰۰ کیلوبایت موفق است؛ بزرگ‌ترین chunk فعلی `341.02 kB` است.
+- حفاظت UX: هیچ component، مسیر، سطح دسترسی یا منطق مالی تغییر نکرده و حد هشدار Vite نیز افزایش نیافته است.
+- شواهد: build بدون هشدار و smoke تجمیعی Chrome دسکتاپ/موبایل پس از تفکیک bundle موفق‌اند؛ کنترل بودجه bundle در buildهای بعدی باید ادامه یابد.
+- سند جزئیات: `docs/phase-35-frontend-bundle-splitting.md`.
+
 ## اصل حفاظت از اطلاعات
 
 پیش از هر migration یا تغییر ساختار دیتابیس باید از دیتابیس واقعی PythonAnywhere و فایل‌های آپلودی بکاپ گرفته شود و بازیابی آن روی یک فایل موقت آزمایش شود. دیتابیس مالی، توکن‌ها و فایل‌های خصوصی نباید داخل GitHub commit شوند. migrationها باید تا حد ممکن افزایشی، nullable/defaultدار و بدون حذف سوابق باشند. در محیط production نباید دستور reset یا seed مخرب اجرا شود.
