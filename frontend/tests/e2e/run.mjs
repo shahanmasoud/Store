@@ -22,12 +22,29 @@ let exitCode = 1;
 try {
   const cli = path.resolve(frontendRoot, "node_modules/@playwright/test/cli.js");
   const forwardedArguments = process.argv.slice(2).filter((argument) => argument !== "--");
-  const result = spawnSync(process.execPath, [cli, "test", ...forwardedArguments], {
-    cwd: frontendRoot,
-    stdio: "inherit",
-    env: process.env,
-  });
-  exitCode = result.status ?? 1;
+  const hasExplicitProject = forwardedArguments.some(
+    (argument, index) => argument.startsWith("--project=") || (argument === "--project" && index + 1 < forwardedArguments.length),
+  );
+  const runs = hasExplicitProject
+    ? [forwardedArguments]
+    : [
+        [...forwardedArguments, "--project=desktop-chrome"],
+        [...forwardedArguments, "--project=mobile-chrome-390x844"],
+      ];
+  exitCode = 0;
+  for (const argumentsForRun of runs) {
+    removeRuntime();
+    const result = spawnSync(process.execPath, [cli, "test", ...argumentsForRun], {
+      cwd: frontendRoot,
+      stdio: "inherit",
+      env: process.env,
+    });
+    removeRuntime();
+    if ((result.status ?? 1) !== 0) {
+      exitCode = result.status ?? 1;
+      break;
+    }
+  }
 } finally {
   removeRuntime();
 }

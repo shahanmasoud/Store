@@ -23,10 +23,10 @@
 
 ### QA-001 — harness ایزوله دسکتاپ و موبایل
 
-- وضعیت: `implemented-foundation / expansion-pending`
-- وضعیت فعلی: Playwright با Chrome واقعی، دیتابیس و media موقت در temp خارج workspace، seed مدیر/زیرمدیر و cleanup fail-safe اضافه شده است. ورود، ناوبری کالا/انبار/چک، نبود overflow افقی در `1440×900` و `390×844` و dialog تمام‌صفحه ویرایش زیرمدیر پوشش دارند.
+- وضعیت: `implemented-expanded / role-matrix-pending`
+- وضعیت فعلی: Playwright با Chrome واقعی، دیتابیس و media موقت در temp خارج workspace، seed مدیر/زیرمدیر و cleanup fail-safe اضافه شده است. علاوه بر ورود و ناوبری، ساخت مشتری و popup حساب، ثبت/ویرایش/audit چک و ویرایش/audit سررسید پرداخت در `1440×900` و `390×844` پوشش دارند. هر پروژه viewport دیتابیس تازه خود را می‌گیرد.
 - حفاظت داده: اجرا فقط URL دقیق runtime اعتبارسنجی‌شده زیر temp سیستم‌عامل را می‌پذیرد، شبکه مرورگر را به `127.0.0.1` محدود می‌کند و هرگز `backend/store.db` یا production را seed نمی‌کند.
-- شکاف: افزودن CRUDهای مالی، loading/empty/error، رفتار ورودی عددی، سررسید و ماتریس پنج نقش.
+- شکاف: سناریوهای خرید/انبار/تصویر، loading/empty/error تزریقی، جزئیات caret ورودی عددی و ماتریس پنج نقش.
 - فرمان: از پوشه `frontend` دستور `pnpm test:e2e` اجرا شود.
 - سند جزئیات: `docs/phase-33-isolated-browser-qa.md`.
 
