@@ -1,13 +1,16 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const browserErrors = new WeakMap<Page, string[]>();
+const allowedConsoleErrors = new WeakMap<Page, RegExp[]>();
 
 test.beforeEach(async ({ context, page }) => {
   const errors: string[] = [];
   browserErrors.set(page, errors);
   page.on("pageerror", (error) => errors.push(`pageerror:${error.name}`));
   page.on("console", (message) => {
-    if (message.type() === "error") errors.push(`console:${message.text()}`);
+    if (message.type() === "error" && !(allowedConsoleErrors.get(page) ?? []).some((pattern) => pattern.test(message.text()))) {
+      errors.push(`console:${message.text()}`);
+    }
   });
   page.on("response", (response) => {
     if (response.status() >= 500) errors.push(`http:${response.status()}:${new URL(response.url()).pathname}`);
@@ -130,6 +133,73 @@ test("ورود مدیر و ناوبری صفحات کلیدی بدون overflow 
   await navigate(page, "کالاها", "کالاها و قیمت‌ها", mobile);
   await navigate(page, "انبار", "مدیریت انبار", mobile);
   await navigate(page, "چک‌ها", "مدیریت چک‌ها", mobile);
+});
+
+test("حالت‌های loading، error، retry و empty کالاها روشن و قابل بازیابی هستند", async ({ page }, testInfo) => {
+  const mobile = testInfo.project.name.startsWith("mobile");
+  let responseMode: "delayed-error" | "empty" = "delayed-error";
+  let releaseFailure!: () => void;
+  const failureGate = new Promise<void>((resolve) => { releaseFailure = resolve; });
+  const catalogEndpointSuffixes = ["/units", "/categories", "/products", "/product-variants", "/prices", "/price-rules"];
+  allowedConsoleErrors.set(page, [/status of 418/]);
+
+  await page.route("**/api/v1/**", async (route) => {
+    const path = new URL(route.request().url()).pathname.replace(/\/$/, "");
+    if (!catalogEndpointSuffixes.some((suffix) => path.endsWith(suffix))) {
+      await route.continue();
+      return;
+    }
+    if (responseMode === "delayed-error") {
+      await failureGate;
+      await route.fulfill({ status: 418, contentType: "application/json", body: JSON.stringify({ detail: "خطای کنترل‌شده آزمون" }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+  });
+
+  await login(page);
+  const navigationPromise = mobile
+    ? page.getByRole("button", { name: "باز کردن منوی بخش‌های مدیریت" }).click()
+    : Promise.resolve();
+  await navigationPromise;
+  await page.getByRole("button", { name: "کالاها", exact: true }).last().click();
+  await expect(page.getByRole("heading", { name: "کالاها و قیمت‌ها", exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByText("در حال دریافت دسته‌ها…", { exact: true })).toBeVisible();
+  releaseFailure();
+  await expect(page.getByText("خطای کنترل‌شده آزمون", { exact: true })).toBeVisible();
+
+  responseMode = "empty";
+  await page.getByRole("button", { name: "تلاش دوباره", exact: true }).first().click();
+  await expect(page.getByText("هنوز دسته‌ای ندارید", { exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "واحد و کالا", exact: true }).click();
+  await expect(page.getByText("هنوز واحدی ثبت نشده است", { exact: true })).toBeVisible();
+  await expect(page.getByText("هنوز کالایی ثبت نشده است", { exact: true })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
+test("ورودی مبلغ paste فارسی و لاتین، caret میانی و Backspace را پایدار نگه می‌دارد", async ({ context, page }, testInfo) => {
+  const mobile = testInfo.project.name.startsWith("mobile");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5193" });
+  await login(page);
+  await navigate(page, "چک‌ها", "مدیریت چک‌ها", mobile);
+  const amount = page.getByLabel("مبلغ (تومان)").first();
+
+  await amount.fill("1234567");
+  await expect(amount).toHaveValue("۱٬۲۳۴٬۵۶۷");
+  await amount.evaluate((input: HTMLInputElement) => input.setSelectionRange(3, 3));
+  await amount.press("9");
+  await expect(amount).toHaveValue("۱۲٬۹۳۴٬۵۶۷");
+  await expect.poll(() => amount.evaluate((input: HTMLInputElement) => input.selectionStart)).toBe(4);
+
+  await amount.press("Backspace");
+  await expect(amount).toHaveValue("۱٬۲۳۴٬۵۶۷");
+  await expect.poll(() => amount.evaluate((input: HTMLInputElement) => input.selectionStart)).toBe(3);
+
+  await amount.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
+  await page.evaluate(() => navigator.clipboard.writeText("۹۸76543"));
+  await amount.press(process.platform === "darwin" ? "Meta+V" : "Control+V");
+  await expect(amount).toHaveValue("۹٬۸۷۶٬۵۴۳");
+  await expectNoHorizontalOverflow(page);
 });
 
 test("dialog ویرایش کاربر در موبایل تمام‌صفحه و قابل لمس است", async ({ page }, testInfo) => {
