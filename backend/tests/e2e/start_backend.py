@@ -45,9 +45,35 @@ def main() -> None:
     from app.models.user import User
 
     with SessionLocal() as db:
+        role_password_hash = get_password_hash("e2e-role-password")
+        role_users = [
+            ("e2e-sales", "زیرمدیر فروش", {"can_sales": True}),
+            ("e2e-catalog", "زیرمدیر کالا و انبار", {"can_catalog_inventory": True}),
+            ("e2e-ledger", "زیرمدیر دفتر حساب", {"can_ledger": True}),
+            ("e2e-reports", "زیرمدیر چک و گزارش", {"can_cheques_reports": True}),
+        ]
+        for username, full_name, permissions in role_users:
+            if db.query(User).filter(User.username == username).first() is None:
+                role_permissions = {
+                    "can_sales": False,
+                    "can_catalog_inventory": False,
+                    "can_ledger": False,
+                    "can_cheques_reports": False,
+                    **permissions,
+                }
+                db.add(
+                    User(
+                        username=username,
+                        full_name=full_name,
+                        hashed_password=role_password_hash,
+                        is_active=True,
+                        is_superuser=False,
+                        **role_permissions,
+                    )
+                )
         if db.query(User).filter(User.username == "e2e-operator").first() is None:
             db.add(User(username="e2e-operator", full_name="کاربر تست موبایل", hashed_password=get_password_hash("e2e-operator-password"), is_active=True, is_superuser=False, can_sales=True, can_catalog_inventory=True))
-            db.commit()
+        db.commit()
 
     import uvicorn
 

@@ -34,11 +34,24 @@ async function expectNoElementOverflow(locator: Locator) {
 }
 
 async function login(page: Page) {
+  await loginAs(page, "e2e-admin", "e2e-password-123");
+}
+
+async function loginAs(page: Page, username: string, password: string) {
   await page.goto("/admin");
-  await page.getByLabel("نام کاربری").fill("e2e-admin");
-  await page.getByLabel("رمز عبور", { exact: true }).fill("e2e-password-123");
+  await page.getByLabel("نام کاربری").fill(username);
+  await page.getByLabel("رمز عبور", { exact: true }).fill(password);
   await page.getByRole("button", { name: "ورود به داشبورد" }).click();
   await expect(page.getByRole("heading", { name: "خانه مدیریت", exact: true })).toBeVisible();
+}
+
+async function openRoleNavigation(page: Page, mobile: boolean) {
+  if (mobile) {
+    await page.getByRole("button", { name: "باز کردن منوی بخش‌های مدیریت" }).click();
+  }
+  const navigation = page.getByRole("navigation", { name: "بخش‌های پنل مدیریت" }).last();
+  await expect(navigation).toBeVisible();
+  return navigation;
 }
 
 async function navigate(page: Page, name: string, heading: string, mobile: boolean) {
@@ -59,6 +72,55 @@ async function chooseOption(page: Page, fieldName: string, optionName: string, s
 function projectSuffix(projectName: string) {
   return projectName.startsWith("mobile") ? "موبایل" : "دسکتاپ";
 }
+
+const roleNavigationItems = [
+  ["خانه مدیریت", "خانه مدیریت"],
+  ["یادآوری‌های سررسید", "یادآوری‌های سررسید"],
+  ["فروش", "ثبت فروش"],
+  ["کالاها", "کالاها و قیمت‌ها"],
+  ["خرید", "ثبت خرید"],
+  ["انبار", "مدیریت انبار"],
+  ["دفتر حساب", "دفتر حساب"],
+  ["چک‌ها", "مدیریت چک‌ها"],
+  ["گزارش‌ها", "گزارش‌ها"],
+  ["اتصال آنلاین", "سفارش‌های آنلاین"],
+  ["کاربران و دسترسی‌ها", "کاربران و دسترسی‌ها"],
+] as const;
+
+const roleMatrix = [
+  { username: "e2e-sales", allowed: ["خانه مدیریت", "یادآوری‌های سررسید", "فروش"], visit: "فروش" },
+  { username: "e2e-catalog", allowed: ["خانه مدیریت", "کالاها", "خرید", "انبار"], visit: "کالاها" },
+  { username: "e2e-ledger", allowed: ["خانه مدیریت", "یادآوری‌های سررسید", "دفتر حساب"], visit: "دفتر حساب" },
+  { username: "e2e-reports", allowed: ["خانه مدیریت", "یادآوری‌های سررسید", "چک‌ها", "گزارش‌ها"], visit: "گزارش‌ها" },
+  { username: "e2e-admin", allowed: roleNavigationItems.map(([name]) => name), visit: "کاربران و دسترسی‌ها" },
+] satisfies Array<{ username: string; allowed: readonly string[]; visit: string }>;
+
+test("ماتریس پنج نقش فقط منوهای مجاز را در پنل نشان می‌دهد", async ({ page }, testInfo) => {
+  test.setTimeout(60_000);
+  const mobile = testInfo.project.name.startsWith("mobile");
+
+  for (const role of roleMatrix) {
+    const password = role.username === "e2e-admin" ? "e2e-password-123" : "e2e-role-password";
+    await loginAs(page, role.username, password);
+    const navigation = await openRoleNavigation(page, mobile);
+
+    for (const [name] of roleNavigationItems) {
+      const item = navigation.getByRole("button", { name, exact: true });
+      if (role.allowed.includes(name)) {
+        await expect(item, `${role.username} باید منوی ${name} را ببیند`).toBeVisible();
+      } else {
+        await expect(item, `${role.username} نباید منوی ${name} را داشته باشد`).toHaveCount(0);
+      }
+    }
+
+    const [, heading] = roleNavigationItems.find(([name]) => name === role.visit)!;
+    await navigation.getByRole("button", { name: role.visit, exact: true }).click();
+    await expect(page.getByRole("heading", { name: heading, exact: true, level: 1 })).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await page.getByRole("button", { name: "خروج", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "ورود مدیر", exact: true })).toBeVisible();
+  }
+});
 
 test("ورود مدیر و ناوبری صفحات کلیدی بدون overflow افقی", async ({ page }, testInfo) => {
   const mobile = testInfo.project.name.startsWith("mobile");
