@@ -23,12 +23,12 @@
 
 ### QA-001 — harness ایزوله دسکتاپ و موبایل
 
-- وضعیت: `implemented-expanded / role-matrix-done-local`
-- وضعیت فعلی: Playwright با Chrome واقعی، دیتابیس و media موقت در temp خارج workspace، seed مدیر و چهار زیرمدیر تک‌مجوز و cleanup fail-safe اضافه شده است. علاوه بر ورود و ناوبری، ساخت مشتری و popup حساب، ثبت/ویرایش/audit چک، ویرایش/audit سررسید پرداخت و ماتریس دقیق منوهای پنج نقش در `1440×900` و `390×844` پوشش دارند. هر پروژه viewport دیتابیس تازه خود را می‌گیرد.
+- وضعیت: `implemented-expanded / catalog-inventory-storefront-cycle-done-local`
+- وضعیت فعلی: Playwright با Chrome واقعی، دیتابیس و media موقت در temp خارج workspace، seed مدیر و چهار زیرمدیر تک‌مجوز و cleanup fail-safe اضافه شده است. علاوه بر ورود و ناوبری، ساخت مشتری و popup حساب، ثبت/ویرایش/audit چک، ویرایش/audit سررسید پرداخت، ماتریس دقیق منوهای پنج نقش و چرخه یکپارچه دسته/واحد/کالا/تصویر/گونه/خرید/انبار/فروشگاه در `1440×900` و `390×844` پوشش دارند. هر پروژه viewport دیتابیس تازه خود را می‌گیرد.
 - حفاظت داده: اجرا فقط URL دقیق runtime اعتبارسنجی‌شده زیر temp سیستم‌عامل را می‌پذیرد، شبکه مرورگر را به `127.0.0.1` محدود می‌کند و هرگز `backend/store.db` یا production را seed نمی‌کند.
-- شکاف: سناریوهای خرید/انبار/تصویر، loading/empty/error تزریقی و جزئیات caret ورودی عددی.
+- شکاف: حالت‌های empty/error تزریقی و جزئیات caret ورودی عددی؛ loading فروشگاه در چرخه واقعی فاز ۳۷ پوشش داده شده است.
 - فرمان: از پوشه `frontend` دستور `pnpm test:e2e` اجرا شود.
-- سند جزئیات: `docs/phase-33-isolated-browser-qa.md` و `docs/phase-36-admin-role-matrix-e2e.md`.
+- سند جزئیات: `docs/phase-33-isolated-browser-qa.md`، `docs/phase-36-admin-role-matrix-e2e.md` و `docs/phase-37-catalog-inventory-storefront-e2e.md`.
 
 ### QA-002 — کنترل اندازه و تفکیک bundle frontend
 

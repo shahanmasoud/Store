@@ -65,7 +65,7 @@ async function navigate(page: Page, name: string, heading: string, mobile: boole
 }
 
 async function chooseOption(page: Page, fieldName: string, optionName: string, scope: Locator = page.locator("body")) {
-  await scope.getByLabel(fieldName, { exact: true }).click();
+  await scope.getByRole("combobox", { name: fieldName }).click();
   await page.getByRole("option", { name: optionName, exact: true }).click();
 }
 
@@ -265,4 +265,110 @@ test("ویرایش سررسید پرداخت pending فروش و ثبت audit", 
   await expectNoHorizontalOverflow(page);
   await expectNoElementOverflow(reopened);
   if (mobile) await expect(reopened).toHaveClass(/MuiDialog-paperFullScreen/);
+});
+
+test("چرخه کامل کالا، تصویر، خرید، انبار و نمایش در فروشگاه", async ({ page }, testInfo) => {
+  test.setTimeout(75_000);
+  page.setDefaultTimeout(8_000);
+  const mobile = testInfo.project.name.startsWith("mobile");
+  const suffix = projectSuffix(testInfo.project.name);
+  const categoryName = `دسته E2E ${suffix}`;
+  const unitName = `بسته E2E ${suffix}`;
+  const productName = `لوبیا E2E ${suffix}`;
+  const variantName = `${productName} ممتاز`;
+  const productDescription = `کالای ساخته‌شده از دیتابیس ایزوله ${suffix}`;
+
+  await login(page);
+  await navigate(page, "کالاها", "کالاها و قیمت‌ها", mobile);
+
+  const categorySubmit = page.getByRole("button", { name: "ثبت دسته", exact: true });
+  await expect(categorySubmit).toBeDisabled();
+  await page.getByRole("textbox", { name: "نام دسته", exact: true }).fill(categoryName);
+  await categorySubmit.click();
+  await expect(page.getByText("دسته جدید ثبت شد.", { exact: true })).toBeVisible();
+  await expect(page.locator(".category-item").filter({ hasText: categoryName })).toBeVisible();
+
+  await page.getByRole("tab", { name: "واحد و کالا", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "واحدهای اندازه‌گیری", exact: true })).toBeVisible();
+  const unitSubmit = page.getByRole("button", { name: "ثبت واحد", exact: true });
+  await expect(unitSubmit).toBeDisabled();
+  await page.getByRole("textbox", { name: "نام واحد" }).fill(unitName);
+  await page.getByRole("textbox", { name: "نماد" }).fill("pkg-e2e");
+  await unitSubmit.click();
+  await expect(page.getByText("واحد جدید ثبت شد.", { exact: true })).toBeVisible();
+
+  await page.getByRole("textbox", { name: "نام کالا" }).fill(productName);
+  await chooseOption(page, "دسته کالا", categoryName);
+  await page.getByRole("textbox", { name: "توضیح کوتاه" }).fill(productDescription);
+  await page.getByRole("button", { name: "ثبت کالا", exact: true }).click();
+  await expect(page.getByText("کالای جدید ثبت شد.", { exact: true })).toBeVisible();
+
+  const productCard = page.locator(".record-item-product").filter({ hasText: productName });
+  await expect(productCard).toContainText(categoryName);
+  await productCard.getByRole("button", { name: "افزودن عکس", exact: true }).click();
+  const imageDialog = page.getByRole("dialog", { name: `تصویر «${productName}»` });
+  await expect(imageDialog.getByRole("button", { name: "ذخیره تصویر", exact: true })).toBeDisabled();
+  await imageDialog.locator('input[type="file"]').setInputFiles({
+    name: "product-e2e.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAFElEQVR4nGO8UmXOgA0wYRUdtBIANJIBlR9nS+cAAAAASUVORK5CYII=", "base64"),
+  });
+  await expect(imageDialog.getByAltText(`پیش‌نمایش ${productName}`)).toBeVisible();
+  await imageDialog.getByRole("button", { name: "ذخیره تصویر", exact: true }).click();
+  await expect(page.getByText(`تصویر «${productName}» ذخیره شد و در فروشگاه نمایش داده می‌شود.`, { exact: true })).toBeVisible();
+  await expect(productCard.locator("img")).toBeVisible();
+
+  await page.getByRole("tab", { name: "گونه و قیمت", exact: true }).click();
+  await chooseOption(page, "کالای پایه", productName);
+  await chooseOption(page, "واحد", `${unitName} (pkg-e2e)`);
+  await page.getByRole("textbox", { name: "نام گونه" }).fill(variantName);
+  const retailPrice = page.getByRole("textbox", { name: "قیمت خرده (تومان)" });
+  await retailPrice.fill("۲۵۰۰۰۰");
+  await expect(retailPrice).toHaveValue("۲۵۰٬۰۰۰");
+  await page.getByRole("button", { name: "ثبت گونه", exact: true }).click();
+  await expect(page.getByText("گونه جدید ثبت شد.", { exact: true })).toBeVisible();
+  await expect(page.locator(".variant-card").filter({ hasText: variantName })).toContainText("۲۵۰٬۰۰۰ تومان");
+
+  await navigate(page, "خرید", "ثبت خرید", mobile);
+  const purchaseSubmit = page.getByRole("button", { name: "ثبت فاکتور خرید", exact: true });
+  await expect(purchaseSubmit).toBeDisabled();
+  await chooseOption(page, "گونه کالا", variantName);
+  await page.getByRole("textbox", { name: "مقدار" }).fill("۳");
+  const unitCost = page.getByRole("textbox", { name: "قیمت واحد (تومان)" });
+  await unitCost.fill("۱۲۰۰۰۰");
+  await expect(unitCost).toHaveValue("۱۲۰٬۰۰۰");
+  await page.getByRole("button", { name: "افزودن به فاکتور", exact: true }).click();
+  await expect(page.locator(".purchase-invoice-item").filter({ hasText: variantName })).toContainText("۳۶۰٬۰۰۰ تومان");
+  await page.getByRole("textbox", { name: "نام تأمین‌کننده" }).fill(`تأمین‌کننده E2E ${suffix}`);
+  await page.getByRole("textbox", { name: "پرداخت‌شده (تومان)" }).fill("۳۶۰۰۰۰");
+  await purchaseSubmit.click();
+  await expect(page.getByText(/فاکتور خرید .* با موفقیت ثبت شد\./)).toBeVisible();
+
+  await page.getByRole("button", { name: "نمایش انبار", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "مدیریت انبار", exact: true, level: 1 })).toBeVisible();
+  const inventoryCard = page.locator(".inventory-stock-card").filter({ hasText: variantName });
+  await expect(inventoryCard).toContainText("۳");
+  await expect(inventoryCard).toContainText("۱۲۰٬۰۰۰ تومان");
+  const transaction = page.locator(".inventory-transaction").filter({ hasText: variantName }).first();
+  await expect(transaction).toContainText("ورود خرید");
+  await expect(transaction).toContainText("+۳");
+  await expectNoHorizontalOverflow(page);
+
+  await page.route("**/api/v1/storefront/catalog", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await route.continue();
+  });
+  await page.getByRole("button", { name: "مشاهده فروشگاه", exact: true }).click();
+  await expect(page.locator('[aria-label="در حال بارگذاری کالاها"]')).toBeVisible();
+  const storefrontCard = page.locator(".storefront-product-card").filter({ hasText: variantName });
+  await expect(storefrontCard).toBeVisible();
+  await expect(storefrontCard).toContainText(productDescription);
+  await expect(storefrontCard).toContainText("۲۵۰٬۰۰۰ تومان");
+  await expect(storefrontCard).toContainText("۳ موجود");
+  const storefrontImage = storefrontCard.getByAltText(`تصویر ${variantName}`);
+  await expect(storefrontImage).toBeVisible();
+  await expect(storefrontImage).toHaveAttribute("src", /\/media\/products\/[a-f0-9]+\.png$/);
+  await expect(storefrontImage).toHaveJSProperty("complete", true);
+  await expectNoHorizontalOverflow(page);
+  await expectNoElementOverflow(storefrontCard);
 });
