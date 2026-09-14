@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.core.security import get_password_hash
+from app.core.security import get_password_hash, verify_password
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
@@ -74,6 +74,14 @@ def test_login_with_bad_password_fails(client: TestClient) -> None:
 
     assert response.status_code == 401
     assert response.json()["detail"] == "نام کاربری یا رمز عبور اشتباه است."
+
+
+def test_existing_bcrypt_hash_remains_verifiable_without_rehash() -> None:
+    existing_hash = "$2b$12$zlkKpi1jwUWmFaNxK2MjBO203L7XW1yMoDTYdLIyIvQOPQDAdl7z."
+
+    assert verify_password("legacy-admin-123", existing_hash) is True
+    assert verify_password("wrong-password", existing_hash) is False
+    assert existing_hash == "$2b$12$zlkKpi1jwUWmFaNxK2MjBO203L7XW1yMoDTYdLIyIvQOPQDAdl7z."
 
 
 def test_me_with_token_returns_current_user(client: TestClient) -> None:

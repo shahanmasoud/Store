@@ -1,0 +1,3 @@
+# Passlib 1.7.4 reads bcrypt.__about__.__version__, removed in bcrypt 4.1.
+# Keep the compatible backend without changing the bcrypt hashing scheme.
+bcrypt>=4.0.0,<4.1.0

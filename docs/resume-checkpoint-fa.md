@@ -6,17 +6,18 @@
 
 - شاخه کاری: `codex/admin-redesign`
 - آخرین commit پایدار: `6052f58` — فاز ۳۹ دسترس‌پذیری پنل، اعلان معنایی stateها و اصلاح Escape/focus منوی موبایل
-- فاز آماده بازبینی و commit: ندارد؛ worktree پس از فاز ۳۹ پاک است.
-- تست‌ها: کل backend پس از فاز ۳۲ برابر ۲۴۶ موفق؛ مجموعه هدفمند فروش، command reconciliation و migration برابر ۳۱ موفق؛ تست‌های تخصصی بکاپ ۱۸؛ نقش‌ها ۱۷؛ اعداد ۴؛ frontend build با ۹۷۸ ماژول و بدون هشدار chunk بزرگ موفق؛ اجرای کامل Playwright پس از فاز ۳۹ در Chrome واقعی برابر `9 passed + 1 expected skip` در desktop و `10 passed` در mobile `390×844` است.
+- فاز آماده بازبینی و commit: فاز ۴۰؛ محدودسازی سازگار bcrypt بدون تغییر الگوریتم یا داده، همراه تست هش موجود و مستندات.
+- تست‌ها: کل backend پس از فاز ۳۲ برابر ۲۴۶ موفق؛ فاز ۴۰ در virtualenv تمیز با `passlib 1.7.4` و `bcrypt 4.0.1` شامل ۲۶ تست auth/user-permissions موفق و بدون هشدار metadata bcrypt؛ مجموعه هدفمند فروش، command reconciliation و migration برابر ۳۱ موفق؛ تست‌های تخصصی بکاپ ۱۸؛ نقش‌ها ۱۷؛ اعداد ۴؛ frontend build با ۹۷۸ ماژول و بدون هشدار chunk بزرگ موفق؛ اجرای کامل Playwright پس از فاز ۳۹ در Chrome واقعی برابر `9 passed + 1 expected skip` در desktop و `10 passed` در mobile `390×844` است.
 - داده: هیچ migration یا backfill روی production اجرا نشده است. مسیر runtime هاست به دیتابیس اصلی اصلاح و بکاپ تأییدشده آن ساخته شد.
 
 ## کار بعدی
 
-1. اجرای dry-run فاز ۳۱ روی یک کپی restoreشده و فقط پس از تأیید روی production؛ طراحی apply جداگانه و بدون اتصال حدسی رکوردها.
-2. اجرای کنترل‌شده نخستین bundle/restore آزمایشی production فقط پس از تأیید کاربر.
-3. فاز BAK-002: انتخاب مقصد رمزنگاری‌شده off-host و روش اعلان شکست، سپس فعال‌سازی Scheduled Task.
-4. QA پذیرش دستی فازهای ۳۸ و ۳۹ برای caret، paste، Backspace، Escape و focus روی دستگاه واقعی.
-5. QA پذیرش دستی پنج نقش در Chrome دسکتاپ و موبایل با راهنمای فاز ۳۶.
+1. بازبینی و ثبت فاز ۴۰؛ در deploy تأییدشده بعدی requirements نصب و smoke ورود اجرا شود، بدون rehash یا migration.
+2. اجرای dry-run فاز ۳۱ روی یک کپی restoreشده و فقط پس از تأیید روی production؛ طراحی apply جداگانه و بدون اتصال حدسی رکوردها.
+3. اجرای کنترل‌شده نخستین bundle/restore آزمایشی production فقط پس از تأیید کاربر.
+4. فاز BAK-002: انتخاب مقصد رمزنگاری‌شده off-host و روش اعلان شکست، سپس فعال‌سازی Scheduled Task.
+5. QA پذیرش دستی فازهای ۳۸ و ۳۹ برای caret، paste، Backspace، Escape و focus روی دستگاه واقعی.
+6. QA پذیرش دستی پنج نقش در Chrome دسکتاپ و موبایل با راهنمای فاز ۳۶.
 
 ## شکاف‌های اثبات‌شده در ممیزی
 
