@@ -5,8 +5,8 @@
 ## آخرین تحویل پایدار
 
 - شاخه کاری: `codex/admin-redesign`
-- آخرین commit پایدار: `1012dcb` — فاز ۳۸ حالت‌های loading/error/retry/empty و تعامل کامل ورودی عددی در Chrome دسکتاپ/موبایل
-- فاز آماده بازبینی و commit: فاز ۳۹ دسترس‌پذیری پنل، اعلان معنایی stateها و اصلاح Escape/focus منوی موبایل.
+- آخرین commit پایدار: `6052f58` — فاز ۳۹ دسترس‌پذیری پنل، اعلان معنایی stateها و اصلاح Escape/focus منوی موبایل
+- فاز آماده بازبینی و commit: ندارد؛ worktree پس از فاز ۳۹ پاک است.
 - تست‌ها: کل backend پس از فاز ۳۲ برابر ۲۴۶ موفق؛ مجموعه هدفمند فروش، command reconciliation و migration برابر ۳۱ موفق؛ تست‌های تخصصی بکاپ ۱۸؛ نقش‌ها ۱۷؛ اعداد ۴؛ frontend build با ۹۷۸ ماژول و بدون هشدار chunk بزرگ موفق؛ اجرای کامل Playwright پس از فاز ۳۹ در Chrome واقعی برابر `9 passed + 1 expected skip` در desktop و `10 passed` در mobile `390×844` است.
 - داده: هیچ migration یا backfill روی production اجرا نشده است. مسیر runtime هاست به دیتابیس اصلی اصلاح و بکاپ تأییدشده آن ساخته شد.
 
