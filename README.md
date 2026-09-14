@@ -91,6 +91,9 @@ $env:STORE_BASE_URL="http://127.0.0.1:8003"
 راهنمای پشتیبان‌گیری و بازیابی امن اطلاعات SQLite در
 [`docs/sqlite-backup.md`](docs/sqlite-backup.md) قرار دارد.
 
+چک‌لیست واحد پذیرش کاربر برای تست مرحله‌ای دسکتاپ و موبایل در
+[`docs/admin-user-acceptance-checklist-fa.md`](docs/admin-user-acceptance-checklist-fa.md) قرار دارد.
+
 ## ورود مشتری با بله
 
 قرارداد API، جریان موبایل و دسکتاپ، قواعد امنیتی، تنظیم Webhook، سناریوهای تست و محدوده فازهای بعدی در
