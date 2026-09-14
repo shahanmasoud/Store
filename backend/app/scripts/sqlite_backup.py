@@ -195,6 +195,30 @@ def _safe_media_files(media_root: Path) -> list[Path]:
     return sorted(files, key=lambda item: item.relative_to(media_root).as_posix())
 
 
+def _product_image_filenames(connection: sqlite3.Connection) -> list[str]:
+    """Return image references when the deployed schema supports them.
+
+    Pre-migration databases can have a ``products`` table without the
+    ``image_filename`` column.  Backups must remain possible before applying
+    that migration, so absence of either the table or column means there are
+    no image references to validate yet.
+    """
+    has_products = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='products'"
+    ).fetchone()
+    if not has_products:
+        return []
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(products)")}
+    if "image_filename" not in columns:
+        return []
+    return [
+        row[0]
+        for row in connection.execute(
+            "SELECT image_filename FROM products WHERE image_filename IS NOT NULL"
+        )
+    ]
+
+
 def _manifest_payload(bundle: Path, created_at: datetime) -> dict[str, object]:
     database = bundle / "store.db"
     media_dir = bundle / "media"
@@ -345,15 +369,7 @@ def verify_bundle(bundle: Path) -> dict[str, int]:
         raise RuntimeError("Bundle media files do not exactly match the manifest")
 
     with closing(sqlite3.connect(f"file:{database.as_posix()}?mode=ro", uri=True)) as connection:
-        has_products = connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='products'"
-        ).fetchone()
-        referenced = set()
-        if has_products:
-            referenced = {
-                f"products/{row[0]}"
-                for row in connection.execute("SELECT image_filename FROM products WHERE image_filename IS NOT NULL")
-            }
+        referenced = {f"products/{filename}" for filename in _product_image_filenames(connection)}
     missing = referenced - actual
     if missing:
         raise RuntimeError(f"Bundle is missing product images referenced by SQLite: {sorted(missing)}")
@@ -397,12 +413,7 @@ def restore_bundle(bundle: Path, database_target: Path, media_target: Path) -> t
 def verify_bundle_contents(database: Path, media_root: Path) -> None:
     integrity_check(database)
     with closing(sqlite3.connect(f"file:{database.resolve().as_posix()}?mode=ro", uri=True)) as connection:
-        has_products = connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='products'"
-        ).fetchone()
-        if not has_products:
-            return
-        filenames = [row[0] for row in connection.execute("SELECT image_filename FROM products WHERE image_filename IS NOT NULL")]
+        filenames = _product_image_filenames(connection)
     for filename in filenames:
         path = (media_root.resolve() / "products" / filename).resolve()
         if media_root.resolve() not in path.parents or not path.is_file():

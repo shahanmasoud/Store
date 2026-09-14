@@ -49,7 +49,7 @@ This final slice verifies the admin panel as one coherent product after all func
 
 ## Verification evidence
 
-- Backend: `247 passed` in the full suite when run from the `backend` directory.
+- Backend: `248 passed` in the full suite when run from the `backend` directory.
 - Frontend: all `21` number/role unit tests pass; TypeScript and the Vite production build pass. The largest current JavaScript chunk is the 341.02 kB Material UI vendor chunk; the admin chunk is 198.14 kB.
 - SQLite: a fresh database upgrades from base to head, downgrades from revision `0007` to `0006`, and upgrades to head again.
 - Desktop route tour: dashboard and all eight destinations render at the top with no console errors or document overflow.

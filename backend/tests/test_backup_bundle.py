@@ -52,6 +52,25 @@ def test_bundle_round_trip_contains_database_media_manifest_and_checksums(tmp_pa
     assert (media_target / "products" / "lentil.png").read_bytes() == b"valid-image-bytes"
 
 
+def test_bundle_round_trip_supports_pre_image_migration_schema(tmp_path: Path) -> None:
+    source = tmp_path / "legacy" / "store.db"
+    media = tmp_path / "legacy" / "media"
+    source.parent.mkdir()
+    media.mkdir()
+    with sqlite3.connect(source) as connection:
+        connection.execute("CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+        connection.execute("INSERT INTO products (name) VALUES ('legacy lentil')")
+
+    bundle = create_bundle(source, media, tmp_path / "backups")
+
+    assert verify_bundle(bundle) == {"media_files": 0, "referenced_product_images": 0}
+    restored_db = tmp_path / "restore" / "store.db"
+    restored_media = tmp_path / "restore" / "media"
+    restore_bundle(bundle, restored_db, restored_media)
+    with sqlite3.connect(restored_db) as connection:
+        assert connection.execute("SELECT name FROM products").fetchone() == ("legacy lentil",)
+
+
 def test_bundle_verification_rejects_missing_or_tampered_manifest(tmp_path: Path) -> None:
     source, media = _store_data(tmp_path)
     first = create_bundle(source, media, tmp_path / "backups")

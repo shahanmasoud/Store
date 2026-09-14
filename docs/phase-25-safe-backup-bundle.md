@@ -22,7 +22,7 @@ cd backend
 python -m pytest tests\test_sqlite_backup.py tests\test_backup_bundle.py tests\test_storefront_media.py -q
 ```
 
-نتیجه در زمان تحویل: `31 passed`. پوشش شامل round-trip دیتابیس و دو فایل رسانه، checksum مفقود/دستکاری‌شده، انتشار امن checksum قدیمی، خرابی DB و media، تصویر ارجاع‌شده مفقود، مسیرهای هم‌پوشان، lock contention، شکست میانی بدون انتشار، جلوگیری از overwrite restore و retention فقط روی bundle معتبر است.
+نتیجه در زمان تحویل: `31 passed`. پوشش شامل round-trip دیتابیس و دو فایل رسانه، checksum مفقود/دستکاری‌شده، انتشار امن checksum قدیمی، خرابی DB و media، تصویر ارجاع‌شده مفقود، مسیرهای هم‌پوشان، lock contention، شکست میانی بدون انتشار، جلوگیری از overwrite restore و retention فقط روی bundle معتبر است. همچنین دیتابیس legacy که جدول `products` آن هنوز ستون `image_filename` ندارد، پیش از migration قابل bundle، verify و restore است و تعداد ارجاع تصویر صفر گزارش می‌شود.
 
 ## تست دستی کوتاه قبل از production
 
