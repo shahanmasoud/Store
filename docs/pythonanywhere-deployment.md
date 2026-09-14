@@ -95,24 +95,67 @@ https://YOUR_USERNAME.pythonanywhere.com/admin
 ## به‌روزرسانی‌های بعدی
 
 خروجی React لازم برای PythonAnywhere در مخزن قرار دارد؛ Node روی سرور لازم نیست.
+به‌روزرسانی production را با ترتیب زیر انجام دهید و نام bundle، commit قبلی و
+commit مقصد را در گزارش استقرار ثبت کنید.
+
+### ۱. بکاپ و اعتبارسنجی پیش از تغییر
+
+```bash
+set -a
+source ~/.store.env
+set +a
+cd ~/Store/backend
+~/.virtualenvs/store/bin/python -m app.scripts.sqlite_backup bundle \
+  --destination ~/store-backups --keep-days 30 --keep-last 7
+~/.virtualenvs/store/bin/python -m app.scripts.sqlite_backup verify-bundle \
+  ~/store-backups/store-bundle-TIMESTAMP
+```
+
+`store-bundle-TIMESTAMP` را دقیقاً با نام bundle موفق همان اجرا جایگزین کنید. اگر
+ساخت یا verify بکاپ شکست خورد، استقرار را ادامه ندهید.
+
+### ۲. maintenance، دریافت کد و migration
+
+وب‌اپ را از Web tab حساب PythonAnywhere غیرفعال کنید تا هنگام تغییر schema هیچ
+درخواست یا worker بله روی دیتابیس ننویسد. سپس:
 
 ```bash
 cd ~/Store
+PREVIOUS_COMMIT="$(git rev-parse HEAD)"
 git pull --ff-only origin main
+~/.virtualenvs/store/bin/pip install -r backend/requirements.txt
 set -a
 source ~/.store.env
 set +a
 cd backend
 ~/.virtualenvs/store/bin/alembic upgrade head
-pa website reload --domain <USERNAME>.pythonanywhere.com
 ```
 
-پیش از هر به‌روزرسانی از دیتابیس نسخه پشتیبان سازگار و بررسی‌شده بگیرید:
+اگر `git pull`، نصب dependency یا migration شکست خورد، وب‌اپ را در حالت
+maintenance نگه دارید و وارد مرحله reload نشوید.
+
+### ۳. فعال‌سازی و پذیرش اولیه
+
+وب‌اپ را دوباره در Web tab فعال و سپس reload کنید:
 
 ```bash
-cd ~/Store/backend
-~/.virtualenvs/store/bin/python -m app.scripts.sqlite_backup bundle --keep-days 30 --keep-last 7
+pa website reload --domain YOUR_USERNAME.pythonanywhere.com
 ```
+
+هر چهار URL بخش «کنترل سلامت» را بررسی کنید و سپس smoke ورود، داشبورد و یک خواندن
+بدون تغییر از داده‌های مالی انجام دهید. access/error log نیز نباید traceback، خطای
+migration، حلقه 401 یا خطای worker داشته باشد.
+
+### trigger و مسیر rollback
+
+شکست migration، پاسخ ناموفق `/ready`، خطای تکرارشونده 5xx، ناتوانی ورود مدیر، یا
+ناسازگاری مانده‌های مالی trigger توقف rollout است. در این حالت وب‌اپ را دوباره
+غیرفعال نگه دارید؛ با `alembic downgrade` روی داده production عقب‌گرد نکنید.
+commit قبلی ثبت‌شده را checkout کنید، bundle تأییدشده پیش از استقرار را در مسیرهای
+تازه restore و verify کنید، سپس `DATABASE_URL` و `MEDIA_ROOT` را فقط طبق runbook
+بازیابی بازبینی‌شده به آن کپی سالم تغییر دهید. بعد از reload، health و smoke را
+دوباره اجرا کنید. اگر علت شکست فقط کد است و migration اصلاً شروع نشده، بازگشت به
+`PREVIOUS_COMMIT` و reload کافی است؛ در هر حالت تا تأیید smoke maintenance را برندارید.
 
 برای Scheduled Tasks از wrapper مانیتورپذیر استفاده کنید؛ فعال‌سازی واقعی باید بعد از بازبینی انجام شود:
 

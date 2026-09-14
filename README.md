@@ -46,8 +46,14 @@ password: admin123
 Backend:
 
 ```powershell
-.\backend\.venv\Scripts\python.exe -m pytest backend
+Push-Location backend
+.\.venv\Scripts\python.exe -m pytest .
+Pop-Location
 ```
+
+اجرای تست‌ها از داخل `backend` مهم است، چون مسیر Alembic در `alembic.ini`
+نسبت به همان پوشه تعریف شده است. الگوی بالا مستقل از پوشه‌ای است که PowerShell
+ابتدا در آن باز شده، به شرط آن‌که فرمان را از ریشه مخزن اجرا کنید.
 
 Frontend build:
 

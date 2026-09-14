@@ -44,13 +44,13 @@ This final slice verifies the admin panel as one coherent product after all func
 - The dashboard now loads today's journal, inventory summary, and due items from authenticated APIs. It has explicit loading, error/retry, and truthful zero states.
 - The desktop sidebar remains persistent. At widths up to 920px it is replaced by a labelled Material UI drawer containing the dashboard and all eight management destinations; the old horizontal navigation is no longer exposed.
 - Every section change closes the drawer, resets the document to the top, and moves focus to the current level-one heading with a visible focus ring.
-- The storefront shell and admin application now form a real lazy boundary. The verified production build emits a 448.27 kB entry chunk and a separate 185.77 kB admin chunk, with no JavaScript chunk above 500 kB.
+- The storefront shell and admin application now form a real lazy boundary. The current verified build emits separate entry, React, Material UI, icon, shared-vendor, and admin chunks, with no JavaScript chunk above 500 kB.
 - Mobile header controls, drawer destinations, and tested dialog actions meet the 44px touch-target minimum.
 
 ## Verification evidence
 
-- Backend: `96 passed` in the full suite.
-- Frontend: TypeScript and the Vite production build pass; `git diff --check` is clean.
+- Backend: `247 passed` in the full suite when run from the `backend` directory.
+- Frontend: all `21` number/role unit tests pass; TypeScript and the Vite production build pass. The largest current JavaScript chunk is the 341.02 kB Material UI vendor chunk; the admin chunk is 198.14 kB.
 - SQLite: a fresh database upgrades from base to head, downgrades from revision `0007` to `0006`, and upgrades to head again.
 - Desktop route tour: dashboard and all eight destinations render at the top with no console errors or document overflow.
 - Mobile route tour at `390 × 844`: all nine drawer destinations are reachable; every destination focuses its H1 at scroll position zero; document width remains within the viewport.
