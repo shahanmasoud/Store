@@ -5,8 +5,8 @@
 ## آخرین تحویل پایدار
 
 - شاخه کاری: `codex/admin-redesign`
-- آخرین commit پایدار: `5ee200d` — فاز ۴۰ تثبیت backend سازگار bcrypt بدون تغییر الگوریتم، هش‌ها یا داده
-- فاز آماده بازبینی و commit: چک‌لیست یکپارچه پذیرش کاربر برای ۲۰ سناریوی دسکتاپ، موبایل و عملیات حساس production.
+- آخرین commit پایدار: `9a836e9` — چک‌لیست یکپارچه پذیرش کاربر برای ۲۰ سناریوی دسکتاپ، موبایل و عملیات حساس production
+- فاز آماده بازبینی و commit: ندارد؛ worktree پاک است.
 - تست‌ها: کل backend پس از فاز ۳۲ برابر ۲۴۶ موفق؛ فاز ۴۰ در virtualenv تمیز با `passlib 1.7.4` و `bcrypt 4.0.1` شامل ۲۶ تست auth/user-permissions موفق و بدون هشدار metadata bcrypt؛ مجموعه هدفمند فروش، command reconciliation و migration برابر ۳۱ موفق؛ تست‌های تخصصی بکاپ ۱۸؛ نقش‌ها ۱۷؛ اعداد ۴؛ frontend build با ۹۷۸ ماژول و بدون هشدار chunk بزرگ موفق؛ اجرای کامل Playwright پس از فاز ۳۹ در Chrome واقعی برابر `9 passed + 1 expected skip` در desktop و `10 passed` در mobile `390×844` است.
 - داده: هیچ migration یا backfill روی production اجرا نشده است. مسیر runtime هاست به دیتابیس اصلی اصلاح و بکاپ تأییدشده آن ساخته شد.
 
