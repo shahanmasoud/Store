@@ -135,6 +135,42 @@ test("ورود مدیر و ناوبری صفحات کلیدی بدون overflow 
   await navigate(page, "چک‌ها", "مدیریت چک‌ها", mobile);
 });
 
+test("landmark، صفحه‌کلید، بازگشت focus و reduced-motion دسترس‌پذیر هستند", async ({ page }, testInfo) => {
+  const mobile = testInfo.project.name.startsWith("mobile");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await login(page);
+
+  await expect(page.getByRole("main")).toHaveCount(1);
+  await expect(page.getByRole("heading", { name: "خانه مدیریت", level: 1 })).toBeVisible();
+  const motionDuration = await page.locator(".sidebar-link").first().evaluate((element) => getComputedStyle(element).transitionDuration);
+  expect(Number.parseFloat(motionDuration)).toBeLessThanOrEqual(0.01);
+
+  if (mobile) {
+    const menuTrigger = page.getByRole("button", { name: "باز کردن منوی بخش‌های مدیریت" });
+    await menuTrigger.focus();
+    await page.keyboard.press("Enter");
+    const mobileNavigation = page.getByRole("navigation", { name: "بخش‌های پنل مدیریت" }).last();
+    await expect(mobileNavigation).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(menuTrigger).toBeVisible();
+    await expect(menuTrigger).toBeFocused();
+    const triggerBounds = await menuTrigger.boundingBox();
+    expect(triggerBounds).not.toBeNull();
+    expect(triggerBounds!.width).toBeGreaterThanOrEqual(44);
+    expect(triggerBounds!.height).toBeGreaterThanOrEqual(44);
+  }
+
+  const passwordTrigger = page.getByRole("button", { name: "تغییر رمز" });
+  await passwordTrigger.focus();
+  await page.keyboard.press("Enter");
+  const passwordDialog = page.getByRole("dialog", { name: "تغییر رمز عبور" });
+  await expect(passwordDialog).toBeVisible();
+  await expect.poll(() => passwordDialog.evaluate((dialog) => dialog.contains(document.activeElement))).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(passwordDialog).toBeHidden();
+  await expect(passwordTrigger).toBeFocused();
+});
+
 test("حالت‌های loading، error، retry و empty کالاها روشن و قابل بازیابی هستند", async ({ page }, testInfo) => {
   const mobile = testInfo.project.name.startsWith("mobile");
   let responseMode: "delayed-error" | "empty" = "delayed-error";
@@ -164,13 +200,13 @@ test("حالت‌های loading، error، retry و empty کالاها روشن �
   await navigationPromise;
   await page.getByRole("button", { name: "کالاها", exact: true }).last().click();
   await expect(page.getByRole("heading", { name: "کالاها و قیمت‌ها", exact: true, level: 1 })).toBeVisible();
-  await expect(page.getByText("در حال دریافت دسته‌ها…", { exact: true })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "در حال دریافت دسته‌ها…" })).toBeVisible();
   releaseFailure();
-  await expect(page.getByText("خطای کنترل‌شده آزمون", { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "خطای کنترل‌شده آزمون" })).toBeVisible();
 
   responseMode = "empty";
   await page.getByRole("button", { name: "تلاش دوباره", exact: true }).first().click();
-  await expect(page.getByText("هنوز دسته‌ای ندارید", { exact: true })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "هنوز دسته‌ای ندارید" })).toBeVisible();
   await page.getByRole("tab", { name: "واحد و کالا", exact: true }).click();
   await expect(page.getByText("هنوز واحدی ثبت نشده است", { exact: true })).toBeVisible();
   await expect(page.getByText("هنوز کالایی ثبت نشده است", { exact: true })).toBeVisible();

@@ -391,6 +391,15 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
     return () => window.removeEventListener("store:unauthorized", logout);
   }, []);
 
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileNavOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [mobileNavOpen]);
+
   const displayName = useMemo(() => {
     return user?.full_name || user?.username || "مدیر فروشگاه";
   }, [user]);
@@ -2026,14 +2035,14 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
             </div>
           </form>
 
-          <div className="category-list-panel" aria-live="polite">
+          <div className="category-list-panel">
             <div className="category-list-heading">
               <div><strong>دسته‌های فعال</strong><small>ساختار فعلی فروشگاه</small></div>
               <Button type="button" startIcon={<RefreshRounded />} onClick={() => load()} disabled={categoryStatus === "loading"}>تازه‌سازی</Button>
             </div>
-            {categoryStatus === "loading" ? <div className="category-state"><CircularProgress size={28} /><span>در حال دریافت دسته‌ها…</span></div> : null}
-            {categoryStatus === "error" ? <div className="category-state category-state-error"><span>{catalogLoadError || "دریافت دسته‌ها انجام نشد."}</span><Button variant="outlined" onClick={() => load()}>تلاش دوباره</Button></div> : null}
-            {categoryStatus === "ready" && orderedCategories.length === 0 ? <div className="category-state"><FolderOutlined /><strong>هنوز دسته‌ای ندارید</strong><span>اولین دسته را از فرم روبه‌رو بسازید.</span></div> : null}
+            {categoryStatus === "loading" ? <div className="category-state" role="status" aria-live="polite"><CircularProgress size={28} aria-hidden="true" /><span>در حال دریافت دسته‌ها…</span></div> : null}
+            {categoryStatus === "error" ? <div className="category-state category-state-error" role="alert"><span>{catalogLoadError || "دریافت دسته‌ها انجام نشد."}</span><Button variant="outlined" onClick={() => load()}>تلاش دوباره</Button></div> : null}
+            {categoryStatus === "ready" && orderedCategories.length === 0 ? <div className="category-state" role="status" aria-live="polite"><FolderOutlined aria-hidden="true" /><strong>هنوز دسته‌ای ندارید</strong><span>اولین دسته را از فرم روبه‌رو بسازید.</span></div> : null}
             {categoryStatus === "ready" && orderedCategories.length > 0 ? (
               <div className="category-list">
                 {orderedCategories.map((category) => (
