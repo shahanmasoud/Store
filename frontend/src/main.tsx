@@ -4,6 +4,7 @@ import { CssBaseline, ThemeProvider } from "@mui/material";
 import App from "./App";
 import { appTheme } from "./theme";
 import "./styles.css";
+import "./productCardPicker.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

@@ -7,6 +7,9 @@ from app.models.catalog import Category, PriceList, PriceRule, Product, ProductV
 from app.schemas.catalog import (
     CategoryCreate,
     CategoryUpdate,
+    CatalogItemCreate,
+    CatalogItemRead,
+    CatalogItemUpdate,
     PriceListCreate,
     PriceRuleCreate,
     PriceRuleUpdate,
@@ -17,6 +20,105 @@ from app.schemas.catalog import (
     UnitCreate,
     UnitUpdate,
 )
+
+
+def _catalog_item_read(product: Product, variant: ProductVariant) -> CatalogItemRead:
+    return CatalogItemRead(
+        product_id=product.id,
+        variant_id=variant.id,
+        name=variant.name,
+        description=product.description,
+        category_id=product.category_id,
+        unit_id=variant.unit_id,
+        sku=variant.sku,
+        retail_price_rial=variant.retail_price_rial,
+        wholesale_price_rial=variant.wholesale_price_rial,
+        min_wholesale_quantity=variant.min_wholesale_quantity,
+        image_url=product.image_url,
+    )
+
+
+def list_catalog_items(db: Session) -> list[CatalogItemRead]:
+    rows = db.execute(
+        select(Product, ProductVariant)
+        .join(ProductVariant, ProductVariant.product_id == Product.id)
+        .where(Product.is_active.is_(True), ProductVariant.is_active.is_(True))
+        .order_by(ProductVariant.name, ProductVariant.id)
+    ).all()
+    return [_catalog_item_read(product, variant) for product, variant in rows]
+
+
+def create_catalog_item(db: Session, payload: CatalogItemCreate) -> CatalogItemRead:
+    _validate_product_category(db, payload.category_id)
+    _get_unit(db, payload.unit_id)
+    _ensure_unique_product_name(db, payload.name, payload.category_id)
+    _ensure_unique_sku(db, payload.sku)
+    product = Product(name=payload.name, description=payload.description, category_id=payload.category_id)
+    variant = ProductVariant(
+        product=product,
+        unit_id=payload.unit_id,
+        name=payload.name,
+        sku=payload.sku,
+        retail_price_rial=payload.retail_price_rial,
+        wholesale_price_rial=payload.wholesale_price_rial,
+        min_wholesale_quantity=payload.min_wholesale_quantity,
+    )
+    db.add_all([product, variant])
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="ثبت کالا به‌دلیل تداخل با اطلاعات موجود انجام نشد.") from exc
+    db.refresh(product)
+    db.refresh(variant)
+    return _catalog_item_read(product, variant)
+
+
+def update_catalog_item(db: Session, variant_id: int, payload: CatalogItemUpdate) -> CatalogItemRead:
+    variant = _get_variant(db, variant_id)
+    product = _get_product(db, variant.product_id)
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="حداقل یک تغییر وارد کنید.")
+    name = changes.get("name", variant.name)
+    category_id = changes.get("category_id", product.category_id)
+    unit_id = changes.get("unit_id", variant.unit_id)
+    sku = changes.get("sku", variant.sku)
+    _validate_product_category(db, category_id)
+    _get_unit(db, unit_id)
+    _ensure_unique_sku(db, sku, exclude_id=variant.id)
+
+    # The old schema may contain several variants under one product. Shared fields
+    # deliberately stay on that product; the target variant id and all references
+    # from invoices/inventory remain unchanged.
+    if "name" in changes:
+        variant.name = name
+        active_sibling_id = db.scalar(
+            select(ProductVariant.id).where(
+                ProductVariant.product_id == product.id,
+                ProductVariant.is_active.is_(True),
+                ProductVariant.id != variant.id,
+            ).limit(1)
+        )
+        if active_sibling_id is None:
+            _ensure_unique_product_name(db, name, category_id, exclude_id=product.id)
+            product.name = name
+    if "description" in changes:
+        product.description = changes["description"]
+    if "category_id" in changes:
+        _ensure_unique_product_name(db, product.name, category_id, exclude_id=product.id)
+        product.category_id = category_id
+    for field in ("unit_id", "sku", "retail_price_rial", "wholesale_price_rial", "min_wholesale_quantity"):
+        if field in changes:
+            setattr(variant, field, changes[field])
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="ویرایش کالا به‌دلیل تداخل با اطلاعات موجود انجام نشد.") from exc
+    db.refresh(product)
+    db.refresh(variant)
+    return _catalog_item_read(product, variant)
 
 
 def list_units(db: Session) -> list[Unit]:

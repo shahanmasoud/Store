@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.core.time import validate_jalali_date, validate_local_time
 from app.core.numbers import normalize_identifier, normalize_localized_decimal, normalize_localized_integer
-from app.schemas.catalog import ProductVariantRead
+from app.schemas.catalog import CategoryRead, ProductRead, ProductVariantRead, UnitRead
 from app.schemas.ledger import PersonRead
 from app.schemas.purchases import InventoryRead
 
@@ -213,3 +213,6 @@ class SalesFormOptionsRead(BaseModel):
     variants: list[ProductVariantRead]
     inventory: list[InventoryRead]
     customers: list[PersonRead]
+    products: list[ProductRead]
+    categories: list[CategoryRead]
+    units: list[UnitRead]

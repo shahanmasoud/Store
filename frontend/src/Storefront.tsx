@@ -492,7 +492,7 @@ export default function Storefront({ onOpenAdmin }: StorefrontProps) {
             <Typography variant="h4">انتخاب محصولات</Typography>
             <Typography color="text.secondary">دسته را انتخاب کن یا نام کالا را جست‌وجو کن.</Typography>
           </Box>
-          <Typography color="text.secondary">{catalogState === "ready" ? `${visibleProducts.length.toLocaleString("fa-IR")} گونه` : "کاتالوگ آنلاین"}</Typography>
+          <Typography color="text.secondary">{catalogState === "ready" ? `${visibleProducts.length.toLocaleString("fa-IR")} کالا` : "کاتالوگ آنلاین"}</Typography>
         </Box>
 
         <Stack direction="row" spacing={1} className="category-scroll">
@@ -542,7 +542,7 @@ export default function Storefront({ onOpenAdmin }: StorefrontProps) {
             ))}
           </Box>
         ) : null}
-        {catalogState === "ready" && !visibleProducts.length ? products.length ? <Box className="storefront-empty"><SearchRounded /><Typography variant="h6">کالایی با این جست‌وجو پیدا نشد</Typography><Button onClick={() => { setQuery(""); setCategory("همه"); }}>پاک‌کردن فیلترها</Button></Box> : <Box className="storefront-empty"><StorefrontRounded /><Typography variant="h6">هنوز کالایی برای فروش آماده نیست</Typography><Typography color="text.secondary">پس از فعال‌کردن کالا و گونه، اینجا نمایش داده می‌شود.</Typography><Button variant="outlined" startIcon={<RefreshRounded />} onClick={() => void loadProducts()}>تازه‌سازی</Button></Box> : null}
+        {catalogState === "ready" && !visibleProducts.length ? products.length ? <Box className="storefront-empty"><SearchRounded /><Typography variant="h6">کالایی با این جست‌وجو پیدا نشد</Typography><Button onClick={() => { setQuery(""); setCategory("همه"); }}>پاک‌کردن فیلترها</Button></Box> : <Box className="storefront-empty"><StorefrontRounded /><Typography variant="h6">هنوز کالایی برای فروش آماده نیست</Typography><Typography color="text.secondary">پس از ثبت و فعال‌کردن کالا، اینجا نمایش داده می‌شود.</Typography><Button variant="outlined" startIcon={<RefreshRounded />} onClick={() => void loadProducts()}>تازه‌سازی</Button></Box> : null}
 
         <Box className="storefront-trust-band">
           <Stack><VerifiedRounded color="primary" /><Box><Typography sx={{ fontWeight: 900 }}>کنترل کیفیت</Typography><Typography variant="body2" color="text.secondary">بررسی تازگی پیش از بسته‌بندی</Typography></Box></Stack>

@@ -8,6 +8,9 @@ from app.schemas.catalog import (
     CategoryCreate,
     CategoryRead,
     CategoryUpdate,
+    CatalogItemCreate,
+    CatalogItemRead,
+    CatalogItemUpdate,
     PriceListCreate,
     PriceListRead,
     PriceRuleCreate,
@@ -28,6 +31,25 @@ from app.services import catalog as catalog_service
 from app.services import product_media
 
 router = APIRouter(dependencies=[Depends(require_permission("can_catalog_inventory"))])
+
+
+@router.get("/catalog-items", response_model=list[CatalogItemRead])
+def catalog_items(db: Session = Depends(get_db)) -> list[CatalogItemRead]:
+    return catalog_service.list_catalog_items(db)
+
+
+@router.post("/catalog-items", response_model=CatalogItemRead, status_code=status.HTTP_201_CREATED)
+def create_catalog_item(payload: CatalogItemCreate, db: Session = Depends(get_db)) -> CatalogItemRead:
+    return catalog_service.create_catalog_item(db, payload)
+
+
+@router.patch("/catalog-items/{variant_id}", response_model=CatalogItemRead)
+def update_catalog_item(
+    variant_id: int,
+    payload: CatalogItemUpdate,
+    db: Session = Depends(get_db),
+) -> CatalogItemRead:
+    return catalog_service.update_catalog_item(db, variant_id, payload)
 
 
 @router.get("/units", response_model=list[UnitRead])

@@ -298,10 +298,23 @@ export type InventoryAdjustmentCreate = {
 export type Unit = { id: number; name: string; symbol: string; is_active: boolean };
 export type Category = { id: number; name: string; parent_id?: number | null; is_active: boolean };
 export type Product = { id: number; name: string; description?: string | null; category_id?: number | null; image_url?: string | null; is_active: boolean };
+export type CatalogItem = {
+  product_id: number;
+  variant_id: number;
+  name: string;
+  description?: string | null;
+  category_id?: number | null;
+  unit_id: number;
+  sku?: string | null;
+  retail_price_rial: number;
+  wholesale_price_rial?: number | null;
+  min_wholesale_quantity?: number | null;
+  image_url?: string | null;
+};
 export type PersonType = "customer" | "supplier" | "both";
 export type CreditStatus = "good" | "normal" | "watch";
 export type Person = { id: number; name: string; phone?: string | null; person_type: PersonType; note?: string | null; credit_status: CreditStatus; is_active: boolean };
-export type SalesFormOptions = { variants: ProductVariant[]; inventory: InventoryItem[]; customers: Person[] };
+export type SalesFormOptions = { variants: ProductVariant[]; inventory: InventoryItem[]; customers: Person[]; products?: Product[]; categories?: Category[]; units?: Unit[] };
 export type PersonSummary = {
   person_id: number;
   debit_open_rial: number;
@@ -686,6 +699,15 @@ export const api = {
   },
   createProduct(payload: { name: string; description?: string | null; category_id?: number | null }) {
     return request<Product>("/products", { method: "POST", body: JSON.stringify(payload) });
+  },
+  catalogItems() {
+    return request<CatalogItem[]>("/catalog-items");
+  },
+  createCatalogItem(payload: Omit<CatalogItem, "product_id" | "variant_id" | "image_url">) {
+    return request<CatalogItem>("/catalog-items", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updateCatalogItem(id: number, payload: Partial<Omit<CatalogItem, "product_id" | "variant_id" | "image_url">>) {
+    return request<CatalogItem>(`/catalog-items/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
   },
   updateProduct(id: number, payload: { name?: string; description?: string | null; category_id?: number | null }) {
     return request<Product>(`/products/${id}`, { method: "PATCH", body: JSON.stringify(payload) });

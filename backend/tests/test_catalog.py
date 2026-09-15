@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -114,6 +114,9 @@ def test_catalog_requires_authentication(client: TestClient) -> None:
     response = client.get("/api/v1/products")
 
     assert response.status_code == 401
+    assert client.get("/api/v1/catalog-items").status_code == 401
+    assert client.post("/api/v1/catalog-items", json={}).status_code == 401
+    assert client.patch("/api/v1/catalog-items/1", json={"name": "x"}).status_code == 401
 
 
 def test_price_rejects_bad_jalali_date(client: TestClient, auth_headers: dict[str, str]) -> None:
@@ -467,6 +470,132 @@ def test_catalog_mutations_require_authentication(
     response = client.request(method, path, json=payload)
 
     assert response.status_code == 401
+
+
+def test_simplified_catalog_item_create_list_and_update_preserves_variant_id(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    db_session: Session,
+) -> None:
+    unit = client.post(
+        "/api/v1/units", json={"name": "بسته", "symbol": "بسته"}, headers=auth_headers
+    ).json()
+    first_category = client.post(
+        "/api/v1/categories", json={"name": "حبوبات"}, headers=auth_headers
+    ).json()
+    second_category = client.post(
+        "/api/v1/categories", json={"name": "خشکبار"}, headers=auth_headers
+    ).json()
+
+    created = client.post(
+        "/api/v1/catalog-items",
+        json={
+            "name": "عدس ممتاز",
+            "description": "بسته یک کیلویی",
+            "category_id": first_category["id"],
+            "unit_id": unit["id"],
+            "sku": "LEN-۱۰۰",
+            "retail_price_rial": "۱,۲۵۰,۰۰۰",
+            "wholesale_price_rial": "۱٬۱۰۰٬۰۰۰",
+            "min_wholesale_quantity": "۱۰",
+        },
+        headers=auth_headers,
+    )
+    assert created.status_code == 201
+    item = created.json()
+    variant_id = item["variant_id"]
+    product_id = item["product_id"]
+    assert item["sku"] == "LEN-100"
+    assert item["retail_price_rial"] == 1_250_000
+
+    # Existing financial records continue to reference exactly the same variant.
+    db_session.add(InventoryItem(variant_id=variant_id, quantity_on_hand=Decimal("7.500")))
+    db_session.commit()
+    updated = client.patch(
+        f"/api/v1/catalog-items/{variant_id}",
+        json={
+            "name": "عدس درشت",
+            "description": "توضیح تازه",
+            "category_id": second_category["id"],
+            "unit_id": unit["id"],
+            "sku": "LEN-101",
+            "retail_price_rial": 1_300_000,
+            "wholesale_price_rial": None,
+            "min_wholesale_quantity": None,
+        },
+        headers=auth_headers,
+    )
+    assert updated.status_code == 200
+    assert updated.json() == {
+        "product_id": product_id,
+        "variant_id": variant_id,
+        "name": "عدس درشت",
+        "description": "توضیح تازه",
+        "category_id": second_category["id"],
+        "unit_id": unit["id"],
+        "sku": "LEN-101",
+        "retail_price_rial": 1_300_000,
+        "wholesale_price_rial": None,
+        "min_wholesale_quantity": None,
+        "image_url": None,
+    }
+    inventory = db_session.scalar(select(InventoryItem).where(InventoryItem.variant_id == variant_id))
+    assert inventory is not None
+    assert inventory.quantity_on_hand == Decimal("7.500")
+    listing = client.get("/api/v1/catalog-items", headers=auth_headers)
+    assert listing.status_code == 200
+    assert [entry["variant_id"] for entry in listing.json()] == [variant_id]
+
+
+def test_simplified_catalog_item_create_is_atomic_on_duplicate_sku(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    db_session: Session,
+) -> None:
+    unit = client.post("/api/v1/units", json={"name": "عدد", "symbol": "عدد"}, headers=auth_headers).json()
+    first = client.post(
+        "/api/v1/catalog-items",
+        json={"name": "کالای اول", "unit_id": unit["id"], "sku": "ONE", "retail_price_rial": 10},
+        headers=auth_headers,
+    )
+    assert first.status_code == 201
+    product_count = len(list(db_session.scalars(select(Product))))
+    variant_count = len(list(db_session.scalars(select(ProductVariant))))
+
+    duplicate = client.post(
+        "/api/v1/catalog-items",
+        json={"name": "کالای نیمه‌کاره", "unit_id": unit["id"], "sku": "one", "retail_price_rial": 20},
+        headers=auth_headers,
+    )
+    assert duplicate.status_code == 409
+    assert len(list(db_session.scalars(select(Product)))) == product_count
+    assert len(list(db_session.scalars(select(ProductVariant)))) == variant_count
+
+
+def test_simplified_catalog_item_keeps_legacy_sibling_variant_ids(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    db_session: Session,
+) -> None:
+    unit = Unit(name="کیلو", symbol="kg")
+    category = Category(name="برنج")
+    product = Product(name="برنج ایرانی", description="توضیح مشترک", category=category)
+    first = ProductVariant(product=product, unit=unit, name="طارم", sku="TAREM")
+    second = ProductVariant(product=product, unit=unit, name="هاشمی", sku="HASHEMI")
+    db_session.add_all([unit, category, product, first, second])
+    db_session.commit()
+    original_ids = (first.id, second.id)
+
+    response = client.patch(
+        f"/api/v1/catalog-items/{first.id}",
+        json={"name": "طارم ممتاز", "retail_price_rial": 500_000},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["variant_id"] == original_ids[0]
+    assert db_session.get(ProductVariant, original_ids[0]).name == "طارم ممتاز"
+    assert db_session.get(ProductVariant, original_ids[1]).name == "هاشمی"
+    assert db_session.get(Product, product.id).name == "برنج ایرانی"
 
 
 def create_variant(

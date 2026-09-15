@@ -33,6 +33,8 @@ import VisibilityOffRounded from "@mui/icons-material/VisibilityOffRounded";
 import AddPhotoAlternateRounded from "@mui/icons-material/AddPhotoAlternateRounded";
 import ImageRounded from "@mui/icons-material/ImageRounded";
 import { MoneyField } from "./MoneyField";
+import { InvoiceQuantityField } from "./InvoiceQuantityField";
+import { ProductCardPicker, emptyPickerCatalog, type PickerCatalog } from "./ProductCardPicker";
 import { LocalizedDecimalField } from "./LocalizedDecimalField";
 import { formatDecimal, formatRial, moneyInputValue, normalizeDecimal, normalizeMoney, parseLocalizedNumber, toEnglishDigits, toPersianDigits } from "./numberUtils";
 import { canAccessAdminView, type AdminView } from "./roleAccess";
@@ -666,13 +668,6 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
         </Box>
       </Dialog>
 
-      {view !== "dashboard" ? (
-        <aside className="admin-guide" aria-label="راهنمای این بخش">
-          <HelpOutlineRounded />
-          <div><strong>از کجا شروع کنم؟</strong><span>{viewMeta[view].help}</span></div>
-        </aside>
-      ) : null}
-
       {view === "sales" ? <SalesView onBack={() => navigateView("dashboard")} focus={salesFocus} onFocusHandled={() => setSalesFocus(null)} /> : null}
       {view === "reminders" && user ? <RemindersView user={user} onBack={() => navigateView("dashboard")} onOpenSales={(invoiceId, paymentId) => { setSalesFocus({ invoiceId, paymentId }); navigateView("sales"); }} onOpenLedger={() => navigateView("ledger")} onOpenCheques={() => navigateView("cheques")} /> : null}
       {view === "purchase" ? <PurchaseView onBack={() => navigateView("dashboard")} onOpenInventory={() => navigateView("inventory")} /> : null}
@@ -860,6 +855,9 @@ function DashboardView({
 }
 
 function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenInventory: () => void }) {
+  const pickerMobile = useMediaQuery("(max-width:600px)");
+  const [itemDialogOpen, setItemDialogOpen] = useState(false);
+  const [pickerCatalog, setPickerCatalog] = useState<PickerCatalog>(emptyPickerCatalog);
   const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [variantsStatus, setVariantsStatus] = useState<"loading" | "ready" | "error">("loading");
   const [variantsError, setVariantsError] = useState("");
@@ -884,9 +882,9 @@ function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenI
   const loadVariants = () => {
     setVariantsStatus("loading");
     setVariantsError("");
-    return api
-      .productVariants()
-      .then((result) => {
+    return Promise.all([api.productVariants(), api.products(), api.categories(), api.units()])
+      .then(([result, products, categories, units]) => {
+        setPickerCatalog({ products, categories, units });
         setVariants(result);
         setVariantsStatus("ready");
       })
@@ -923,6 +921,7 @@ function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenI
     setItems((current) => editingItemId === null ? [...current, nextItem] : current.map((item) => item.id === editingItemId ? nextItem : item));
     setEditingItemId(null);
     setItemVariantId("");
+    setItemDialogOpen(false);
     setItemQuantity("");
     setItemUnitCost("");
     setItemExtraCost("");
@@ -932,6 +931,7 @@ function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenI
   }
 
   function editPurchaseItem(item: PurchaseDraftItem) {
+    setItemDialogOpen(true);
     setEditingItemId(item.id);
     setItemVariantId(String(item.variantId));
     setItemQuantity(String(item.quantity));
@@ -1013,17 +1013,7 @@ function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenI
 
   return (
     <section className="sales-workspace purchase-workspace" aria-label="ثبت خرید">
-      <div className="sales-header purchase-header">
-        <div>
-          <p className="eyebrow">خرید و تأمین کالا</p>
-          <h2>ثبت فاکتور خرید و به‌روزرسانی موجودی</h2>
-          <p className="purchase-guide">ابتدا اقلام را اضافه کنید، سپس اطلاعات فاکتور و مبلغ پرداختی را بررسی و ثبت کنید.</p>
-        </div>
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1} className="purchase-header-actions">
-          <Button variant="outlined" startIcon={<Inventory2Rounded />} onClick={onOpenInventory}>نمایش انبار</Button>
-          <Button variant="text" startIcon={<ArrowBackRounded />} onClick={onBack}>بازگشت به داشبورد</Button>
-        </Stack>
-      </div>
+      <div className="workspace-quick-actions"><Button variant="outlined" startIcon={<Inventory2Rounded />} onClick={onOpenInventory}>نمایش انبار</Button></div>
 
       <div className="purchase-layout">
         <section className="sale-panel purchase-invoice-panel">
@@ -1061,24 +1051,29 @@ function PurchaseView({ onBack, onOpenInventory }: { onBack: () => void; onOpenI
         <aside className="sale-panel purchase-items-panel">
           <div className="mini-section-header">
             <div><h3>{editingItemId === null ? "افزودن کالا" : "ویرایش ردیف"}</h3><span>مقدار و بهای خرید این ردیف</span></div>
-            <Chip size="small" label={`${variants.length.toLocaleString("fa-IR")} گونه`} />
+            <Chip size="small" label={`${variants.length.toLocaleString("fa-IR")} کالا`} />
           </div>
 
           {variantsStatus === "loading" ? <div className="record-state"><CircularProgress size={26} /><span>در حال دریافت کالاها…</span></div> : null}
           {variantsStatus === "error" ? <Alert severity="error" action={<Button color="inherit" onClick={() => void loadVariants()}>تلاش دوباره</Button>}>{variantsError}</Alert> : null}
-          {variantsStatus === "ready" && variants.length === 0 ? <div className="record-state"><Inventory2Rounded /><strong>هنوز گونه کالایی ثبت نشده است</strong><span>ابتدا از بخش کالاها یک گونه بسازید.</span></div> : null}
+          {variantsStatus === "ready" && variants.length === 0 ? <div className="record-state"><Inventory2Rounded /><strong>هنوز کالایی ثبت نشده است</strong><span>ابتدا از بخش کالاها یک مورد بسازید.</span></div> : null}
 
           {variantsStatus === "ready" && variants.length > 0 ? (
-            <form className="purchase-item-form" onSubmit={handleAddPurchaseItem} noValidate>
+            <div className="purchase-item-form">
+              <ProductCardPicker mode="purchase" variants={variants} catalog={pickerCatalog} value={itemVariantId} onSelect={(value) => { setItemVariantId(value); if (!itemQuantity) setItemQuantity("1"); setItemNotice(""); setItemDialogOpen(true); }} quantities={items.reduce<Record<number, number>>((result, item) => ({ ...result, [item.variantId]: (result[item.variantId] ?? 0) + item.quantity }), {})} disabled={submitStatus === "loading"} />
+              <Dialog open={itemDialogOpen} onClose={() => { setItemDialogOpen(false); resetPurchaseItemForm(); }} fullScreen={pickerMobile} fullWidth maxWidth="sm" aria-labelledby="purchase-item-dialog-title">
+                <DialogTitle id="purchase-item-dialog-title">{editingItemId ? "ویرایش ردیف خرید" : "افزودن به خرید"} · {variants.find((item) => String(item.id) === itemVariantId)?.name}</DialogTitle>
+                <DialogContent><form id="purchase-card-item-form" className="card-item-editor" onSubmit={handleAddPurchaseItem} noValidate>
               {itemNotice ? <Alert severity="error" onClose={() => setItemNotice("")}>{itemNotice}</Alert> : null}
-              <TextField select label="گونه کالا" value={itemVariantId} onChange={(event) => setItemVariantId(event.target.value)} required><MenuItem value="">انتخاب گونه</MenuItem>{variants.map((variant) => <MenuItem value={String(variant.id)} key={variant.id}>{variant.name}</MenuItem>)}</TextField>
               <div className="purchase-item-fields">
-                <LocalizedDecimalField label="مقدار" value={itemQuantity} onValueChange={setItemQuantity} required />
+                <InvoiceQuantityField value={itemQuantity} onChange={setItemQuantity} />
                 <MoneyField label="قیمت واحد (تومان)" valueRial={normalizeMoney(itemUnitCost)} onValueRialChange={(value) => setItemUnitCost(moneyInputValue(value))} required />
               </div>
               <MoneyField label="هزینه جانبی ردیف (تومان)" valueRial={normalizeMoney(itemExtraCost)} onValueRialChange={(value) => setItemExtraCost(moneyInputValue(value))} helperText="اختیاری؛ مثل حمل یا بسته‌بندی" />
-              <div className="purchase-item-actions"><Button type="submit" variant="contained" size="large" startIcon={editingItemId === null ? <AddRounded /> : <EditRounded />} disabled={!itemVariantId || !itemQuantity.trim() || !itemUnitCost.trim()}>{editingItemId === null ? "افزودن به فاکتور" : "ذخیره ردیف"}</Button>{editingItemId !== null ? <Button type="button" size="large" onClick={resetPurchaseItemForm} startIcon={<CloseRounded />}>انصراف</Button> : null}</div>
-            </form>
+                </form></DialogContent>
+                <DialogActions className="card-item-dialog-actions"><Button type="button" onClick={() => { setItemDialogOpen(false); resetPurchaseItemForm(); }}>انصراف</Button><Button form="purchase-card-item-form" type="submit" variant="contained" size="large" startIcon={editingItemId === null ? <AddRounded /> : <EditRounded />} disabled={!itemVariantId || !itemQuantity.trim() || !itemUnitCost.trim()}>{editingItemId === null ? "افزودن به فاکتور" : "ذخیره ردیف"}</Button></DialogActions>
+              </Dialog>
+            </div>
           ) : null}
 
           <div className="invoice-items">
@@ -1262,20 +1257,10 @@ function InventoryView({ onBack }: { onBack: () => void }) {
 
   return (
     <section className="sales-workspace inventory-workspace" aria-label="انبار">
-      <div className="sales-header">
-        <div>
-          <p className="eyebrow">کنترل انبار</p>
-          <h2>موجودی و گردش کالاها</h2>
-          <p className="inventory-guide">موجودی از خرید، فروش و اصلاح‌های ثبت‌شده محاسبه می‌شود. هر اصلاح با دلیل و نام ثبت‌کننده در تاریخچه می‌ماند.</p>
-        </div>
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1} className="inventory-header-actions">
-          <Button variant="outlined" startIcon={<RefreshRounded />} onClick={() => void load()} disabled={status === "loading"}>به‌روزرسانی</Button>
-          <Button variant="text" startIcon={<ArrowBackRounded />} onClick={onBack}>بازگشت به داشبورد</Button>
-        </Stack>
-      </div>
+      <div className="workspace-quick-actions"><Button variant="outlined" startIcon={<RefreshRounded />} onClick={() => void load()} disabled={status === "loading"}>به‌روزرسانی</Button></div>
 
       <section className="inventory-summary">
-        <div><span>گونه‌های انبار</span><strong>{items.length.toLocaleString("fa-IR")}</strong></div>
+        <div><span>کالاهای انبار</span><strong>{items.length.toLocaleString("fa-IR")}</strong></div>
         <div><span>ارزش تقریبی موجودی</span><strong>{formatRial(totalValue)}</strong></div>
         <div className={lowStockCount ? "inventory-kpi-alert" : ""}><span>نیازمند سفارش</span><strong>{lowStockCount.toLocaleString("fa-IR")}</strong></div>
       </section>
@@ -1319,8 +1304,8 @@ function InventoryView({ onBack }: { onBack: () => void }) {
 
           <section className="sale-panel inventory-panel" aria-labelledby="inventory-transactions-heading">
             <div className="inventory-section-heading"><div><h3 id="inventory-transactions-heading">آخرین گردش‌ها</h3><p>خرید، فروش و اصلاح‌ها به ترتیب جدیدترین رخداد.</p></div><HistoryRounded /></div>
-            <TextField select fullWidth label="فیلتر بر اساس گونه" value={transactionVariantId} onChange={(event) => setTransactionVariantId(event.target.value)}>
-              <MenuItem value="">همه گونه‌ها</MenuItem>
+            <TextField select fullWidth label="فیلتر بر اساس کالا" value={transactionVariantId} onChange={(event) => setTransactionVariantId(event.target.value)}>
+              <MenuItem value="">همه کالاها</MenuItem>
               {items.map((item) => <MenuItem value={String(item.variant_id)} key={item.variant_id}>{item.variant_name}</MenuItem>)}
             </TextField>
             {filteredTransactions.length === 0 ? <div className="inventory-empty"><HistoryRounded /><strong>گردشی برای نمایش وجود ندارد.</strong><span>پس از ثبت یا لغو خرید، رخدادها اینجا می‌آیند.</span></div> : null}
@@ -1411,6 +1396,7 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
   const [unitSymbol, setUnitSymbol] = useState("");
   const [editingUnitId, setEditingUnitId] = useState<number | null>(null);
   const [unitSaving, setUnitSaving] = useState(false);
+  const [unitDialogOpen, setUnitDialogOpen] = useState(false);
   const [pendingDeactivateUnit, setPendingDeactivateUnit] = useState<Unit | null>(null);
   const [unitSearch, setUnitSearch] = useState("");
   const [productName, setProductName] = useState("");
@@ -1438,6 +1424,7 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
   const [editingVariantId, setEditingVariantId] = useState<number | null>(null);
   const [variantSaving, setVariantSaving] = useState(false);
   const [variantSearch, setVariantSearch] = useState("");
+  const [variantCategoryFilter, setVariantCategoryFilter] = useState("");
   const [pendingDeactivateVariant, setPendingDeactivateVariant] = useState<ProductVariant | null>(null);
   const [priceNotice, setPriceNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [priceVariantId, setPriceVariantId] = useState("");
@@ -1526,6 +1513,7 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
       closeImageManager();
       await load();
       setProductNotice({ type: "success", text: `تصویر «${productName}» ذخیره شد و در فروشگاه نمایش داده می‌شود.` });
+      setVariantNotice({ type: "success", text: `تصویر «${productName}» ذخیره شد و در فروشگاه نمایش داده می‌شود.` });
     } catch (error) {
       setImageError(error instanceof Error ? error.message : "بارگذاری تصویر انجام نشد.");
     } finally {
@@ -1543,6 +1531,7 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
       closeImageManager();
       await load();
       setProductNotice({ type: "success", text: `تصویر «${productName}» حذف شد؛ جای‌نگهدار در فروشگاه نمایش داده می‌شود.` });
+      setVariantNotice({ type: "success", text: `تصویر «${productName}» حذف شد؛ جای‌نگهدار در فروشگاه نمایش داده می‌شود.` });
     } catch (error) {
       setImageError(error instanceof Error ? error.message : "حذف تصویر انجام نشد.");
     } finally {
@@ -1779,13 +1768,15 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
 
   const filteredVariants = useMemo(() => {
     const query = variantSearch.trim().toLocaleLowerCase("fa");
-    if (!query) return variants;
     return variants.filter((variant) => {
-      const productName = products.find((product) => product.id === variant.product_id)?.name ?? "";
+      const product = products.find((item) => item.id === variant.product_id);
+      if (variantCategoryFilter && String(product?.category_id ?? "none") !== variantCategoryFilter) return false;
+      if (!query) return true;
+      const productName = product?.name ?? "";
       const unitName = units.find((unit) => unit.id === variant.unit_id)?.name ?? "";
       return `${variant.name} ${variant.sku ?? ""} ${productName} ${unitName}`.toLocaleLowerCase("fa").includes(query);
     });
-  }, [products, units, variantSearch, variants]);
+  }, [products, units, variantCategoryFilter, variantSearch, variants]);
 
   const filteredPrices = useMemo(() => prices.filter((price) => {
     if (historyVariantId && price.variant_id !== Number(historyVariantId)) return false;
@@ -1805,9 +1796,12 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
     setVariantRetail("");
     setVariantWholesale("");
     setVariantMinWholesale("");
+    setProductCategoryId("");
+    setProductDescription("");
   }
 
   function startVariantEdit(variant: ProductVariant) {
+    const product = products.find((item) => item.id === variant.product_id);
     setEditingVariantId(variant.id);
     setVariantProductId(String(variant.product_id));
     setVariantUnitId(String(variant.unit_id));
@@ -1816,35 +1810,41 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
     setVariantRetail(moneyInputValue(variant.retail_price_rial));
     setVariantWholesale(variant.wholesale_price_rial == null ? "" : moneyInputValue(variant.wholesale_price_rial));
     setVariantMinWholesale(variant.min_wholesale_quantity == null ? "" : String(variant.min_wholesale_quantity));
+    setProductCategoryId(product?.category_id == null ? "" : String(product.category_id));
+    setProductDescription(product?.description ?? "");
     setVariantNotice(null);
   }
 
   async function submitVariant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!variantProductId || !variantUnitId || !variantName.trim()) {
-      setVariantNotice({ type: "error", text: "کالای پایه، واحد و نام گونه را کامل وارد کنید." });
+    if (!variantUnitId || !variantName.trim()) {
+      setVariantNotice({ type: "error", text: "نام کالا و واحد را کامل وارد کنید." });
       return;
     }
     setVariantSaving(true);
     setVariantNotice(null);
     const wasEditing = editingVariantId !== null;
-    const payload = {
-      product_id: Number(variantProductId),
-      unit_id: Number(variantUnitId),
+    const itemPayload = {
       name: variantName.trim(),
+      description: productDescription.trim() || null,
+      category_id: productCategoryId ? Number(productCategoryId) : null,
+      unit_id: Number(variantUnitId),
       sku: variantSku.trim() || null,
       retail_price_rial: normalizeMoney(variantRetail),
       wholesale_price_rial: variantWholesale.trim() ? normalizeMoney(variantWholesale) : null,
       min_wholesale_quantity: normalizeDecimal(variantMinWholesale) || null,
     };
     try {
-      if (editingVariantId === null) await api.createProductVariant(payload);
-      else await api.updateProductVariant(editingVariantId, payload);
+      if (editingVariantId === null) {
+        await api.createCatalogItem(itemPayload);
+      } else {
+        await api.updateCatalogItem(editingVariantId, itemPayload);
+      }
       resetVariantForm();
       await load();
-      setVariantNotice({ type: "success", text: wasEditing ? "تغییرات گونه ذخیره شد." : "گونه جدید ثبت شد." });
+      setVariantNotice({ type: "success", text: wasEditing ? "تغییرات کالا ذخیره شد." : "کالای جدید ثبت شد." });
     } catch (error) {
-      setVariantNotice({ type: "error", text: error instanceof Error ? error.message : "ذخیره گونه انجام نشد." });
+      setVariantNotice({ type: "error", text: error instanceof Error ? error.message : "ذخیره کالا انجام نشد." });
     } finally {
       setVariantSaving(false);
     }
@@ -1853,7 +1853,7 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
   async function submitPrice(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!priceVariantId || !priceAmount.trim() || !priceDate.trim()) {
-      setPriceNotice({ type: "error", text: "گونه، مبلغ و تاریخ قیمت را کامل وارد کنید." });
+      setPriceNotice({ type: "error", text: "کالا، مبلغ و تاریخ قیمت را کامل وارد کنید." });
       return;
     }
     setPriceSaving(true);
@@ -1868,7 +1868,7 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
       });
       setPriceAmount("");
       await load();
-      setPriceNotice({ type: "success", text: priceType === "online" ? "قیمت آنلاین در تاریخچه ثبت شد." : "قیمت ثبت شد و قیمت جاری گونه به‌روز شد." });
+      setPriceNotice({ type: "success", text: priceType === "online" ? "قیمت آنلاین در تاریخچه ثبت شد." : "قیمت ثبت شد و قیمت جاری کالا به‌روز شد." });
     } catch (error) {
       setPriceNotice({ type: "error", text: error instanceof Error ? error.message : "ثبت قیمت انجام نشد." });
     } finally {
@@ -1904,7 +1904,7 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
     const minQuantity = parseRuleDecimal(ruleMinQuantity);
     const discountValue = ruleDiscountType === "amount" ? parseLocalizedNumber(ruleDiscountValue) : parseRuleDecimal(ruleDiscountValue);
     if (!ruleVariantId || !Number.isFinite(minQuantity) || minQuantity < 0 || !Number.isFinite(discountValue) || discountValue <= 0) {
-      setRuleNotice({ type: "error", text: "گونه، حداقل تعداد و مقدار مثبت تخفیف را درست وارد کنید." });
+      setRuleNotice({ type: "error", text: "کالا، حداقل تعداد و مقدار مثبت تخفیف را درست وارد کنید." });
       return;
     }
     if (ruleDiscountType === "percent" && discountValue > 100) {
@@ -1961,10 +1961,10 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
       if (editingVariantId === pendingDeactivateVariant.id) resetVariantForm();
       setPendingDeactivateVariant(null);
       await load();
-      setVariantNotice({ type: "success", text: "گونه با موفقیت غیرفعال شد." });
+      setVariantNotice({ type: "success", text: "کالا با موفقیت غیرفعال شد." });
     } catch (error) {
       setPendingDeactivateVariant(null);
-      setVariantNotice({ type: "error", text: error instanceof Error ? error.message : "غیرفعال‌سازی گونه انجام نشد." });
+      setVariantNotice({ type: "error", text: error instanceof Error ? error.message : "غیرفعال‌سازی کالا انجام نشد." });
     } finally {
       setDeactivatingRecord(false);
     }
@@ -1975,9 +1975,8 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
       {!isSuperuser ? <Alert severity="info">برای حفاظت از سوابق، غیرفعال‌سازی و مدیریت تصویر فقط توسط مدیر اصلی انجام می‌شود؛ تعریف و ویرایش کالا برای شما فعال است.</Alert> : null}
       <nav className="catalog-tabs" aria-label="بخش‌های مدیریت کالا">
         <Tabs value={catalogTab} onChange={(_, value: number) => setCatalogTab(value)} variant="scrollable" scrollButtons="auto">
-          <Tab icon={<CategoryRounded />} iconPosition="start" label="دسته‌ها" />
-          <Tab icon={<StraightenRounded />} iconPosition="start" label="واحد و کالا" />
-          <Tab icon={<Inventory2Rounded />} iconPosition="start" label="گونه و قیمت" />
+          <Tab icon={<CategoryRounded />} iconPosition="start" label="دسته‌بندی‌ها" />
+          <Tab icon={<Inventory2Rounded />} iconPosition="start" label="کالاها" />
         </Tabs>
       </nav>
       {catalogTab === 0 ? (
@@ -2085,7 +2084,7 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
         </Dialog>
       </section>
       ) : null}
-      {catalogTab === 1 ? (
+      {catalogTab === -1 ? (
         <section className="unit-product-workspace" aria-label="مدیریت واحدها و کالاهای پایه">
           <section className="record-manager" aria-labelledby="unit-manager-title">
             <header className="record-manager-heading">
@@ -2174,48 +2173,50 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
           </Dialog>
         </section>
       ) : null}
-      {catalogTab === 2 ? (
-        <section className="variant-price-workspace" aria-label="مدیریت گونه‌ها و تاریخچه قیمت">
+      {catalogTab === 1 ? (
+        <section className="variant-price-workspace" aria-label="مدیریت کالاها و قیمت‌ها">
           <section className="variant-manager" aria-labelledby="variant-manager-title">
             <header className="record-manager-heading">
-              <div><span className="record-manager-icon"><Inventory2Rounded /></span><div><h3 id="variant-manager-title">گونه‌های کالا</h3><p>بسته‌بندی، واحد فروش، کد و قیمت جاری هر گونه را مدیریت کنید.</p></div></div>
-              <Chip label={`${variants.length.toLocaleString("fa-IR")} گونه فعال`} color="primary" variant="outlined" />
+              <div><span className="record-manager-icon"><Inventory2Rounded /></span><div><h3 id="variant-manager-title">کالاها</h3><p>کالا را یک‌جا با دسته، واحد، تصویر و قیمت آن مدیریت کنید.</p></div></div>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}><Button variant="outlined" startIcon={<StraightenRounded />} onClick={() => setUnitDialogOpen(true)}>مدیریت واحدها</Button><Chip label={`${variants.length.toLocaleString("fa-IR")} کالای فعال`} color="primary" variant="outlined" /></Stack>
             </header>
             {variantNotice ? <Alert severity={variantNotice.type} onClose={() => setVariantNotice(null)}>{variantNotice.text}</Alert> : null}
             <div className="variant-manager-grid">
               <form className="variant-form" onSubmit={submitVariant} noValidate>
-                <TextField select label="کالای پایه" value={variantProductId} onChange={(event) => setVariantProductId(event.target.value)} required disabled={variantSaving || variantStatus !== "ready"}><MenuItem value="">انتخاب کالا</MenuItem>{products.map((product) => <MenuItem value={String(product.id)} key={product.id}>{product.name}</MenuItem>)}</TextField>
+                <TextField label="نام کالا" value={variantName} onChange={(event) => setVariantName(event.target.value)} required disabled={variantSaving} helperText="مثلاً عدس سبز کیلویی" slotProps={{ htmlInput: { maxLength: 180 } }} />
+                <TextField select label="دسته‌بندی" value={productCategoryId} onChange={(event) => setProductCategoryId(event.target.value)} disabled={variantSaving || variantStatus !== "ready"}><MenuItem value="">بدون دسته‌بندی</MenuItem>{orderedCategories.map((category) => <MenuItem value={String(category.id)} key={category.id}>{`${"— ".repeat(category.depth)}${category.name}`}</MenuItem>)}</TextField>
                 <TextField select label="واحد" value={variantUnitId} onChange={(event) => setVariantUnitId(event.target.value)} required disabled={variantSaving || variantStatus !== "ready"}><MenuItem value="">انتخاب واحد</MenuItem>{units.map((unit) => <MenuItem value={String(unit.id)} key={unit.id}>{unit.name} ({unit.symbol})</MenuItem>)}</TextField>
-                <TextField label="نام گونه" value={variantName} onChange={(event) => setVariantName(event.target.value)} required disabled={variantSaving} helperText="مثلاً عدس درجه یک کیلویی" slotProps={{ htmlInput: { maxLength: 180 } }} />
                 <TextField label="کد کالا (SKU)" value={variantSku} onChange={(event) => setVariantSku(event.target.value)} disabled={variantSaving} helperText="اختیاری و یکتا" slotProps={{ htmlInput: { maxLength: 80, dir: "ltr" } }} />
+                <TextField className="record-form-wide" label="توضیح کوتاه" value={productDescription} onChange={(event) => setProductDescription(event.target.value)} disabled={variantSaving} multiline minRows={2} />
                 <MoneyField label="قیمت خرده (تومان)" valueRial={normalizeMoney(variantRetail)} onValueRialChange={(value) => setVariantRetail(moneyInputValue(value))} disabled={variantSaving} required />
                 <MoneyField label="قیمت عمده (تومان)" valueRial={normalizeMoney(variantWholesale)} onValueRialChange={(value) => setVariantWholesale(moneyInputValue(value))} disabled={variantSaving} />
                 <LocalizedDecimalField label="حداقل تعداد عمده" value={variantMinWholesale} onValueChange={setVariantMinWholesale} disabled={variantSaving} />
-                <div className="record-form-actions variant-form-actions"><Button type="submit" variant="contained" size="large" disabled={variantSaving || !variantProductId || !variantUnitId || !variantName.trim()} startIcon={variantSaving ? <CircularProgress size={18} color="inherit" /> : editingVariantId === null ? <AddRounded /> : <EditRounded />}>{variantSaving ? "در حال ذخیره…" : editingVariantId === null ? "ثبت گونه" : "ذخیره تغییرات"}</Button>{editingVariantId !== null ? <Button type="button" size="large" onClick={resetVariantForm} disabled={variantSaving} startIcon={<CloseRounded />}>انصراف</Button> : null}</div>
+                <div className="record-form-actions variant-form-actions"><Button type="submit" variant="contained" size="large" disabled={variantSaving || !variantUnitId || !variantName.trim()} startIcon={variantSaving ? <CircularProgress size={18} color="inherit" /> : editingVariantId === null ? <AddRounded /> : <EditRounded />}>{variantSaving ? "در حال ذخیره…" : editingVariantId === null ? "ثبت کالا" : "ذخیره تغییرات"}</Button>{editingVariantId !== null ? <Button type="button" size="large" onClick={resetVariantForm} disabled={variantSaving} startIcon={<CloseRounded />}>انصراف</Button> : null}</div>
               </form>
 
               <div className="variant-list-panel">
-                <div className="variant-list-toolbar"><TextField className="record-search" size="small" label="جست‌وجوی گونه، SKU یا کالا" value={variantSearch} onChange={(event) => setVariantSearch(event.target.value)} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} /><Button startIcon={<RefreshRounded />} onClick={() => load()} disabled={variantStatus === "loading"}>تازه‌سازی</Button></div>
-                {variantStatus === "loading" ? <div className="record-state"><CircularProgress size={28} /><span>در حال دریافت گونه‌ها…</span></div> : null}
-                {variantStatus === "error" ? <div className="record-state record-state-error"><span>{catalogLoadError || "دریافت گونه‌ها انجام نشد."}</span><Button variant="outlined" onClick={() => load()}>تلاش دوباره</Button></div> : null}
-                {variantStatus === "ready" && variants.length === 0 ? <div className="record-state"><Inventory2Rounded /><strong>هنوز گونه‌ای ثبت نشده است</strong><span>ابتدا کالا و واحد پایه را در تب قبلی بسازید.</span></div> : null}
-                {variantStatus === "ready" && variants.length > 0 && filteredVariants.length === 0 ? <div className="record-state"><SearchRounded /><strong>گونه‌ای با این عبارت پیدا نشد</strong></div> : null}
+                <div className="variant-list-toolbar"><TextField className="record-search" size="small" label="جست‌وجوی کالا یا کد" value={variantSearch} onChange={(event) => setVariantSearch(event.target.value)} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} /><TextField select size="small" label="دسته‌بندی" value={variantCategoryFilter} onChange={(event) => setVariantCategoryFilter(event.target.value)}><MenuItem value="">همه دسته‌ها</MenuItem>{orderedCategories.map((category) => <MenuItem value={String(category.id)} key={category.id}>{category.name}</MenuItem>)}<MenuItem value="none">بدون دسته‌بندی</MenuItem></TextField><Button startIcon={<RefreshRounded />} onClick={() => load()} disabled={variantStatus === "loading"}>تازه‌سازی</Button></div>
+                {variantStatus === "loading" ? <div className="record-state"><CircularProgress size={28} /><span>در حال دریافت کالاها…</span></div> : null}
+                {variantStatus === "error" ? <div className="record-state record-state-error"><span>{catalogLoadError || "دریافت کالاها انجام نشد."}</span><Button variant="outlined" onClick={() => load()}>تلاش دوباره</Button></div> : null}
+                {variantStatus === "ready" && variants.length === 0 ? <div className="record-state"><Inventory2Rounded /><strong>هنوز کالایی ثبت نشده است</strong><span>اولین کالا را از فرم روبه‌رو بسازید.</span></div> : null}
+                {variantStatus === "ready" && variants.length > 0 && filteredVariants.length === 0 ? <div className="record-state"><SearchRounded /><strong>کالایی با این عبارت پیدا نشد</strong><Button onClick={() => { setVariantSearch(""); setVariantCategoryFilter(""); }}>پاک کردن فیلترها</Button></div> : null}
                 {variantStatus === "ready" && filteredVariants.length > 0 ? <div className="variant-card-list">{filteredVariants.map((variant) => {
                   const product = products.find((item) => item.id === variant.product_id);
                   const unit = units.find((item) => item.id === variant.unit_id);
-                  return <article className="variant-card" key={variant.id}><div className="variant-card-main"><div><strong>{variant.name}</strong><small>{product?.name ?? "کالای نامشخص"} • {unit?.name ?? "واحد نامشخص"}{variant.sku ? ` • ${toPersianDigits(variant.sku)}` : ""}</small></div><div className="variant-prices"><span><small>خرده</small><strong>{formatRial(variant.retail_price_rial)}</strong></span><span><small>عمده</small><strong>{variant.wholesale_price_rial == null ? "ثبت نشده" : formatRial(variant.wholesale_price_rial)}</strong></span></div></div><div className="record-item-actions"><Button startIcon={<EditRounded />} onClick={() => startVariantEdit(variant)}>ویرایش</Button>{isSuperuser ? <Button color="error" startIcon={<DeleteOutlineRounded />} onClick={() => setPendingDeactivateVariant(variant)}>غیرفعال</Button> : null}</div></article>;
+                  const categoryName = categories.find((item) => item.id === product?.category_id)?.name ?? "بدون دسته‌بندی";
+                  return <article className="variant-card catalog-product-card" key={variant.id}><div className="catalog-product-photo">{product?.image_url ? <img src={apiAssetUrl(product.image_url) ?? undefined} alt="" loading="lazy" /> : <ImageRounded />}</div><div className="variant-card-main"><div><strong>{variant.name}</strong><small>{categoryName} • {unit?.name ?? "واحد نامشخص"}{variant.sku ? ` • ${toPersianDigits(variant.sku)}` : ""}</small></div><div className="variant-prices"><span><small>قیمت فروش</small><strong>{formatRial(variant.retail_price_rial)}</strong></span><span><small>قیمت عمده</small><strong>{variant.wholesale_price_rial == null ? "ثبت نشده" : formatRial(variant.wholesale_price_rial)}</strong></span></div></div><div className="record-item-actions">{isSuperuser && product ? <Button startIcon={<AddPhotoAlternateRounded />} onClick={() => { setImageProduct(product); setImageFile(null); setImagePreview(""); setImageError(""); }}>{product.image_url ? "تعویض عکس" : "افزودن عکس"}</Button> : null}<Button startIcon={<EditRounded />} onClick={() => startVariantEdit(variant)}>ویرایش</Button>{isSuperuser ? <Button color="error" startIcon={<DeleteOutlineRounded />} onClick={() => setPendingDeactivateVariant(variant)}>غیرفعال</Button> : null}</div></article>;
                 })}</div> : null}
               </div>
             </div>
           </section>
 
           <section className="price-manager" aria-labelledby="price-manager-title">
-            <header className="record-manager-heading"><div><span className="record-manager-icon record-manager-icon-price"><LocalOfferRounded /></span><div><h3 id="price-manager-title">ثبت و تاریخچه قیمت</h3><p>هر تغییر قیمت ثبت می‌شود؛ قیمت خرده و عمده هم‌زمان روی گونه به‌روز می‌شوند.</p></div></div></header>
+            <header className="record-manager-heading"><div><span className="record-manager-icon record-manager-icon-price"><LocalOfferRounded /></span><div><h3 id="price-manager-title">ثبت و تاریخچه قیمت</h3><p>هر تغییر قیمت ثبت می‌شود و قیمت جاری کالا نیز به‌روز می‌شود.</p></div></div></header>
             <div className="price-manager-grid">
               <form className="price-form" onSubmit={submitPrice} noValidate>
                 <h4>قیمت جدید</h4>
                 {priceNotice ? <Alert severity={priceNotice.type} onClose={() => setPriceNotice(null)}>{priceNotice.text}</Alert> : null}
-                <TextField select label="گونه" value={priceVariantId} onChange={(event) => setPriceVariantId(event.target.value)} required disabled={priceSaving || variantStatus !== "ready"}><MenuItem value="">انتخاب گونه</MenuItem>{variants.map((variant) => <MenuItem key={variant.id} value={String(variant.id)}>{variant.name}</MenuItem>)}</TextField>
+                <TextField select label="کالا" value={priceVariantId} onChange={(event) => setPriceVariantId(event.target.value)} required disabled={priceSaving || variantStatus !== "ready"}><MenuItem value="">انتخاب کالا</MenuItem>{variants.map((variant) => <MenuItem key={variant.id} value={String(variant.id)}>{variant.name}</MenuItem>)}</TextField>
                 <TextField select label="نوع قیمت" value={priceType} onChange={(event) => setPriceType(event.target.value as PriceType)} disabled={priceSaving}>{Object.entries(PRICE_TYPE_LABELS).map(([value, label]) => <MenuItem value={value} key={value}>{label}</MenuItem>)}</TextField>
                 <MoneyField label="مبلغ (تومان)" valueRial={normalizeMoney(priceAmount)} onValueRialChange={(value) => setPriceAmount(moneyInputValue(value))} required disabled={priceSaving} />
                 <JalaliDateField label="تاریخ شمسی" value={priceDate} onChange={setPriceDate} required disabled={priceSaving} />
@@ -2223,10 +2224,10 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
               </form>
               <div className="price-history">
                 <div className="price-history-heading"><div><HistoryRounded /><div><strong>تاریخچه قیمت</strong><small>{filteredPrices.length.toLocaleString("fa-IR")} تغییر ثبت‌شده</small></div></div></div>
-                <div className="price-history-filters"><TextField select size="small" label="گونه" value={historyVariantId} onChange={(event) => setHistoryVariantId(event.target.value)}><MenuItem value="">همه گونه‌ها</MenuItem>{variants.map((variant) => <MenuItem value={String(variant.id)} key={variant.id}>{variant.name}</MenuItem>)}</TextField><TextField select size="small" label="نوع قیمت" value={historyPriceType} onChange={(event) => setHistoryPriceType(event.target.value as "" | PriceType)}><MenuItem value="">همه نوع‌ها</MenuItem>{Object.entries(PRICE_TYPE_LABELS).map(([value, label]) => <MenuItem value={value} key={value}>{label}</MenuItem>)}</TextField></div>
+                <div className="price-history-filters"><TextField select size="small" label="کالا" value={historyVariantId} onChange={(event) => setHistoryVariantId(event.target.value)}><MenuItem value="">همه کالاها</MenuItem>{variants.map((variant) => <MenuItem value={String(variant.id)} key={variant.id}>{variant.name}</MenuItem>)}</TextField><TextField select size="small" label="نوع قیمت" value={historyPriceType} onChange={(event) => setHistoryPriceType(event.target.value as "" | PriceType)}><MenuItem value="">همه نوع‌ها</MenuItem>{Object.entries(PRICE_TYPE_LABELS).map(([value, label]) => <MenuItem value={value} key={value}>{label}</MenuItem>)}</TextField></div>
                 {variantStatus === "loading" ? <div className="record-state"><CircularProgress size={26} /><span>در حال دریافت تاریخچه…</span></div> : null}
                 {variantStatus === "ready" && filteredPrices.length === 0 ? <div className="record-state"><HistoryRounded /><strong>هنوز تغییری ثبت نشده است</strong></div> : null}
-                {variantStatus === "ready" && filteredPrices.length > 0 ? <div className="price-history-list">{filteredPrices.map((price) => { const variant = variants.find((item) => item.id === price.variant_id); return <article className="price-history-item" key={price.id}><div><strong>{variant?.name ?? `گونه ${price.variant_id.toLocaleString("fa-IR")}`}</strong><small>{PRICE_TYPE_LABELS[price.price_type]} • {toPersianDigits(price.jalali_date)} ساعت {toPersianDigits(price.local_time)}</small></div><strong>{formatRial(price.amount_rial)}</strong></article>; })}</div> : null}
+                {variantStatus === "ready" && filteredPrices.length > 0 ? <div className="price-history-list">{filteredPrices.map((price) => { const variant = variants.find((item) => item.id === price.variant_id); return <article className="price-history-item" key={price.id}><div><strong>{variant?.name ?? `کالا ${price.variant_id.toLocaleString("fa-IR")}`}</strong><small>{PRICE_TYPE_LABELS[price.price_type]} • {toPersianDigits(price.jalali_date)} ساعت {toPersianDigits(price.local_time)}</small></div><strong>{formatRial(price.amount_rial)}</strong></article>; })}</div> : null}
               </div>
             </div>
           </section>
@@ -2240,7 +2241,7 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
             <div className="discount-rule-grid">
               <form className="discount-rule-form" onSubmit={submitPriceRule} noValidate>
                 <div className="discount-rule-form-heading"><strong>{editingRuleId === null ? "قاعده جدید" : "ویرایش قاعده"}</strong><small>محدوده اجرا و نوع تخفیف را مشخص کنید.</small></div>
-                <TextField select label="گونه کالا" value={ruleVariantId} onChange={(event) => setRuleVariantId(event.target.value)} required disabled={ruleSaving || variantStatus !== "ready"}><MenuItem value="">انتخاب گونه</MenuItem>{variants.map((variant) => <MenuItem value={String(variant.id)} key={variant.id}>{variant.name}</MenuItem>)}</TextField>
+                <TextField select label="کالا" value={ruleVariantId} onChange={(event) => setRuleVariantId(event.target.value)} required disabled={ruleSaving || variantStatus !== "ready"}><MenuItem value="">انتخاب کالا</MenuItem>{variants.map((variant) => <MenuItem value={String(variant.id)} key={variant.id}>{variant.name}</MenuItem>)}</TextField>
                 <LocalizedDecimalField label="حداقل تعداد" value={ruleMinQuantity} onValueChange={setRuleMinQuantity} required disabled={ruleSaving} helperText="از صفر به بالا؛ مثلاً ۵" />
                 <TextField select label="نوع تخفیف" value={ruleDiscountType} onChange={(event) => { setRuleDiscountType(event.target.value as "amount" | "percent"); setRuleDiscountValue(""); }} disabled={ruleSaving}><MenuItem value="percent">درصدی</MenuItem><MenuItem value="amount">مبلغ ثابت</MenuItem></TextField>
                 {ruleDiscountType === "amount" ? <MoneyField label="مبلغ تخفیف (تومان)" valueRial={normalizeMoney(ruleDiscountValue)} onValueRialChange={(value) => setRuleDiscountValue(moneyInputValue(value))} required disabled={ruleSaving} helperText="مبلغ مثبت را به تومان وارد کنید." /> : <TextField label="درصد تخفیف" value={toPersianDigits(ruleDiscountValue)} onChange={(event) => setRuleDiscountValue(toEnglishDigits(event.target.value))} inputMode="decimal" required disabled={ruleSaving} helperText="مقداری بیشتر از صفر و حداکثر ۱۰۰" />}
@@ -2249,22 +2250,32 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
               </form>
 
               <div className="discount-rule-list-panel">
-                <div className="discount-rule-toolbar"><div><strong>قواعد فعال</strong><small>قاعده مناسب هر گونه را سریع پیدا و اصلاح کنید.</small></div><TextField select size="small" label="فیلتر گونه" value={ruleVariantFilter} onChange={(event) => setRuleVariantFilter(event.target.value)}><MenuItem value="">همه گونه‌ها</MenuItem>{variants.map((variant) => <MenuItem value={String(variant.id)} key={variant.id}>{variant.name}</MenuItem>)}</TextField></div>
+                <div className="discount-rule-toolbar"><div><strong>قواعد فعال</strong><small>قاعده مناسب هر کالا را سریع پیدا و اصلاح کنید.</small></div><TextField select size="small" label="فیلتر کالا" value={ruleVariantFilter} onChange={(event) => setRuleVariantFilter(event.target.value)}><MenuItem value="">همه کالاها</MenuItem>{variants.map((variant) => <MenuItem value={String(variant.id)} key={variant.id}>{variant.name}</MenuItem>)}</TextField></div>
                 {variantStatus === "loading" ? <div className="record-state"><CircularProgress size={26} /><span>در حال دریافت قواعد…</span></div> : null}
                 {variantStatus === "error" ? <div className="record-state record-state-error"><span>{catalogLoadError || "دریافت قواعد تخفیف انجام نشد."}</span><Button variant="outlined" onClick={() => load()}>تلاش دوباره</Button></div> : null}
                 {variantStatus === "ready" && priceRules.length === 0 ? <div className="record-state"><LocalOfferRounded /><strong>هنوز قاعده‌ای ثبت نشده است</strong><span>فرم روبه‌رو را برای اولین تخفیف تکمیل کنید.</span></div> : null}
-                {variantStatus === "ready" && priceRules.length > 0 && filteredPriceRules.length === 0 ? <div className="record-state"><SearchRounded /><strong>برای این گونه قاعده‌ای پیدا نشد</strong></div> : null}
+                {variantStatus === "ready" && priceRules.length > 0 && filteredPriceRules.length === 0 ? <div className="record-state"><SearchRounded /><strong>برای این کالا قاعده‌ای پیدا نشد</strong></div> : null}
                 {variantStatus === "ready" && filteredPriceRules.length > 0 ? <div className="discount-rule-list">{filteredPriceRules.map((rule) => {
                   const variant = variants.find((item) => item.id === rule.variant_id);
                   const amountDiscount = rule.discount_amount_rial != null && rule.discount_amount_rial > 0;
-                  return <article className="discount-rule-card" key={rule.id}><div className="discount-rule-card-main"><div><strong>{variant?.name ?? `گونه ${rule.variant_id.toLocaleString("fa-IR")}`}</strong><small>شروع: {rule.starts_jalali_date ? toPersianDigits(rule.starts_jalali_date) : "بدون محدودیت تاریخ"}</small></div><div className="discount-rule-summary"><span><small>از تعداد</small><strong>{formatDecimal(rule.min_quantity)}</strong></span><span className="discount-rule-value"><small>تخفیف</small><strong>{amountDiscount ? formatRial(rule.discount_amount_rial ?? 0) : `${formatDecimal(rule.discount_percent ?? 0)}٪`}</strong></span></div></div><div className="record-item-actions"><Button startIcon={<EditRounded />} onClick={() => startRuleEdit(rule)}>ویرایش</Button><Button color="error" startIcon={<DeleteOutlineRounded />} onClick={() => setPendingDeactivateRule(rule)}>غیرفعال</Button></div></article>;
+                  return <article className="discount-rule-card" key={rule.id}><div className="discount-rule-card-main"><div><strong>{variant?.name ?? `کالا ${rule.variant_id.toLocaleString("fa-IR")}`}</strong><small>شروع: {rule.starts_jalali_date ? toPersianDigits(rule.starts_jalali_date) : "بدون محدودیت تاریخ"}</small></div><div className="discount-rule-summary"><span><small>از تعداد</small><strong>{formatDecimal(rule.min_quantity)}</strong></span><span className="discount-rule-value"><small>تخفیف</small><strong>{amountDiscount ? formatRial(rule.discount_amount_rial ?? 0) : `${formatDecimal(rule.discount_percent ?? 0)}٪`}</strong></span></div></div><div className="record-item-actions"><Button startIcon={<EditRounded />} onClick={() => startRuleEdit(rule)}>ویرایش</Button><Button color="error" startIcon={<DeleteOutlineRounded />} onClick={() => setPendingDeactivateRule(rule)}>غیرفعال</Button></div></article>;
                 })}</div> : null}
               </div>
             </div>
           </section>
 
-          <Dialog open={pendingDeactivateVariant !== null} onClose={() => { if (!deactivatingRecord) setPendingDeactivateVariant(null); }} fullWidth maxWidth="xs" slotProps={{ paper: { className: "category-confirm-dialog" } }}><DialogTitle>غیرفعال‌کردن گونه</DialogTitle><DialogContent><p>گونه «{pendingDeactivateVariant?.name}» از انتخاب‌های جدید پنهان می‌شود و سوابق خرید، فروش و قیمت آن باقی می‌ماند.</p><Alert severity="warning">اگر موجودی این گونه غیرصفر باشد، عملیات انجام نمی‌شود.</Alert></DialogContent><DialogActions><Button size="large" onClick={() => setPendingDeactivateVariant(null)} disabled={deactivatingRecord}>انصراف</Button><Button size="large" color="error" variant="contained" onClick={deactivateVariant} disabled={deactivatingRecord} startIcon={deactivatingRecord ? <CircularProgress size={18} color="inherit" /> : <DeleteOutlineRounded />}>غیرفعال شود</Button></DialogActions></Dialog>
-          <Dialog open={pendingDeactivateRule !== null} onClose={() => { if (!deactivatingRecord) setPendingDeactivateRule(null); }} fullWidth maxWidth="xs" slotProps={{ paper: { className: "category-confirm-dialog" } }}><DialogTitle>غیرفعال‌کردن قاعده تخفیف</DialogTitle><DialogContent><p>این قاعده برای «{variants.find((variant) => variant.id === pendingDeactivateRule?.variant_id)?.name ?? "گونه انتخاب‌شده"}» دیگر در محاسبات جدید استفاده نمی‌شود.</p><Alert severity="info">سابقه قاعده در سیستم باقی می‌ماند.</Alert></DialogContent><DialogActions><Button size="large" onClick={() => setPendingDeactivateRule(null)} disabled={deactivatingRecord}>انصراف</Button><Button size="large" color="error" variant="contained" onClick={deactivatePriceRule} disabled={deactivatingRecord} startIcon={deactivatingRecord ? <CircularProgress size={18} color="inherit" /> : <DeleteOutlineRounded />}>غیرفعال شود</Button></DialogActions></Dialog>
+          <Dialog open={pendingDeactivateVariant !== null} onClose={() => { if (!deactivatingRecord) setPendingDeactivateVariant(null); }} fullWidth maxWidth="xs" slotProps={{ paper: { className: "category-confirm-dialog" } }}><DialogTitle>غیرفعال‌کردن کالا</DialogTitle><DialogContent><p>کالای «{pendingDeactivateVariant?.name}» از انتخاب‌های جدید پنهان می‌شود و سوابق خرید، فروش و قیمت آن باقی می‌ماند.</p><Alert severity="warning">اگر موجودی این کالا غیرصفر باشد، عملیات انجام نمی‌شود.</Alert></DialogContent><DialogActions><Button size="large" onClick={() => setPendingDeactivateVariant(null)} disabled={deactivatingRecord}>انصراف</Button><Button size="large" color="error" variant="contained" onClick={deactivateVariant} disabled={deactivatingRecord} startIcon={deactivatingRecord ? <CircularProgress size={18} color="inherit" /> : <DeleteOutlineRounded />}>غیرفعال شود</Button></DialogActions></Dialog>
+          <Dialog open={unitDialogOpen} onClose={() => { if (!unitSaving && !deactivatingRecord) { setUnitDialogOpen(false); resetUnitForm(); } }} fullWidth maxWidth="sm" fullScreen={isMobile} aria-labelledby="unit-dialog-title">
+            <DialogTitle id="unit-dialog-title"><Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1 }}><span>مدیریت واحدها</span><IconButton aria-label="بستن" onClick={() => { setUnitDialogOpen(false); resetUnitForm(); }} disabled={unitSaving || deactivatingRecord}><CloseRounded /></IconButton></Stack></DialogTitle>
+            <DialogContent dividers><Stack spacing={2}>{unitNotice ? <Alert severity={unitNotice.type} onClose={() => setUnitNotice(null)}>{unitNotice.text}</Alert> : null}<form className="record-form record-form-unit" onSubmit={submitUnit} noValidate><TextField label="نام واحد" value={unitName} onChange={(event) => setUnitName(event.target.value)} required disabled={unitSaving} helperText="مثلاً کیلوگرم" /><TextField label="نماد" value={unitSymbol} onChange={(event) => setUnitSymbol(event.target.value)} required disabled={unitSaving} helperText="مثلاً kg" /><div className="record-form-actions"><Button type="submit" variant="contained" size="large" disabled={unitSaving || !unitName.trim() || !unitSymbol.trim()} startIcon={unitSaving ? <CircularProgress size={18} color="inherit" /> : editingUnitId === null ? <AddRounded /> : <EditRounded />}>{unitSaving ? "در حال ذخیره…" : editingUnitId === null ? "ثبت واحد" : "ذخیره تغییرات"}</Button>{editingUnitId !== null ? <Button type="button" onClick={resetUnitForm} disabled={unitSaving}>انصراف</Button> : null}</div></form><TextField size="small" label="جست‌وجوی واحد" value={unitSearch} onChange={(event) => setUnitSearch(event.target.value)} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} />{unitProductStatus === "loading" ? <div className="record-state"><CircularProgress size={26} /><span>در حال دریافت واحدها…</span></div> : null}{unitProductStatus === "ready" && filteredUnits.length === 0 ? <div className="record-state"><StraightenRounded /><strong>واحدی پیدا نشد</strong></div> : null}{unitProductStatus === "ready" && filteredUnits.length > 0 ? <div className="record-list">{filteredUnits.map((unit) => <article className="record-item" key={unit.id}><div><strong>{unit.name}</strong><Chip label={unit.symbol} size="small" /></div><div className="record-item-actions"><Button startIcon={<EditRounded />} onClick={() => startUnitEdit(unit)}>ویرایش</Button>{isSuperuser ? <Button color="error" startIcon={<DeleteOutlineRounded />} onClick={() => setPendingDeactivateUnit(unit)}>غیرفعال</Button> : null}</div></article>)}</div> : null}</Stack></DialogContent>
+          </Dialog>
+          <Dialog open={pendingDeactivateUnit !== null} onClose={() => { if (!deactivatingRecord) setPendingDeactivateUnit(null); }} fullWidth maxWidth="xs"><DialogTitle>غیرفعال‌کردن واحد</DialogTitle><DialogContent><Alert severity="warning">واحد «{pendingDeactivateUnit?.name}» فقط در صورتی غیرفعال می‌شود که کالای فعالی از آن استفاده نکند.</Alert></DialogContent><DialogActions><Button onClick={() => setPendingDeactivateUnit(null)} disabled={deactivatingRecord}>انصراف</Button><Button color="error" variant="contained" onClick={deactivateUnit} disabled={deactivatingRecord}>غیرفعال شود</Button></DialogActions></Dialog>
+          <Dialog open={imageProduct !== null} onClose={() => { if (!imageBusy) closeImageManager(); }} fullWidth maxWidth="sm" fullScreen={isMobile} className="product-image-dialog" aria-labelledby="catalog-item-image-title">
+            <DialogTitle id="catalog-item-image-title"><Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1 }}><span>تصویر «{imageProduct?.name}»</span><IconButton aria-label="بستن" onClick={closeImageManager} disabled={imageBusy}><CloseRounded /></IconButton></Stack></DialogTitle>
+            <DialogContent dividers><Stack spacing={2.25}>{imageError ? <Alert severity="error">{imageError}</Alert> : null}<Box className="admin-image-preview">{imagePreview || imageProduct?.image_url ? <img src={imagePreview || apiAssetUrl(imageProduct?.image_url) || undefined} alt={`پیش‌نمایش ${imageProduct?.name ?? "کالا"}`} /> : <Box><ImageRounded /><Typography sx={{ fontWeight: 900 }}>هنوز تصویری ثبت نشده است</Typography><Typography variant="body2" color="text.secondary">یک عکس روشن و واضح از کالا انتخاب کنید.</Typography></Box>}</Box><Button component="label" variant="outlined" size="large" startIcon={<AddPhotoAlternateRounded />} disabled={imageBusy}>{imageProduct?.image_url || imageFile ? "انتخاب تصویر جایگزین" : "انتخاب تصویر"}<input hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { selectProductImage(event.target.files?.[0]); event.currentTarget.value = ""; }} /></Button><Alert severity="info" icon={false}>فرمت‌های مجاز: JPEG، PNG و WebP؛ حداکثر حجم ۵ مگابایت.</Alert></Stack></DialogContent>
+            <DialogActions className="product-image-actions">{imageProduct?.image_url ? <Button color="error" size="large" startIcon={<DeleteOutlineRounded />} disabled={imageBusy} onClick={() => void removeProductImage()}>حذف تصویر</Button> : null}<Box sx={{ flex: 1 }} /><Button size="large" onClick={closeImageManager} disabled={imageBusy}>انصراف</Button><Button variant="contained" size="large" startIcon={imageBusy ? <CircularProgress size={18} color="inherit" /> : <AddPhotoAlternateRounded />} disabled={!imageFile || imageBusy} onClick={() => void saveProductImage()}>{imageBusy ? "در حال ذخیره…" : "ذخیره تصویر"}</Button></DialogActions>
+          </Dialog>
+          <Dialog open={pendingDeactivateRule !== null} onClose={() => { if (!deactivatingRecord) setPendingDeactivateRule(null); }} fullWidth maxWidth="xs" slotProps={{ paper: { className: "category-confirm-dialog" } }}><DialogTitle>غیرفعال‌کردن قاعده تخفیف</DialogTitle><DialogContent><p>این قاعده برای «{variants.find((variant) => variant.id === pendingDeactivateRule?.variant_id)?.name ?? "کالای انتخاب‌شده"}» دیگر در محاسبات جدید استفاده نمی‌شود.</p><Alert severity="info">سابقه قاعده در سیستم باقی می‌ماند.</Alert></DialogContent><DialogActions><Button size="large" onClick={() => setPendingDeactivateRule(null)} disabled={deactivatingRecord}>انصراف</Button><Button size="large" color="error" variant="contained" onClick={deactivatePriceRule} disabled={deactivatingRecord} startIcon={deactivatingRecord ? <CircularProgress size={18} color="inherit" /> : <DeleteOutlineRounded />}>غیرفعال شود</Button></DialogActions></Dialog>
         </section>
       ) : null}
     </CrudWorkspace>
@@ -2781,7 +2792,7 @@ function ReportsView({ onBack }: { onBack: () => void }) {
         <article><span>فروش ثبت‌شده</span><strong>{sales ? formatRial(sales.registered_sales_rial) : "—"}</strong><small>{sales ? `${sales.invoice_count.toLocaleString("fa-IR")} فاکتور • میانگین ${formatRial(sales.average_invoice_rial)}` : "در انتظار داده"}</small></article>
         <article className="positive"><span>وصول فروش</span><strong>{sales ? formatRial(sales.received_rial) : "—"}</strong><small>{sales ? `${collectionRate.toLocaleString("fa-IR")}٪ از فروش بازه` : "در انتظار داده"}</small></article>
         <article className={profit && profit.gross_profit_rial < 0 ? "negative" : "positive"}><span>سود ناخالص تخمینی</span><strong>{profit ? formatRial(profit.gross_profit_rial) : "—"}</strong><small>{profit ? `حاشیه ${profit.gross_margin_percent.toLocaleString("fa-IR")}٪ • بهای تخمینی ${formatRial(profit.estimated_cost_rial)}` : "در انتظار داده"}</small></article>
-        <article><span>ارزش موجودی</span><strong>{inventory ? formatRial(inventory.total_value_rial) : "—"}</strong><small>{inventory ? `${inventory.item_count.toLocaleString("fa-IR")} گونه • ${inventory.low_stock_count.toLocaleString("fa-IR")} کم‌موجود` : "در انتظار داده"}</small></article>
+        <article><span>ارزش موجودی</span><strong>{inventory ? formatRial(inventory.total_value_rial) : "—"}</strong><small>{inventory ? `${inventory.item_count.toLocaleString("fa-IR")} کالا • ${inventory.low_stock_count.toLocaleString("fa-IR")} کم‌موجود` : "در انتظار داده"}</small></article>
         <article className={cashflow && cashflow.net_expected_rial < 0 ? "negative" : "positive"}><span>جریان نقد مورد انتظار</span><strong>{cashflow ? formatRial(cashflow.net_expected_rial) : "—"}</strong><small>تا پایان بازه انتخابی</small></article>
         <article className={debts?.total_remaining_rial ? "warning" : "positive"}><span>مطالبات از مشتریان</span><strong>{debts ? formatRial(debts.total_remaining_rial) : "—"}</strong><small>{debts ? `${debts.people.length.toLocaleString("fa-IR")} مشتری بدهکار` : "در انتظار داده"}</small></article>
       </div>
@@ -3008,10 +3019,6 @@ function OnlineView({ onBack }: { onBack: () => void }) {
 function CrudWorkspace({ title, eyebrow, onBack, children }: { title: string; eyebrow: string; onBack: () => void; children: ReactNode }) {
   return (
     <section className="sales-workspace">
-      <div className="sales-header">
-        <div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div>
-        <button type="button" className="ghost-button" onClick={onBack}>بازگشت به داشبورد</button>
-      </div>
       {children}
     </section>
   );
@@ -3032,6 +3039,8 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: string[][] })
 }
 
 function SalesView({ onBack, focus, onFocusHandled }: { onBack: () => void; focus: { invoiceId: number; paymentId: number } | null; onFocusHandled: () => void }) {
+  const [itemDialogOpen, setItemDialogOpen] = useState(false);
+  const [pickerCatalog, setPickerCatalog] = useState<PickerCatalog>(emptyPickerCatalog);
   const theme = useTheme(); const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -3086,6 +3095,7 @@ function SalesView({ onBack, focus, onFocusHandled }: { onBack: () => void; focu
     return api.salesFormOptions()
       .then((options) => {
         setVariants(options.variants.filter((variant) => variant.is_active));
+        setPickerCatalog({ products: options.products ?? [], categories: options.categories ?? [], units: options.units ?? [] });
         setInventory(options.inventory);
         setCustomers(options.customers.filter((person) => person.is_active));
         setCustomersStatus("ready" as const);
@@ -3125,6 +3135,7 @@ function SalesView({ onBack, focus, onFocusHandled }: { onBack: () => void; focu
       .then((options) => {
         if (!isMounted) return;
         setVariants(options.variants.filter((variant) => variant.is_active));
+        setPickerCatalog({ products: options.products ?? [], categories: options.categories ?? [], units: options.units ?? [] });
         setInventory(options.inventory);
         setCustomers(options.customers.filter((person) => person.is_active));
         setCustomersStatus("ready");
@@ -3178,6 +3189,7 @@ function SalesView({ onBack, focus, onFocusHandled }: { onBack: () => void; focu
   const estimatedProfit = total - items.reduce((sum, item) => sum + item.estimatedCostRial, 0);
 
   function resetItemForm() {
+    setItemDialogOpen(false);
     setEditingItemId(null);
     setItemVariantId("");
     setItemQuantity("1");
@@ -3187,6 +3199,7 @@ function SalesView({ onBack, focus, onFocusHandled }: { onBack: () => void; focu
   }
 
   function selectItemVariant(value: string) {
+    setItemDialogOpen(true);
     setItemVariantId(value);
     const variant = variants.find((item) => item.id === Number(value));
     setItemUnitPrice(variant ? moneyInputValue(variant.retail_price_rial) : "");
@@ -3237,6 +3250,7 @@ function SalesView({ onBack, focus, onFocusHandled }: { onBack: () => void; focu
   }
 
   function startItemEdit(item: InvoiceDraftItem) {
+    setItemDialogOpen(true);
     setEditingItemId(item.id);
     setItemVariantId(String(item.variantId));
     setItemQuantity(String(item.quantity));
@@ -3343,15 +3357,6 @@ function SalesView({ onBack, focus, onFocusHandled }: { onBack: () => void; focu
 
   return (
     <section className="sales-workspace" aria-label="ثبت فروش روزانه">
-      <div className="sales-header sales-hero">
-        <div>
-          <p className="eyebrow">فروش روزانه</p>
-          <h2>فروش را سریع و مطمئن ثبت کنید</h2>
-          <p className="sales-guide">ابتدا کالاها را به فاکتور اضافه کنید، سپس پرداخت‌های نقدی یا مدت‌دار را مشخص کنید.</p>
-        </div>
-        <Button variant="outlined" startIcon={<ArrowBackRounded />} onClick={onBack}>بازگشت به داشبورد</Button>
-      </div>
-
       <div className="sales-grid">
         <Card variant="outlined" className="sale-panel sale-panel-main">
           <div className="sales-section-heading"><div><ReceiptLongRounded /><div><h3>مشخصات و پرداخت فاکتور</h3><p>برای فروش نقدی مشتری اختیاری و برای فروش دارای مانده الزامی است.</p></div></div><Chip label={`${items.length.toLocaleString("fa-IR")} ردیف`} color={items.length ? "primary" : "default"} variant="outlined" /></div>
@@ -3454,21 +3459,21 @@ function SalesView({ onBack, focus, onFocusHandled }: { onBack: () => void; focu
           {variantsStatus === "ready" && variants.length === 0 ? <div className="record-state sale-empty"><Inventory2Rounded /><strong>کالای فعالی برای فروش ندارید</strong><span>ابتدا کالا و موجودی آن را ثبت کنید.</span></div> : null}
 
           {variantsStatus === "ready" && variants.length > 0 ? (
-            <form className="add-item-form" onSubmit={handleAddItem}>
-              <TextField select label="کالا" value={itemVariantId} onChange={(event) => selectItemVariant(event.target.value)} required>
-                  <MenuItem value="">انتخاب کالا</MenuItem>
-                  {variants.map((variant) => (
-                    <MenuItem value={variant.id} key={variant.id}>{variant.name} — موجودی {Number(inventory.find((row) => row.variant_id === variant.id)?.quantity_on_hand ?? 0).toLocaleString("fa-IR")}</MenuItem>
-                  ))}
-              </TextField>
+            <div className="add-item-form">
+              <ProductCardPicker mode="sale" variants={variants} catalog={pickerCatalog} value={itemVariantId} onSelect={selectItemVariant} quantities={items.reduce<Record<number, number>>((result, item) => ({ ...result, [item.variantId]: (result[item.variantId] ?? 0) + item.quantity }), {})} available={Object.fromEntries(variants.map((variant) => [variant.id, Math.max(0, Number(inventory.find((row) => row.variant_id === variant.id)?.quantity_on_hand ?? 0) - items.filter((item) => item.variantId === variant.id && item.id !== editingItemId).reduce((sum, item) => sum + item.quantity, 0))]))} disabled={submitStatus === "loading"} />
+              <Dialog open={itemDialogOpen} onClose={resetItemForm} fullScreen={isMobile} fullWidth maxWidth="sm" aria-labelledby="sale-item-dialog-title">
+                <DialogTitle id="sale-item-dialog-title">{editingItemId ? "ویرایش ردیف فروش" : "افزودن به فروش"} · {variants.find((item) => String(item.id) === itemVariantId)?.name}</DialogTitle>
+                <DialogContent><form id="sale-card-item-form" className="card-item-editor" onSubmit={handleAddItem}>
               <div className="compact-fields">
-                <LocalizedDecimalField label="مقدار" value={itemQuantity} onValueChange={setItemQuantity} required />
+                <InvoiceQuantityField value={itemQuantity} onChange={setItemQuantity} />
                 <MoneyField label="قیمت واحد (تومان)" valueRial={normalizeMoney(itemUnitPrice)} onValueRialChange={(value) => setItemUnitPrice(moneyInputValue(value))} required />
               </div>
               <MoneyField label="تخفیف ردیف (تومان)" valueRial={normalizeMoney(itemDiscount)} onValueRialChange={(value) => setItemDiscount(moneyInputValue(value))} />
               {itemError ? <Alert severity="error">{itemError}</Alert> : null}
-              <div className="sale-item-form-actions"><Button type="submit" variant="contained" startIcon={editingItemId ? <EditRounded /> : <AddRounded />}>{editingItemId ? "ذخیره تغییرات" : "افزودن به فاکتور"}</Button>{editingItemId ? <Button type="button" onClick={resetItemForm}>انصراف</Button> : null}</div>
-            </form>
+                </form></DialogContent>
+                <DialogActions className="card-item-dialog-actions"><Button type="button" onClick={resetItemForm}>انصراف</Button><Button form="sale-card-item-form" type="submit" variant="contained" startIcon={editingItemId ? <EditRounded /> : <AddRounded />}>{editingItemId ? "ذخیره تغییرات" : "افزودن به فاکتور"}</Button></DialogActions>
+              </Dialog>
+            </div>
           ) : null}
 
           <div className="invoice-items">

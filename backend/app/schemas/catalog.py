@@ -227,6 +227,121 @@ class ProductVariantRead(ProductVariantCreate):
     is_active: bool
 
 
+class CatalogItemCreate(BaseModel):
+    """Simplified write model: one visible item backed by a product and variant."""
+
+    name: str = Field(min_length=1, max_length=160)
+    description: str | None = None
+    category_id: int | None = None
+    unit_id: int
+    sku: str | None = Field(default=None, max_length=80)
+    retail_price_rial: int = 0
+    wholesale_price_rial: int | None = None
+    min_wholesale_quantity: Decimal | None = None
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("نام کالا نمی‌تواند خالی باشد.")
+        return normalized
+
+    @field_validator("category_id", "unit_id", "retail_price_rial", "wholesale_price_rial", mode="before")
+    @classmethod
+    def localized_integers(cls, value):
+        return normalize_localized_integer(value)
+
+    @field_validator("min_wholesale_quantity", mode="before")
+    @classmethod
+    def localized_quantity(cls, value):
+        return normalize_localized_decimal(value)
+
+    @field_validator("sku")
+    @classmethod
+    def normalize_sku(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_identifier(value) or None
+
+    @field_validator("retail_price_rial", "wholesale_price_rial", "min_wholesale_quantity")
+    @classmethod
+    def non_negative_values(cls, value: int | Decimal | None) -> int | Decimal | None:
+        if value is not None and value < 0:
+            raise ValueError("قیمت و حداقل تعداد عمده نمی‌توانند منفی باشند.")
+        return value
+
+
+class CatalogItemUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = None
+    category_id: int | None = None
+    unit_id: int | None = None
+    sku: str | None = Field(default=None, max_length=80)
+    retail_price_rial: int | None = None
+    wholesale_price_rial: int | None = None
+    min_wholesale_quantity: Decimal | None = None
+
+    @field_validator("name")
+    @classmethod
+    def normalize_optional_name(cls, value: str | None) -> str:
+        if value is None or not value.strip():
+            raise ValueError("نام کالا نمی‌تواند خالی باشد.")
+        return value.strip()
+
+    @field_validator("category_id", "unit_id", "retail_price_rial", "wholesale_price_rial", mode="before")
+    @classmethod
+    def localized_integers(cls, value):
+        return normalize_localized_integer(value)
+
+    @field_validator("min_wholesale_quantity", mode="before")
+    @classmethod
+    def localized_quantity(cls, value):
+        return normalize_localized_decimal(value)
+
+    @field_validator("unit_id")
+    @classmethod
+    def required_unit_when_present(cls, value: int | None) -> int:
+        if value is None:
+            raise ValueError("واحد کالا باید مشخص باشد.")
+        return value
+
+    @field_validator("retail_price_rial")
+    @classmethod
+    def required_retail_price_when_present(cls, value: int | None) -> int:
+        if value is None:
+            raise ValueError("قیمت فروش کالا باید مشخص باشد.")
+        return value
+
+    @field_validator("sku")
+    @classmethod
+    def normalize_optional_sku(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_identifier(value) or None
+
+    @field_validator("retail_price_rial", "wholesale_price_rial", "min_wholesale_quantity")
+    @classmethod
+    def non_negative_optional_values(cls, value: int | Decimal | None) -> int | Decimal | None:
+        if value is not None and value < 0:
+            raise ValueError("قیمت و حداقل تعداد عمده نمی‌توانند منفی باشند.")
+        return value
+
+
+class CatalogItemRead(BaseModel):
+    product_id: int
+    variant_id: int
+    name: str
+    description: str | None
+    category_id: int | None
+    unit_id: int
+    sku: str | None
+    retail_price_rial: int
+    wholesale_price_rial: int | None
+    min_wholesale_quantity: Decimal | None
+    image_url: str | None
+
+
 class PriceListCreate(BaseModel):
     variant_id: int
     price_type: str = Field(pattern="^(retail|wholesale|online)$")

@@ -162,7 +162,7 @@ def test_cashier_can_use_sales_only_and_cannot_cancel(client: TestClient) -> Non
     assert client.get("/api/v1/sales", headers=headers).status_code == 200
     options = client.get("/api/v1/sales/form-options", headers=headers)
     assert options.status_code == 200
-    assert set(options.json()) == {"variants", "inventory", "customers"}
+    assert set(options.json()) == {"variants", "inventory", "customers", "products", "categories", "units"}
     assert client.get("/api/v1/daily-journal?jalali_date=1405/06/17", headers=headers).status_code == 200
     assert client.post("/api/v1/sales/999/cancel", headers=headers).status_code == 403
 

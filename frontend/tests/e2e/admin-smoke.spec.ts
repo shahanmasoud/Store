@@ -373,6 +373,48 @@ test("ویرایش سررسید پرداخت pending فروش و ثبت audit", 
   if (mobile) await expect(reopened).toHaveClass(/MuiDialog-paperFullScreen/);
 });
 
+test("کارت‌های فروش: جستجو، مقدار فارسی، کنترل موجودی و ویرایش سبد", async ({ page }, testInfo) => {
+  const mobile = testInfo.project.name.startsWith("mobile");
+  await loginAs(page, "e2e-sales", "e2e-role-password");
+  await navigate(page, "فروش", "ثبت فروش", mobile);
+  const search = page.getByRole("textbox", { name: "جستجوی کالا" });
+  await search.fill("کالای غیرواقعی");
+  await expect(page.getByText("کالایی پیدا نشد", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "پاک کردن فیلترها" }).click();
+  await chooseOption(page, "دسته‌بندی کالا", "حبوبات");
+  await search.fill("لوبیا");
+  const card = page.getByRole("button", { name: "انتخاب لوبیا چیتی ممتاز", exact: true });
+  await expect(card).toBeVisible();
+  await expect(card).toContainText("۱۸۵٬۰۰۰");
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath("sale-product-cards.png"), fullPage: true });
+  await card.click();
+  const dialog = page.getByRole("dialog", { name: "افزودن به فروش · لوبیا چیتی ممتاز" });
+  await expect(dialog).toBeVisible();
+  if (mobile) await expect(dialog).toHaveClass(/MuiDialog-paperFullScreen/);
+  await expect(dialog.getByRole("textbox", { name: "قیمت واحد (تومان)" })).toHaveValue("۱۸۵٬۰۰۰");
+  const quantity = dialog.getByRole("textbox", { name: "مقدار", exact: true });
+  await quantity.fill("۹۹۹۹");
+  await dialog.getByRole("button", { name: "افزودن به فاکتور", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await quantity.fill("۱٫۵");
+  await expectNoElementOverflow(dialog);
+  await page.screenshot({ path: testInfo.outputPath("sale-card-dialog.png"), fullPage: true });
+  await dialog.getByRole("button", { name: "افزودن به فاکتور", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  const row = page.locator(".invoice-item").filter({ hasText: "لوبیا چیتی ممتاز" });
+  await expect(row).toContainText("۲۷۷٬۵۰۰");
+  await expect(card).toContainText("۱٫۵ در فاکتور");
+  await row.getByRole("button", { name: "ویرایش", exact: true }).click();
+  const edit = page.getByRole("dialog");
+  await edit.getByRole("textbox", { name: "مقدار", exact: true }).fill("۲");
+  await edit.getByRole("button", { name: "ذخیره تغییرات", exact: true }).click();
+  await expect(row).toContainText("۳۷۰٬۰۰۰");
+  await row.getByRole("button", { name: "حذف", exact: true }).click();
+  await expect(row).toHaveCount(0);
+  await expectNoHorizontalOverflow(page);
+});
+
 test("چرخه کامل کالا، تصویر، خرید، انبار و نمایش در فروشگاه", async ({ page }, testInfo) => {
   test.setTimeout(75_000);
   page.setDefaultTimeout(8_000);
@@ -380,6 +422,7 @@ test("چرخه کامل کالا، تصویر، خرید، انبار و نما�
   const suffix = projectSuffix(testInfo.project.name);
   const categoryName = `دسته E2E ${suffix}`;
   const unitName = `بسته E2E ${suffix}`;
+  const unitSymbol = mobile ? "pkg-e2e-m" : "pkg-e2e-d";
   const productName = `لوبیا E2E ${suffix}`;
   const variantName = `${productName} ممتاز`;
   const productDescription = `کالای ساخته‌شده از دیتابیس ایزوله ${suffix}`;
@@ -394,51 +437,53 @@ test("چرخه کامل کالا، تصویر، خرید، انبار و نما�
   await expect(page.getByText("دسته جدید ثبت شد.", { exact: true })).toBeVisible();
   await expect(page.locator(".category-item").filter({ hasText: categoryName })).toBeVisible();
 
-  await page.getByRole("tab", { name: "واحد و کالا", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "واحدهای اندازه‌گیری", exact: true })).toBeVisible();
-  const unitSubmit = page.getByRole("button", { name: "ثبت واحد", exact: true });
+  await page.getByRole("tab", { name: "کالاها", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "کالاها", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /واحد و کالا|گونه و قیمت/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "مدیریت واحدها", exact: true }).click();
+  const unitDialog = page.getByRole("dialog", { name: "مدیریت واحدها" });
+  if (mobile) await expect(unitDialog).toHaveClass(/MuiDialog-paperFullScreen/);
+  const unitSubmit = unitDialog.getByRole("button", { name: "ثبت واحد", exact: true });
   await expect(unitSubmit).toBeDisabled();
-  await page.getByRole("textbox", { name: "نام واحد" }).fill(unitName);
-  await page.getByRole("textbox", { name: "نماد" }).fill("pkg-e2e");
+  await unitDialog.getByRole("textbox", { name: "نام واحد" }).fill(unitName);
+  await unitDialog.getByRole("textbox", { name: "نماد" }).fill(unitSymbol);
   await unitSubmit.click();
   await expect(page.getByText("واحد جدید ثبت شد.", { exact: true })).toBeVisible();
+  await unitDialog.getByRole("button", { name: "بستن", exact: true }).click();
 
-  await page.getByRole("textbox", { name: "نام کالا" }).fill(productName);
-  await chooseOption(page, "دسته کالا", categoryName);
-  await page.getByRole("textbox", { name: "توضیح کوتاه" }).fill(productDescription);
+  const itemForm = page.locator(".variant-form");
+  await itemForm.getByRole("textbox", { name: "نام کالا" }).fill(variantName);
+  await chooseOption(page, "دسته‌بندی", categoryName, itemForm);
+  await chooseOption(page, "واحد", `${unitName} (${unitSymbol})`, itemForm);
+  await itemForm.getByRole("textbox", { name: "توضیح کوتاه" }).fill(productDescription);
+  const retailPrice = itemForm.getByRole("textbox", { name: "قیمت خرده (تومان)" });
+  await retailPrice.fill("۲۵۰۰۰۰");
+  await expect(retailPrice).toHaveValue("۲۵۰٬۰۰۰");
   await page.getByRole("button", { name: "ثبت کالا", exact: true }).click();
   await expect(page.getByText("کالای جدید ثبت شد.", { exact: true })).toBeVisible();
 
-  const productCard = page.locator(".record-item-product").filter({ hasText: productName });
+  const productCard = page.locator(".catalog-product-card").filter({ hasText: variantName });
   await expect(productCard).toContainText(categoryName);
   await productCard.getByRole("button", { name: "افزودن عکس", exact: true }).click();
-  const imageDialog = page.getByRole("dialog", { name: `تصویر «${productName}»` });
+  const imageDialog = page.getByRole("dialog", { name: `تصویر «${variantName}»` });
   await expect(imageDialog.getByRole("button", { name: "ذخیره تصویر", exact: true })).toBeDisabled();
   await imageDialog.locator('input[type="file"]').setInputFiles({
     name: "product-e2e.png",
     mimeType: "image/png",
     buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAFElEQVR4nGO8UmXOgA0wYRUdtBIANJIBlR9nS+cAAAAASUVORK5CYII=", "base64"),
   });
-  await expect(imageDialog.getByAltText(`پیش‌نمایش ${productName}`)).toBeVisible();
+  await expect(imageDialog.getByAltText(`پیش‌نمایش ${variantName}`)).toBeVisible();
   await imageDialog.getByRole("button", { name: "ذخیره تصویر", exact: true }).click();
-  await expect(page.getByText(`تصویر «${productName}» ذخیره شد و در فروشگاه نمایش داده می‌شود.`, { exact: true })).toBeVisible();
+  await expect(page.getByText(`تصویر «${variantName}» ذخیره شد و در فروشگاه نمایش داده می‌شود.`, { exact: true })).toBeVisible();
   await expect(productCard.locator("img")).toBeVisible();
-
-  await page.getByRole("tab", { name: "گونه و قیمت", exact: true }).click();
-  await chooseOption(page, "کالای پایه", productName);
-  await chooseOption(page, "واحد", `${unitName} (pkg-e2e)`);
-  await page.getByRole("textbox", { name: "نام گونه" }).fill(variantName);
-  const retailPrice = page.getByRole("textbox", { name: "قیمت خرده (تومان)" });
-  await retailPrice.fill("۲۵۰۰۰۰");
-  await expect(retailPrice).toHaveValue("۲۵۰٬۰۰۰");
-  await page.getByRole("button", { name: "ثبت گونه", exact: true }).click();
-  await expect(page.getByText("گونه جدید ثبت شد.", { exact: true })).toBeVisible();
-  await expect(page.locator(".variant-card").filter({ hasText: variantName })).toContainText("۲۵۰٬۰۰۰ تومان");
+  await expect(productCard).toContainText("۲۵۰٬۰۰۰ تومان");
 
   await navigate(page, "خرید", "ثبت خرید", mobile);
   const purchaseSubmit = page.getByRole("button", { name: "ثبت فاکتور خرید", exact: true });
   await expect(purchaseSubmit).toBeDisabled();
-  await chooseOption(page, "گونه کالا", variantName);
+  await page.getByRole("textbox", { name: "جستجوی کالا" }).fill(variantName);
+  await page.getByRole("button", { name: `انتخاب ${variantName}`, exact: true }).click();
+  await expect(page.getByRole("dialog", { name: `افزودن به خرید · ${variantName}` })).toBeVisible();
   await page.getByRole("textbox", { name: "مقدار" }).fill("۳");
   const unitCost = page.getByRole("textbox", { name: "قیمت واحد (تومان)" });
   await unitCost.fill("۱۲۰۰۰۰");
@@ -464,6 +509,7 @@ test("چرخه کامل کالا، تصویر، خرید، انبار و نما�
     await new Promise((resolve) => setTimeout(resolve, 250));
     await route.continue();
   });
+  if (!mobile) await page.locator(".topbar").hover();
   await page.getByRole("button", { name: "مشاهده فروشگاه", exact: true }).click();
   await expect(page.locator('[aria-label="در حال بارگذاری کالاها"]')).toBeVisible();
   const storefrontCard = page.locator(".storefront-product-card").filter({ hasText: variantName });

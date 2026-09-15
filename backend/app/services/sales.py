@@ -24,6 +24,9 @@ RECEIVED_BY_DEFAULT = {"cash", "card", "transfer"}
 def get_sales_form_options(db: Session) -> SalesFormOptionsRead:
     return SalesFormOptionsRead(
         variants=catalog_service.list_variants(db),
+        products=catalog_service.list_products(db),
+        categories=catalog_service.list_categories(db),
+        units=catalog_service.list_units(db),
         inventory=purchase_service.list_inventory(db),
         customers=[
             person
