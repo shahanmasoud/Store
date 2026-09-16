@@ -29,6 +29,7 @@ export type ProductVariant = {
   wholesale_price_rial?: number | null;
   min_wholesale_quantity?: string | number | null;
   is_active: boolean;
+  image_url?: string | null;
 };
 
 export type StorefrontProduct = {
@@ -48,6 +49,7 @@ export type StorefrontProduct = {
   image_url?: string | null;
 };
 export type ProductImageResult = { product_id: number; image_url: string | null };
+export type ProductVariantImageResult = { variant_id: number; image_url: string | null };
 
 export type BaleLoginChallengeStatus = "pending" | "approved" | "consumed" | "expired";
 
@@ -722,6 +724,14 @@ export const api = {
   },
   removeProductImage(id: number) {
     return request<ProductImageResult>(`/products/${id}/image`, { method: "DELETE" });
+  },
+  uploadVariantImage(id: number, file: File) {
+    const body = new FormData();
+    body.set("image", file);
+    return request<ProductVariantImageResult>(`/product-variants/${id}/image`, { method: "PUT", body });
+  },
+  removeVariantImage(id: number) {
+    return request<ProductVariantImageResult>(`/product-variants/${id}/image`, { method: "DELETE" });
   },
   createProductVariant(payload: {
     product_id: number;

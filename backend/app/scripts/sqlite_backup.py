@@ -203,20 +203,23 @@ def _product_image_filenames(connection: sqlite3.Connection) -> list[str]:
     that migration, so absence of either the table or column means there are
     no image references to validate yet.
     """
-    has_products = connection.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='products'"
-    ).fetchone()
-    if not has_products:
-        return []
-    columns = {row[1] for row in connection.execute("PRAGMA table_info(products)")}
-    if "image_filename" not in columns:
-        return []
-    return [
-        row[0]
-        for row in connection.execute(
-            "SELECT image_filename FROM products WHERE image_filename IS NOT NULL"
+    filenames: set[str] = set()
+    for table in ("products", "product_variants"):
+        exists = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+        ).fetchone()
+        if not exists:
+            continue
+        columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+        if "image_filename" not in columns:
+            continue
+        filenames.update(
+            row[0]
+            for row in connection.execute(
+                f"SELECT image_filename FROM {table} WHERE image_filename IS NOT NULL"
+            )
         )
-    ]
+    return sorted(filenames)
 
 
 def _manifest_payload(bundle: Path, created_at: datetime) -> dict[str, object]:

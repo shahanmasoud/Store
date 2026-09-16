@@ -19,6 +19,7 @@ from app.schemas.catalog import (
     ProductCreate,
     ProductRead,
     ProductImageRead,
+    ProductVariantImageRead,
     ProductUpdate,
     ProductVariantCreate,
     ProductVariantRead,
@@ -138,6 +139,30 @@ def delete_product_image(
 ) -> ProductImageRead:
     product = product_media.remove_product_image(db, product_id=product_id)
     return ProductImageRead(product_id=product.id, image_url=None)
+
+
+@router.put("/product-variants/{variant_id}/image", response_model=ProductVariantImageRead)
+async def upload_variant_image(
+    variant_id: int,
+    image: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_superuser),
+) -> ProductVariantImageRead:
+    content = await image.read(get_settings().product_image_max_bytes + 1)
+    variant = product_media.replace_variant_image(
+        db, variant_id=variant_id, content=content, content_type=image.content_type
+    )
+    return ProductVariantImageRead(variant_id=variant.id, image_url=variant.image_url)
+
+
+@router.delete("/product-variants/{variant_id}/image", response_model=ProductVariantImageRead)
+def delete_variant_image(
+    variant_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_superuser),
+) -> ProductVariantImageRead:
+    variant = product_media.remove_variant_image(db, variant_id=variant_id)
+    return ProductVariantImageRead(variant_id=variant.id, image_url=None)
 
 
 @router.get("/product-variants", response_model=list[ProductVariantRead])

@@ -11,7 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models.catalog import Product
+from app.models.catalog import Product, ProductVariant
 from app.services.data_lock import data_lock_path, exclusive_data_lock
 
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
@@ -26,6 +26,13 @@ def _active_product(db: Session, product_id: int) -> Product:
     if product is None or not product.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="کالای فعال پیدا نشد.")
     return product
+
+
+def _active_variant(db: Session, variant_id: int) -> ProductVariant:
+    variant = db.get(ProductVariant, variant_id)
+    if variant is None or not variant.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="کالای فعال پیدا نشد.")
+    return variant
 
 
 def _product_directory() -> Path:
@@ -214,3 +221,52 @@ def _remove_product_image_locked(db: Session, *, product_id: int) -> Product:
         except OSError:
             pass
     return product
+
+
+def replace_variant_image(
+    db: Session, *, variant_id: int, content: bytes, content_type: str | None
+) -> ProductVariant:
+    settings = get_settings()
+    try:
+        with exclusive_data_lock(data_lock_path(settings.media_root)):
+            variant = _active_variant(db, variant_id)
+            sanitized, extension = _validated_and_sanitized_image(content, content_type)
+            directory = _product_directory()
+            filename = f"{uuid4().hex}{extension}"
+            new_path = directory / filename
+            old_path = _safe_existing_path(variant.image_filename)
+            try:
+                with new_path.open("xb") as target:
+                    target.write(sanitized)
+                variant.image_filename = filename
+                db.commit()
+                db.refresh(variant)
+            except (OSError, SQLAlchemyError) as exc:
+                db.rollback()
+                new_path.unlink(missing_ok=True)
+                raise HTTPException(status_code=500, detail="ذخیره تصویر انجام نشد؛ تصویر قبلی بدون تغییر باقی ماند.") from exc
+            if old_path is not None and old_path != new_path:
+                old_path.unlink(missing_ok=True)
+            return variant
+    except TimeoutError as exc:
+        raise HTTPException(status_code=503, detail="ذخیره تصویر موقتاً در حال پشتیبان‌گیری است؛ کمی بعد دوباره تلاش کنید.") from exc
+
+
+def remove_variant_image(db: Session, *, variant_id: int) -> ProductVariant:
+    settings = get_settings()
+    try:
+        with exclusive_data_lock(data_lock_path(settings.media_root)):
+            variant = _active_variant(db, variant_id)
+            old_path = _safe_existing_path(variant.image_filename)
+            variant.image_filename = None
+            try:
+                db.commit()
+                db.refresh(variant)
+            except SQLAlchemyError as exc:
+                db.rollback()
+                raise HTTPException(status_code=500, detail="حذف تصویر ثبت نشد.") from exc
+            if old_path is not None:
+                old_path.unlink(missing_ok=True)
+            return variant
+    except TimeoutError as exc:
+        raise HTTPException(status_code=503, detail="حذف تصویر موقتاً در حال پشتیبان‌گیری است؛ کمی بعد دوباره تلاش کنید.") from exc

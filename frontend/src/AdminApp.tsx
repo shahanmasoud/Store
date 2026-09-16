@@ -1377,6 +1377,7 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
   const [pendingDeactivateProduct, setPendingDeactivateProduct] = useState<Product | null>(null);
   const [productSearch, setProductSearch] = useState("");
   const [imageProduct, setImageProduct] = useState<Product | null>(null);
+  const [imageVariantId, setImageVariantId] = useState<number | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState("");
   const [imageBusy, setImageBusy] = useState(false);
@@ -1453,6 +1454,7 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
   function closeImageManager() {
     if (imagePreview) URL.revokeObjectURL(imagePreview);
     setImageProduct(null);
+    setImageVariantId(null);
     setImageFile(null);
     setImagePreview("");
     setImageError("");
@@ -1479,7 +1481,8 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
     setImageBusy(true);
     setImageError("");
     try {
-      await api.uploadProductImage(imageProduct.id, imageFile);
+      if (imageVariantId !== null) await api.uploadVariantImage(imageVariantId, imageFile);
+      else await api.uploadProductImage(imageProduct.id, imageFile);
       const productName = imageProduct.name;
       closeImageManager();
       await load();
@@ -1497,7 +1500,8 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
     setImageBusy(true);
     setImageError("");
     try {
-      await api.removeProductImage(imageProduct.id);
+      if (imageVariantId !== null) await api.removeVariantImage(imageVariantId);
+      else await api.removeProductImage(imageProduct.id);
       const productName = imageProduct.name;
       closeImageManager();
       await load();
@@ -2182,7 +2186,7 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
                 {variantStatus === "ready" && variants.length === 0 ? <div className="record-state"><Inventory2Rounded /><strong>هنوز کالایی ثبت نشده است</strong><span>با دکمه افزودن کالا شروع کنید.</span></div> : null}
                 {variantStatus === "ready" && variants.length > 0 && filteredVariants.length === 0 ? <div className="record-state"><SearchRounded /><strong>کالایی با این عبارت پیدا نشد</strong><Button onClick={() => { setVariantSearch(""); setVariantCategoryFilter(""); }}>پاک کردن فیلترها</Button></div> : null}
                 <span className="catalog-count">{filteredVariants.length.toLocaleString("fa-IR")} از {variants.length.toLocaleString("fa-IR")} کالا</span>
-                {variantStatus === "ready" && filteredVariants.length > 0 ? <CatalogList variants={filteredVariants} products={products} categories={categories} units={units} isSuperuser={isSuperuser} onEdit={startVariantEdit} onDeactivate={setPendingDeactivateVariant} onImage={(product) => { setImageProduct(product); setImageFile(null); setImagePreview(""); setImageError(""); }} /> : null}
+                {variantStatus === "ready" && filteredVariants.length > 0 ? <CatalogList variants={filteredVariants} products={products} categories={categories} units={units} isSuperuser={isSuperuser} onEdit={startVariantEdit} onDeactivate={setPendingDeactivateVariant} onImage={(variant) => { setImageProduct({ id: variant.id, name: variant.name, image_url: variant.image_url, is_active: variant.is_active }); setImageVariantId(variant.id); setImageFile(null); setImagePreview(""); setImageError(""); }} /> : null}
               </div>
             </div>
           </section>

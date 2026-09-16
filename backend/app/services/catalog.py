@@ -34,7 +34,7 @@ def _catalog_item_read(product: Product, variant: ProductVariant) -> CatalogItem
         retail_price_rial=variant.retail_price_rial,
         wholesale_price_rial=variant.wholesale_price_rial,
         min_wholesale_quantity=variant.min_wholesale_quantity,
-        image_url=product.image_url,
+        image_url=variant.image_url,
     )
 
 

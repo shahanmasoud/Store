@@ -113,6 +113,11 @@ class ProductImageRead(BaseModel):
     image_url: str | None
 
 
+class ProductVariantImageRead(BaseModel):
+    variant_id: int
+    image_url: str | None
+
+
 class StorefrontCatalogItem(BaseModel):
     variant_id: int
     variant_name: str
@@ -225,6 +230,7 @@ class ProductVariantRead(ProductVariantCreate):
 
     id: int
     is_active: bool
+    image_url: str | None = None
 
 
 class CatalogItemCreate(BaseModel):

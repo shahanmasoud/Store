@@ -73,11 +73,21 @@ class ProductVariant(Base, TimestampMixin, SoftDeleteMixin):
     retail_price_rial: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     wholesale_price_rial: Mapped[int | None] = mapped_column(Integer)
     min_wholesale_quantity: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
+    image_filename: Mapped[str | None] = mapped_column(String(255))
 
     product: Mapped[Product] = relationship(back_populates="variants")
     unit: Mapped[Unit] = relationship(back_populates="variants")
     prices: Mapped[list["PriceList"]] = relationship(back_populates="variant")
     price_rules: Mapped[list["PriceRule"]] = relationship(back_populates="variant")
+
+    @property
+    def image_url(self) -> str | None:
+        if not self.image_filename or re.fullmatch(r"[0-9a-f]{32}\.(jpg|png|webp)", self.image_filename) is None:
+            return None
+        from app.core.config import get_settings
+
+        prefix = get_settings().media_url_prefix.rstrip("/")
+        return f"{prefix}/products/{self.image_filename}"
 
 
 class PriceList(Base, TimestampMixin, SoftDeleteMixin):
