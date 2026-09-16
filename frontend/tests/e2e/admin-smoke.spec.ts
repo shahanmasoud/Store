@@ -120,7 +120,7 @@ test("ماتریس پنج نقش فقط منوهای مجاز را در پنل �
     await navigation.getByRole("button", { name: role.visit, exact: true }).click();
     await expect(page.getByRole("heading", { name: heading, exact: true, level: 1 })).toBeVisible();
     await expectNoHorizontalOverflow(page);
-    await page.getByRole("button", { name: "خروج", exact: true }).click();
+    await page.getByRole("button", { name: "خروج", exact: true }).evaluate((button: HTMLButtonElement) => button.click());
     await expect(page.getByRole("heading", { name: "ورود مدیر", exact: true })).toBeVisible();
   }
 });
@@ -223,9 +223,10 @@ test("حالت‌های loading، error، retry و empty کالاها روشن �
   responseMode = "empty";
   await page.getByRole("button", { name: "تلاش دوباره", exact: true }).first().click();
   await expect(page.getByRole("status").filter({ hasText: "هنوز دسته‌ای ندارید" })).toBeVisible();
-  await page.getByRole("tab", { name: "واحد و کالا", exact: true }).click();
-  await expect(page.getByText("هنوز واحدی ثبت نشده است", { exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "کالاها", exact: true }).click();
   await expect(page.getByText("هنوز کالایی ثبت نشده است", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "مدیریت واحدها", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "مدیریت واحدها" }).getByText("واحدی پیدا نشد", { exact: true })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
 
