@@ -793,22 +793,14 @@ function DashboardView({
     <Box className="material-dashboard">
       <Box component="section" className="dashboard-welcome">
         <Box>
-          <Chip icon={<AdminPanelSettingsRounded />} label="همه بخش‌ها آماده‌اند" color="primary" variant="outlined" />
-          <Typography variant="h4" component="h2">امروز چه کاری انجام می‌دهی؟</Typography>
-          <Typography color="text.secondary">کارهای پرتکرار را مستقیم شروع کن؛ وضعیت فروشگاه هم در همین صفحه خلاصه شده است.</Typography>
+          <Typography variant="h4" component="h2">مدیریت امروز</Typography>
+          <Typography color="text.secondary">فروش جدید را سریع ثبت کن یا از میانبرها وارد بخش موردنظر شو.</Typography>
         </Box>
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-          <Button variant="contained" size="large" startIcon={<PointOfSaleRounded />} onClick={onOpenSales}>فروش جدید</Button>
-          <Button variant="outlined" size="large" startIcon={<ShoppingCartCheckoutRounded />} onClick={onOpenPurchase}>خرید جدید</Button>
-        </Stack>
-      </Box>
-
-      <Box component="section" className="quick-start" aria-label="شروع سریع">
-        <Box className="quick-start-title"><HelpOutlineRounded /><Box><Typography sx={{ fontWeight: 900 }}>شروع سریع برای کاربر تازه‌کار</Typography><Typography variant="body2" color="text.secondary">برای یک چرخه کامل روزانه، این سه مرحله را به‌ترتیب انجام بده.</Typography></Box></Box>
-        <Box className="quick-start-steps">
-          <button type="button" onClick={onOpenProducts}><span>۱</span><div><strong>کالا را تعریف کن</strong><small>نام، واحد و قیمت پایه</small></div><ArrowBackRounded /></button>
-          <button type="button" onClick={onOpenPurchase}><span>۲</span><div><strong>موجودی وارد کن</strong><small>ثبت خرید از تامین‌کننده</small></div><ArrowBackRounded /></button>
-          <button type="button" onClick={onOpenSales}><span>۳</span><div><strong>فروش را ثبت کن</strong><small>فاکتور و روش پرداخت</small></div><ArrowBackRounded /></button>
+        <Box className="dashboard-primary-actions">
+          <Button variant="contained" size="large" startIcon={<PointOfSaleRounded />} onClick={onOpenSales}>ثبت فروش جدید</Button>
+          <Button variant="outlined" startIcon={<ShoppingCartCheckoutRounded />} onClick={onOpenPurchase}>ثبت خرید</Button>
+          <Button variant="outlined" startIcon={<AccountBalanceWalletRounded />} onClick={onOpenLedger}>دفتر حساب</Button>
+          <Button variant="outlined" startIcon={<Inventory2Rounded />} onClick={onOpenProducts}>کالاها</Button>
         </Box>
       </Box>
 
@@ -836,7 +828,7 @@ function DashboardView({
       </Box>
 
       <Box component="section" className="dashboard-modules">
-        <Box className="dashboard-section-heading"><Box><Typography variant="h5">بخش‌های مدیریت</Typography><Typography color="text.secondary">هر کارت تو را مستقیم به کار موردنظر می‌برد.</Typography></Box><Chip label="۸ بخش فعال" /></Box>
+        <Box className="dashboard-section-heading"><Box><Typography variant="h5">میانبرها</Typography></Box></Box>
         <Box className="material-module-grid">
           {actions.map((item) => (
             <Card key={item.key} className="material-module-card" style={{ "--module-color": item.color } as CSSProperties}>
@@ -845,7 +837,6 @@ function DashboardView({
                   <Box className="material-module-icon">{item.icon}</Box>
                   <Typography variant="h6">{item.title}</Typography>
                   <Typography variant="body2" color="text.secondary">{item.description}</Typography>
-                  <Box className="material-module-link">ورود به بخش <ArrowBackRounded /></Box>
                 </CardContent>
               </CardActionArea>
             </Card>

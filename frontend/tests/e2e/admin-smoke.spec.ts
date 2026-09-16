@@ -135,6 +135,22 @@ test("ورود مدیر و ناوبری صفحات کلیدی بدون overflow 
   await navigate(page, "چک‌ها", "مدیریت چک‌ها", mobile);
 });
 
+test("داشبورد فشرده با اقدام اصلی و میانبرهای قابل لمس", async ({ page }, testInfo) => {
+  const mobile = testInfo.project.name.startsWith("mobile");
+  await login(page);
+  await expect(page.getByRole("button", { name: "ثبت فروش جدید", exact: true })).toBeVisible();
+  await expect(page.locator(".material-module-card")).toHaveCount(8);
+  await expect(page.getByText("شروع سریع برای کاربر تازه‌کار", { exact: true })).toHaveCount(0);
+  const shortcuts = page.locator(".dashboard-primary-actions .MuiButton-root");
+  await expect(shortcuts).toHaveCount(4);
+  const minHeight = await shortcuts.evaluateAll((items) => Math.min(...items.map((item) => item.getBoundingClientRect().height)));
+  expect(minHeight).toBeGreaterThanOrEqual(44);
+  const completeModules = await page.locator(".material-module-card").evaluateAll((items) => items.filter((item) => item.getBoundingClientRect().bottom <= innerHeight).length);
+  expect(completeModules).toBeGreaterThanOrEqual(mobile ? 0 : 8);
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath(`dashboard-${mobile ? "mobile" : "desktop"}.png`), animations: "disabled" });
+});
+
 test("landmark، صفحه‌کلید، بازگشت focus و reduced-motion دسترس‌پذیر هستند", async ({ page }, testInfo) => {
   const mobile = testInfo.project.name.startsWith("mobile");
   await page.emulateMedia({ reducedMotion: "reduce" });
