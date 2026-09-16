@@ -139,7 +139,7 @@ def due_reminders(
 def create_cheque(
     payload: ChequeCreate,
     db: Session = Depends(get_db),
-    admin=Depends(require_permission("can_cheques_reports")),
+    admin=Depends(require_superuser),
 ) -> ChequeRead:
     return ledger_service.create_cheque(db, payload, admin)
 
@@ -149,7 +149,7 @@ def update_cheque(
     cheque_id: int,
     payload: ChequeUpdate,
     db: Session = Depends(get_db),
-    admin=Depends(require_permission("can_cheques_reports")),
+    admin=Depends(require_superuser),
 ) -> ChequeRead:
     return ledger_service.update_cheque(db, cheque_id, payload, admin)
 

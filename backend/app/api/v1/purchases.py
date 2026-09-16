@@ -55,7 +55,7 @@ def update_inventory(
 def create_inventory_adjustment(
     payload: InventoryAdjustmentCreate,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_permission("can_catalog_inventory")),
+    actor: User = Depends(require_superuser),
 ) -> InventoryTransactionRead:
     return purchase_service.create_inventory_adjustment(db, payload, actor=actor)
 

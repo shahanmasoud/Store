@@ -226,9 +226,7 @@ def test_catalog_inventory_operator_matrix_and_adjustment_actor(client: TestClie
             "local_time": "09:15",
         },
     )
-    assert adjustment.status_code == 201, adjustment.text
-    assert adjustment.json()["actor_user_id"] == operator["id"]
-    assert adjustment.json()["actor_username"] == "stock"
+    assert adjustment.status_code == 403, adjustment.text
     assert client.get("/api/v1/inventory", headers=headers).status_code == 200
     assert client.get("/api/v1/inventory-transactions", headers=headers).status_code == 200
     assert client.get("/api/v1/purchase-invoices", headers=headers).status_code == 200
@@ -499,9 +497,23 @@ def test_cheque_report_operator_is_audited_and_cannot_cancel(client: TestClient,
     )
     headers = {"Authorization": f"Bearer {login(client, 'cheques', 'cheques-pass-123')}"}
     assert client.get("/api/v1/cheques/form-options", headers=headers).status_code == 200
-    created = client.post(
+    denied = client.post(
         "/api/v1/cheques",
         headers=headers,
+        json={
+            "cheque_type": "received",
+            "bank_name": "ملی",
+            "cheque_number": "۱۲۳۴۵",
+            "amount_rial": 500000,
+            "issue_jalali_date": "1405/06/20",
+            "due_jalali_date": "1405/06/25",
+            "local_time": "10:00",
+        },
+    )
+    assert denied.status_code == 403
+    created = client.post(
+        "/api/v1/cheques",
+        headers=admin_headers(client),
         json={
             "cheque_type": "received",
             "bank_name": "ملی",
@@ -530,7 +542,7 @@ def test_cheque_report_operator_is_audited_and_cannot_cancel(client: TestClient,
     assert db_session.get(Cheque, cheque_id).status == "pending"
     audits = list(db_session.scalars(select(ChequeAudit).where(ChequeAudit.cheque_id == cheque_id)))
     assert len(audits) == 1
-    assert audits[0].actor_user_id == operator["id"]
+    assert audits[0].actor_user_id != operator["id"]
 
     old_token = login(client, "cheques", "cheques-pass-123")
     response = client.patch(

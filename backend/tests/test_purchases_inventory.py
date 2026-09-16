@@ -279,6 +279,26 @@ def test_superuser_can_record_initial_and_weighted_increase(
     assert inventory.weighted_average_cost_rial == 1000000
 
 
+def test_superuser_can_set_exact_stock_and_purchase_cost_without_invoice(
+    client: TestClient,
+    db_session: Session,
+    auth_headers: dict[str, str],
+) -> None:
+    client.post("/api/v1/inventory/adjustments", json=adjustment_payload(), headers=auth_headers)
+    response = client.post(
+        "/api/v1/inventory/adjustments",
+        json=adjustment_payload("set", "7.5", 1_250_000),
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["transaction_type"] == "adjustment_set"
+    assert Decimal(response.json()["quantity_delta"]) == Decimal("-2.500")
+    inventory = db_session.query(InventoryItem).filter_by(variant_id=1).one()
+    assert Decimal(inventory.quantity_on_hand) == Decimal("7.500")
+    assert inventory.weighted_average_cost_rial == 1_250_000
+
+
 def test_decrease_preserves_average_and_rejects_insufficient_stock_atomically(
     client: TestClient,
     db_session: Session,

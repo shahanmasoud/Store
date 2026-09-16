@@ -285,7 +285,7 @@ export type InventoryTransaction = {
   occurred_at_utc?: string;
 };
 
-export type InventoryAdjustmentType = "initial" | "increase" | "decrease";
+export type InventoryAdjustmentType = "initial" | "increase" | "decrease" | "set";
 
 export type InventoryAdjustmentCreate = {
   variant_id: number;

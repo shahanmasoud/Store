@@ -338,7 +338,11 @@ def create_inventory_adjustment(
         db.flush()
 
     old_cost = inventory.weighted_average_cost_rial
-    if payload.adjustment_type in {"increase", "initial"}:
+    if payload.adjustment_type == "set":
+        next_quantity = payload.quantity
+        quantity_delta = next_quantity - current_quantity
+        inventory.weighted_average_cost_rial = payload.unit_cost_rial or 0
+    elif payload.adjustment_type in {"increase", "initial"}:
         next_quantity = current_quantity + payload.quantity
         inbound_cost = Decimal(payload.unit_cost_rial or 0)
         inventory.weighted_average_cost_rial = _round_rial(

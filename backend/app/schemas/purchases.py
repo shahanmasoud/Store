@@ -7,7 +7,7 @@ from app.core.time import validate_jalali_date, validate_local_time
 from app.core.numbers import normalize_identifier, normalize_localized_decimal, normalize_localized_integer
 
 PurchaseStatus = Literal["active", "canceled"]
-InventoryAdjustmentType = Literal["increase", "decrease", "initial"]
+InventoryAdjustmentType = Literal["increase", "decrease", "initial", "set"]
 
 
 def money_from_quantity(quantity: Decimal, unit_cost_rial: int) -> int:
@@ -33,7 +33,7 @@ class SupplierRead(SupplierCreate):
 
 class PurchaseInvoiceItemCreate(BaseModel):
     variant_id: int
-    quantity: Decimal = Field(gt=0)
+    quantity: Decimal = Field(ge=0)
     unit_cost_rial: int = Field(ge=0)
     extra_cost_rial: int = Field(default=0, ge=0)
 
@@ -172,8 +172,10 @@ class InventoryAdjustmentCreate(BaseModel):
 
     @model_validator(mode="after")
     def require_inbound_cost(self) -> "InventoryAdjustmentCreate":
-        if self.adjustment_type in {"increase", "initial"} and self.unit_cost_rial is None:
-            raise ValueError("قیمت خرید برای ورود یا موجودی اولیه الزامی است.")
+        if self.adjustment_type != "set" and self.quantity <= 0:
+            raise ValueError("مقدار اصلاح باید بزرگ‌تر از صفر باشد.")
+        if self.adjustment_type in {"increase", "initial", "set"} and self.unit_cost_rial is None:
+            raise ValueError("قیمت خرید برای ثبت موجودی الزامی است.")
         return self
 
 
