@@ -451,6 +451,7 @@ test("چرخه کامل کالا، تصویر، خرید، انبار و نما�
   await expect(page.getByText("واحد جدید ثبت شد.", { exact: true })).toBeVisible();
   await unitDialog.getByRole("button", { name: "بستن", exact: true }).click();
 
+  await page.getByRole("button", { name: "افزودن کالا", exact: true }).click();
   const itemForm = page.locator(".variant-form");
   await itemForm.getByRole("textbox", { name: "نام کالا" }).fill(variantName);
   await chooseOption(page, "دسته‌بندی", categoryName, itemForm);
@@ -464,7 +465,8 @@ test("چرخه کامل کالا، تصویر، خرید، انبار و نما�
 
   const productCard = page.locator(".catalog-product-card").filter({ hasText: variantName });
   await expect(productCard).toContainText(categoryName);
-  await productCard.getByRole("button", { name: "افزودن عکس", exact: true }).click();
+  await productCard.getByRole("button", { name: "عملیات کالا", exact: true }).click();
+  await page.getByRole("menuitem", { name: "افزودن عکس", exact: true }).click();
   const imageDialog = page.getByRole("dialog", { name: `تصویر «${variantName}»` });
   await expect(imageDialog.getByRole("button", { name: "ذخیره تصویر", exact: true })).toBeDisabled();
   await imageDialog.locator('input[type="file"]').setInputFiles({
@@ -480,7 +482,7 @@ test("چرخه کامل کالا، تصویر، خرید، انبار و نما�
 
   await navigate(page, "خرید", "ثبت خرید", mobile);
   const purchaseSubmit = page.getByRole("button", { name: "ثبت فاکتور خرید", exact: true });
-  await expect(purchaseSubmit).toBeDisabled();
+  await expect(page.getByRole("button", { name: "ادامه و ثبت خرید", exact: true })).toBeDisabled();
   await page.getByRole("textbox", { name: "جستجوی کالا" }).fill(variantName);
   await page.getByRole("button", { name: `انتخاب ${variantName}`, exact: true }).click();
   await expect(page.getByRole("dialog", { name: `افزودن به خرید · ${variantName}` })).toBeVisible();
@@ -490,6 +492,7 @@ test("چرخه کامل کالا، تصویر، خرید، انبار و نما�
   await expect(unitCost).toHaveValue("۱۲۰٬۰۰۰");
   await page.getByRole("button", { name: "افزودن به فاکتور", exact: true }).click();
   await expect(page.locator(".purchase-invoice-item").filter({ hasText: variantName })).toContainText("۳۶۰٬۰۰۰ تومان");
+  await page.getByRole("button", { name: "ادامه و ثبت خرید", exact: true }).click();
   await page.getByRole("textbox", { name: "نام تأمین‌کننده" }).fill(`تأمین‌کننده E2E ${suffix}`);
   await page.getByRole("textbox", { name: "پرداخت‌شده (تومان)" }).fill("۳۶۰۰۰۰");
   await purchaseSubmit.click();
@@ -523,4 +526,128 @@ test("چرخه کامل کالا، تصویر، خرید، انبار و نما�
   await expect(storefrontImage).toHaveJSProperty("complete", true);
   await expectNoHorizontalOverflow(page);
   await expectNoElementOverflow(storefrontCard);
+});
+
+test("کاتالوگ متراکم: تراکم، فیلتر، ویرایش و بستن فرم", async ({ page, request }, testInfo) => {
+  const mobile = testInfo.project.name.startsWith("mobile");
+  await login(page);
+  const token = await page.evaluate(() => localStorage.getItem("store_auth_token"));
+  const headers = { Authorization: `Bearer ${token}` };
+  const base = "http://127.0.0.1:8013/api/v1";
+  const units = await (await request.get(`${base}/units`, { headers })).json();
+  const categories = await (await request.get(`${base}/categories`, { headers })).json();
+  const initialItems = await (await request.get(`${base}/product-variants`, { headers })).json();
+  const names = ["عدس سبز", "لوبیا چیتی", "نخود کرمانشاه", "لوبیا قرمز", "ماش", "لپه", "برنج طارم", "عدس ریز", "لوبیا سفید", "نخود درشت", "گندم", "جو پوست‌کنده", "بلغور", "دال عدس", "لوبیا کشاورزی", "نخودچی", "برنج هاشمی", "عدس کانادایی"];
+  for (const [index, name] of names.entries()) {
+    const response = await request.post(`${base}/catalog-items`, { headers, data: { name: `${name} ممتاز`, unit_id: units[0].id, category_id: categories[0].id, sku: `QA-${index}`, retail_price_rial: 1250000 + index * 100000, wholesale_price_rial: 1100000 + index * 100000 } });
+    expect(response.ok()).toBeTruthy();
+  }
+  await navigate(page, "کالاها", "کالاها و قیمت‌ها", mobile);
+  await page.getByRole("tab", { name: "کالاها", exact: true }).click();
+  const rows = page.locator(".catalog-product-card");
+  await expect(rows).toHaveCount(names.length + initialItems.length);
+  await expect(page.locator(".variant-form")).toHaveCount(0);
+  await expectNoElementOverflow(page.locator(".compact-catalog"));
+  const visibleRows = await rows.evaluateAll((items) => items.filter((item) => { const box = item.getBoundingClientRect(); return box.top >= 0 && box.bottom <= window.innerHeight; }).length);
+  expect(visibleRows).toBeGreaterThanOrEqual(mobile ? 3 : 10);
+  await page.screenshot({ animations: "disabled", path: `test-results/catalog-${testInfo.project.name}.png` });
+  const search = page.getByRole("textbox", { name: "جست‌وجوی کالا یا کد" });
+  await search.fill("QA-17");
+  await expect(rows).toHaveCount(1);
+  await rows.getByRole("button", { name: "ویرایش", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "ویرایش کالا", exact: true });
+  await expect(dialog.getByRole("textbox", { name: "نام کالا" })).toHaveValue("عدس کانادایی ممتاز");
+  if (mobile) await expect(dialog).toHaveClass(/MuiDialog-paperFullScreen/);
+  await expectNoElementOverflow(dialog);
+  const labelsClear = await dialog.locator(".MuiTextField-root").evaluateAll((fields) => fields.every((field) => { const label = field.querySelector("label")?.getBoundingClientRect(); const input = field.querySelector(".MuiInputBase-root")?.getBoundingClientRect(); return !label || !input || label.bottom <= input.top; }));
+  expect(labelsClear).toBeTruthy();
+  await page.screenshot({ animations: "disabled", path: `test-results/catalog-editor-${testInfo.project.name}.png` });
+  await dialog.getByRole("textbox", { name: "نام کالا" }).fill("عدس کانادایی ویرایش‌شده");
+  await dialog.getByRole("button", { name: "ذخیره تغییرات" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(rows).toContainText("عدس کانادایی ویرایش‌شده");
+  await page.getByRole("button", { name: "افزودن کالا", exact: true }).click();
+  const addDialog = page.getByRole("dialog", { name: "افزودن کالا", exact: true });
+  await expect(addDialog.getByRole("textbox", { name: "نام کالا" })).toHaveValue("");
+  await expect(addDialog.getByRole("button", { name: "ثبت کالا", exact: true })).toBeDisabled();
+  await addDialog.getByRole("button", { name: "انصراف", exact: true }).click();
+  await expect(addDialog).toBeHidden();
+  await search.fill("پیدا نمی‌شود");
+  await page.getByRole("button", { name: "پاک کردن فیلترها" }).click();
+  await expect(rows).toHaveCount(names.length + initialItems.length);
+  await expectNoHorizontalOverflow(page);
+});
+
+
+test("خرید و فروش مرحله‌ای: حفظ پیش‌نویس، محاسبات و ثبت موجودی", async ({ page, request }, testInfo) => {
+  test.setTimeout(75_000);
+  const mobile = testInfo.project.name.startsWith("mobile");
+  await login(page);
+  const token = await page.evaluate(() => localStorage.getItem("store_auth_token"));
+  const headers = { Authorization: `Bearer ${token}` };
+  const base = "http://127.0.0.1:8013/api/v1";
+  const variants = await (await request.get(`${base}/product-variants`, { headers })).json();
+  const variant = variants.find((item: { sku: string }) => item.sku === "DEMO-BEAN-PINTO");
+  const getStock = async () => (await (await request.get(`${base}/inventory`, { headers })).json()).find((item: { variant_id: number }) => item.variant_id === variant.id).quantity_on_hand;
+  const stockBefore = Number(await getStock());
+  await navigate(page, "خرید", "ثبت خرید", mobile);
+  await expect(page.getByRole("textbox", { name: "نام تأمین‌کننده" })).toHaveCount(0);
+  await page.getByTestId(`product-card-${variant.id}`).click();
+  let itemDialog = page.getByRole("dialog");
+  await itemDialog.getByRole("textbox", { name: "مقدار", exact: true }).fill("۲٫۵");
+  await itemDialog.getByRole("textbox", { name: "قیمت واحد (تومان)" }).fill("۱۰۰۰۰۰");
+  await itemDialog.getByRole("textbox", { name: "هزینه جانبی ردیف (تومان)" }).fill("۵۰۰۰");
+  await itemDialog.getByRole("button", { name: "افزودن به فاکتور", exact: true }).click();
+  await expect(page.locator(".invoice-cart")).toContainText("۲۵۵٬۰۰۰ تومان");
+  await page.getByRole("button", { name: "ادامه و ثبت خرید", exact: true }).click();
+  let checkout = page.getByRole("dialog", { name: "تکمیل خرید", exact: true });
+  if (mobile) await expect(checkout).toHaveClass(/MuiDialog-paperFullScreen/);
+  await checkout.getByRole("textbox", { name: "نام تأمین‌کننده" }).fill("تأمین‌کننده تست مرحله‌ای");
+  await checkout.getByRole("textbox", { name: "تخفیف فاکتور (تومان)" }).fill("۱۰۰۰۰");
+  await checkout.getByRole("textbox", { name: "هزینه جانبی فاکتور (تومان)" }).fill("۲۰۰۰۰");
+  await checkout.getByRole("textbox", { name: "پرداخت‌شده (تومان)" }).fill("۶۵۰۰۰");
+  await expect(checkout.locator(".purchase-summary")).toContainText("۲۶۵٬۰۰۰ تومان");
+  await expect(checkout.locator(".purchase-summary")).toContainText("۲۰۰٬۰۰۰ تومان");
+  await checkout.getByRole("button", { name: "بازگشت به اقلام" }).click();
+  await expect(page.locator(".invoice-cart-footer")).toContainText("۲۶۵٬۰۰۰ تومان");
+  await page.getByRole("button", { name: "ادامه و ثبت خرید", exact: true }).click();
+  await expect(checkout.getByRole("textbox", { name: "نام تأمین‌کننده" })).toHaveValue("تأمین‌کننده تست مرحله‌ای");
+  await expectNoElementOverflow(checkout);
+  const purchaseResponse = page.waitForResponse(r => r.url().endsWith("/purchase-invoices") && r.request().method() === "POST");
+  await checkout.getByRole("button", { name: "ثبت فاکتور خرید", exact: true }).click();
+  const purchase = await (await purchaseResponse).json();
+  expect(purchase.total_rial).toBe(2650000);
+  await expect(checkout).toBeHidden();
+  expect(Number(await getStock())).toBe(stockBefore + 2.5);
+
+  await navigate(page, "فروش", "ثبت فروش", mobile);
+  await page.getByTestId(`product-card-${variant.id}`).click();
+  itemDialog = page.getByRole("dialog");
+  await itemDialog.getByRole("textbox", { name: "مقدار", exact: true }).fill("۱٫۵");
+  await itemDialog.getByRole("textbox", { name: "تخفیف ردیف (تومان)" }).fill("۷۵۰۰");
+  await itemDialog.getByRole("button", { name: "افزودن به فاکتور", exact: true }).click();
+  await expect(page.locator(".invoice-cart")).toContainText("۲۷۰٬۰۰۰ تومان");
+  await page.getByRole("button", { name: "ادامه و پرداخت", exact: true }).click();
+  checkout = page.getByRole("dialog", { name: "تکمیل فروش", exact: true });
+  await checkout.getByRole("textbox", { name: "تخفیف فاکتور (تومان)" }).fill("۱۰۰۰۰");
+  await checkout.getByRole("textbox", { name: "مبلغ (تومان)", exact: true }).fill("۱۰۰۰۰۰");
+  await checkout.getByRole("button", { name: "ثبت نهایی فروش", exact: true }).click();
+  await expect(checkout.getByText("برای فروش نسیه یا دارای مانده، انتخاب مشتری الزامی است.")).toBeVisible();
+  await checkout.getByRole("textbox", { name: "مبلغ (تومان)", exact: true }).fill("۲۶۰۰۰۰");
+  await checkout.getByRole("button", { name: "بازگشت به اقلام" }).click();
+  await expect(page.locator(".invoice-cart-footer")).toContainText("۲۶۰٬۰۰۰ تومان");
+  await page.getByRole("button", { name: "ادامه و پرداخت", exact: true }).click();
+  await expect(checkout.getByRole("textbox", { name: "مبلغ (تومان)", exact: true })).toHaveValue("۲۶۰٬۰۰۰");
+  await expectNoElementOverflow(checkout);
+  const labelsClear = await checkout.locator(".MuiTextField-root").evaluateAll(fields => fields.every(field => { const label = field.querySelector("label")?.getBoundingClientRect(); const input = field.querySelector(".MuiInputBase-root")?.getBoundingClientRect(); return !label || !input || label.bottom <= input.top; }));
+  expect(labelsClear).toBeTruthy();
+  const saleResponse = page.waitForResponse(r => r.url().endsWith("/sales") && r.request().method() === "POST");
+  await checkout.getByRole("button", { name: "ثبت نهایی فروش", exact: true }).click();
+  const sale = await (await saleResponse).json();
+  expect(sale.total_rial).toBe(2600000);
+  expect(sale.payments[0].amount_rial).toBe(2600000);
+  await expect(checkout).toBeHidden();
+  await expect(page.locator(".invoice-cart .invoice-item")).toHaveCount(0);
+  expect(Number(await getStock())).toBe(stockBefore + 1);
+  await expectNoHorizontalOverflow(page);
 });

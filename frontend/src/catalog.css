@@ -1,0 +1,79 @@
+/* Scoped to the catalog: labels sit above inputs so RTL notches cannot cross text. */
+.compact-catalog .MuiInputLabel-root,
+.catalog-editor .MuiInputLabel-root {
+  position: static;
+  transform: none;
+  align-self: flex-start;
+  max-width: 100%;
+  margin-bottom: 5px;
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+.compact-catalog .MuiOutlinedInput-notchedOutline legend,
+.catalog-editor .MuiOutlinedInput-notchedOutline legend { display: none; }
+.compact-catalog .MuiOutlinedInput-notchedOutline,
+.catalog-editor .MuiOutlinedInput-notchedOutline { top: 0; }
+.compact-catalog.variant-manager { padding: 16px; gap: 12px; border-radius: 12px; box-shadow: none; }
+.compact-catalog .record-manager-heading { margin: 0; }
+.compact-catalog .record-manager-icon { display: none; }
+.compact-catalog .variant-manager-grid { grid-template-columns: minmax(0, 1fr); }
+.compact-catalog .variant-list-panel { gap: 8px; min-width: 0; }
+.compact-catalog .variant-list-toolbar { align-items: flex-end; gap: 12px; }
+.catalog-count { font-size: 12px; color: #60706b; }
+.compact-catalog .MuiButton-startIcon,
+.catalog-editor .MuiButton-startIcon { margin: 0 0 0 8px; }
+.catalog-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+.catalog-table th { text-align: start; background: #f3f7f5; color: #60706b; font-size: 12px; font-weight: 500; padding: 10px 8px; }
+.catalog-table th:first-child { width: 30%; }
+.catalog-table th:nth-child(3) { width: 9%; }
+.catalog-table th:last-child { width: 96px; }
+.catalog-table td { padding: 4px 8px; border-bottom: 1px solid #e6ede9; overflow-wrap: anywhere; }
+.catalog-table .catalog-product-card { transition: none; }
+.catalog-table .catalog-product-card:hover,
+.catalog-table .catalog-product-card:focus-within { background: #f6faf8; box-shadow: none; transform: none; }
+.catalog-identity { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.catalog-identity > div { min-width: 0; }
+.catalog-identity strong { font-weight: 600; }
+.catalog-identity small { display: block; color: #60706b; font-size: 11px; }
+.catalog-thumbnail { width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; background: #edf7f2; color: #699b86; border-radius: 6px; overflow: hidden; }
+.catalog-thumbnail img { width: 100%; height: 100%; object-fit: cover; }
+.catalog-thumbnail svg { font-size: 20px; }
+.catalog-retail { color: #087f5b; font-weight: 600; }
+.catalog-actions { white-space: nowrap; }
+.catalog-actions .MuiIconButton-root { width: 44px; height: 44px; }
+.catalog-mobile-label { display: none; }
+.catalog-editor .variant-form { padding: 0; border: 0; border-radius: 0; background: transparent; gap: 16px; }
+.catalog-editor .MuiDialogActions-root { padding: 12px 24px; border-top: 1px solid #e6ede9; }
+@media (max-width: 700px) {
+  .compact-catalog.variant-manager { padding: 12px; }
+  .compact-catalog .record-manager-heading { flex-wrap: wrap; gap: 8px; }
+  .compact-catalog .record-manager-heading > .MuiStack-root { width: 100%; justify-content: space-between; }
+  .compact-catalog .variant-list-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .compact-catalog .variant-list-toolbar .record-search { grid-column: 1 / -1; }
+  .catalog-table, .catalog-table tbody { display: block; }
+  .catalog-table thead { display: none; }
+  .catalog-table .catalog-product-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 8px 0; gap: 3px 4px; border-bottom: 1px solid #e6ede9; border-radius: 0; }
+  .catalog-table td { border: 0; padding: 0; }
+  .catalog-name { grid-column: 1; grid-row: 1; }
+  .catalog-actions { grid-column: 2; grid-row: 1; align-self: start; text-align: end; }
+  .catalog-category { grid-column: 1; grid-row: 2; color: #60706b; font-size: 11px; }
+  .catalog-unit { grid-column: 2; grid-row: 2; text-align: end; color: #60706b; font-size: 11px; }
+  .catalog-retail { grid-column: 1; grid-row: 3; }
+  .catalog-wholesale { grid-column: 2; grid-row: 3; text-align: end; font-size: 11px; color: #60706b; }
+  .catalog-mobile-label { display: inline; font-weight: 400; color: #60706b; }
+  .catalog-identity { min-height: 36px; gap: 6px; }
+}
+@media (max-width: 599px) {
+  .app-main:has(.compact-catalog) > .topbar { padding: 10px 14px; gap: 8px; }
+  .app-main:has(.compact-catalog) > .topbar h1 { font-size: 18px; margin: 0; }
+  .app-main:has(.compact-catalog) > .topbar .eyebrow,
+  .app-main:has(.compact-catalog) > .topbar .topbar-user { display: none; }
+  .app-main:has(.compact-catalog) .topbar-actions { display: flex; flex-wrap: nowrap; gap: 6px; width: 100%; }
+  .app-main:has(.compact-catalog) .topbar-actions > * { flex: 0 1 auto; width: auto; min-width: 44px; min-height: 44px; padding: 6px; font-size: 11px; white-space: nowrap; }
+  .app-main:has(.compact-catalog) .topbar-actions .MuiButton-startIcon { margin: 0 0 0 4px; }
+  .app-main:has(.compact-catalog) .topbar-actions .MuiButton-startIcon svg { font-size: 16px; }
+  .app-main:has(.compact-catalog) .catalog-tabs { margin-block: 0 10px; padding: 2px; position: static; }
+  .app-main:has(.compact-catalog) .catalog-tabs .MuiTab-root { min-height: 44px; flex-direction: row; gap: 6px; }
+  .catalog-editor .variant-form { grid-template-columns: minmax(0, 1fr); }
+  .catalog-editor .MuiDialogContent-root { padding: 16px; }
+}

@@ -26,14 +26,14 @@ export function ProductCardPicker({ variants, catalog, value, onSelect, quantiti
   const selected = variants.find((variant) => String(variant.id) === value);
   return <section className="product-picker" aria-label={mode === "sale" ? "انتخاب کالای فروش" : "انتخاب کالای خرید"}>
     <div className="product-picker-filters">
-      <TextField label="جستجوی کالا" placeholder="نام یا کد کالا" value={search} onChange={(event) => setSearch(event.target.value)} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} />
-      <TextField select label="دسته‌بندی کالا" value={category} onChange={(event) => setCategory(event.target.value)}>
+      <TextField size="small" label="جستجوی کالا" placeholder="نام یا کد کالا" value={search} onChange={(event) => setSearch(event.target.value)} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} />
+      <TextField select size="small" slotProps={{ select: { displayEmpty: true } }} label="دسته‌بندی کالا" value={category} onChange={(event) => setCategory(event.target.value)}>
         <MenuItem value="">همه دسته‌ها</MenuItem>
         {catalog.categories.map((item) => <MenuItem key={item.id} value={String(item.id)}>{item.name}</MenuItem>)}
         <MenuItem value="none">بدون دسته‌بندی</MenuItem>
       </TextField>
     </div>
-    <div className="product-picker-count" role="status">{toPersianDigits(filtered.length)} کالا{selected ? ` · انتخاب فعلی: ${selected.name}` : " · یک کارت را انتخاب کنید"}</div>
+    <div className="product-picker-count" role="status">{toPersianDigits(filtered.length)} کالا{selected ? ` · انتخاب فعلی: ${selected.name}` : ""}</div>
     <div className="product-picker-grid">
       {filtered.map((variant) => {
         const product = products.get(variant.product_id);
@@ -43,15 +43,14 @@ export function ProductCardPicker({ variants, catalog, value, onSelect, quantiti
         const stock = available?.[variant.id];
         return <button type="button" className={`product-picker-card${isSelected ? " is-selected" : ""}`} key={variant.id} aria-label={`انتخاب ${variant.name}`} aria-pressed={isSelected} data-testid={`product-card-${variant.id}`} disabled={disabled} onClick={() => onSelect(String(variant.id))}>
           <span className="product-picker-image">{image && !failedImages.has(image) ? <img src={image} alt="" loading="lazy" onError={() => setFailedImages((current) => new Set(current).add(image))} /> : <Inventory2Rounded />}{isSelected ? <CheckCircleRounded className="product-picker-check" /> : null}</span>
-          <strong>{toPersianDigits(variant.name)}</strong>
-          <span className="product-picker-unit">{units.get(variant.unit_id) ?? "واحد"}{variant.sku ? ` · ${toPersianDigits(variant.sku)}` : ""}</span>
+          <span className="product-picker-identity"><strong>{toPersianDigits(variant.name)}</strong>
+          <span className="product-picker-unit">{units.get(variant.unit_id) ?? "واحد"}{variant.sku ? ` · ${toPersianDigits(variant.sku)}` : ""}</span></span>
           {mode === "sale" ? <span className="product-picker-price">{formatRial(variant.retail_price_rial)}</span> : null}
-          {stock !== undefined ? <span className={stock <= 0 ? "product-picker-stock is-empty" : "product-picker-stock"}>{stock <= 0 ? "ناموجود" : `موجودی قابل فروش: ${stock.toLocaleString("fa-IR")}`}</span> : null}
-          <span className="product-picker-added">{quantity > 0 ? `${quantity.toLocaleString("fa-IR")} در فاکتور` : isSelected ? "انتخاب شده" : "انتخاب کالا"}</span>
+          {stock !== undefined ? <span className={stock <= 0 ? "product-picker-stock is-empty" : "product-picker-stock"}>{stock <= 0 ? "ناموجود" : `موجودی: ${stock.toLocaleString("fa-IR")}`}</span> : null}
+          {quantity > 0 ? <span className="product-picker-added">{quantity.toLocaleString("fa-IR")} در فاکتور</span> : null}
         </button>;
       })}
     </div>
     {filtered.length === 0 ? <div className="record-state"><SearchRounded /><strong>کالایی پیدا نشد</strong><Button type="button" onClick={() => { setSearch(""); setCategory(""); }}>پاک کردن فیلترها</Button></div> : null}
-    {selected ? <div className="product-picker-selection"><CheckCircleRounded /><strong>{toPersianDigits(selected.name)}</strong><span>مقدار و قیمت را بررسی کنید</span></div> : null}
   </section>;
 }
