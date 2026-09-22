@@ -217,11 +217,11 @@ def test_superuser_can_upload_replace_and_remove_sanitized_image(
     db_session: Session,
     tmp_path,
 ) -> None:
-    product, _ = _catalog_records(db_session)
+    _, variant = _catalog_records(db_session)
     headers = _login(client, "admin", "admin123")
 
     first = client.put(
-        f"/api/v1/products/{product.id}/image",
+        f"/api/v1/product-variants/{variant.id}/image",
         files={"image": ("../unsafe.png", _image_bytes("PNG"), "image/png")},
         headers=headers,
     )
@@ -236,7 +236,7 @@ def test_superuser_can_upload_replace_and_remove_sanitized_image(
         assert saved.format == "PNG"
 
     second = client.put(
-        f"/api/v1/products/{product.id}/image",
+        f"/api/v1/product-variants/{variant.id}/image",
         files={"image": ("photo.jpg", _image_bytes("JPEG"), "image/jpeg")},
         headers=headers,
     )
@@ -248,9 +248,9 @@ def test_superuser_can_upload_replace_and_remove_sanitized_image(
 
     listing = client.get("/api/v1/storefront/catalog").json()
     assert listing[0]["image_url"] == second.json()["image_url"]
-    removed = client.delete(f"/api/v1/products/{product.id}/image", headers=headers)
+    removed = client.delete(f"/api/v1/product-variants/{variant.id}/image", headers=headers)
     assert removed.status_code == 200
-    assert removed.json() == {"product_id": product.id, "image_url": None}
+    assert removed.json() == {"variant_id": variant.id, "image_url": None}
     assert not (tmp_path / "products" / second_name).exists()
 
 
