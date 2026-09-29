@@ -15,7 +15,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     MEDIA_ROOT=/data/media
 
 WORKDIR /app
-COPY backend/requirements.txt ./backend/requirements.txt
+COPY backend/requirements.txt backend/constraints.txt ./backend/
 RUN pip install --no-cache-dir -r backend/requirements.txt
 
 COPY backend/ ./backend/
