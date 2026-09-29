@@ -1,0 +1,16 @@
+.git
+.gitignore
+.venv
+**/.venv
+**/__pycache__
+**/.pytest_cache
+frontend/node_modules
+frontend/dist
+backend/store.db
+*.db
+*.sqlite
+*.sqlite3
+output
+tmp
+hobubat-manager-new
+*.docx
