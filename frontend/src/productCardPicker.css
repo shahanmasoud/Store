@@ -17,6 +17,12 @@
 .product-picker-price { font-weight: 700; font-size: 0.85rem; }
 .product-picker-added { margin-top: auto; border-radius: 8px; padding: 7px; text-align: center; font-size: 0.75rem; background: #eaf4ee; color: #25613f; }
 .product-picker-selection { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: #245f40; font-size: 0.8rem; }
+.product-picker-level-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border-radius: 10px; background: #f0f7f3; }
+.product-picker-level-heading > div { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.product-picker-level-heading span { color: #526b60; font-size: .75rem; }
+.product-picker-level-heading strong { overflow-wrap: anywhere; }
+.product-picker-product-card { border-color: #d3e5da; }
+.product-picker-next { margin-top: auto; color: #187541; font-size: .75rem; font-weight: 700; }
 .card-item-editor { display: grid; gap: 20px; padding-top: 12px; }
 .invoice-quantity-control { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 4px; }
 .invoice-quantity-control .MuiIconButton-root { min-height: 44px; border: 1px solid #dce7e0; border-radius: 12px; }
@@ -33,6 +39,8 @@
   .product-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; max-height: 510px; }
   .product-picker-card { padding: 8px; }
   .product-picker-image { height: 88px; }
+  .product-picker-level-heading { align-items: stretch; flex-direction: column-reverse; }
+  .product-picker-level-heading .MuiButton-root { width: 100%; }
   .card-item-editor .compact-fields, .card-item-editor .purchase-item-fields { grid-template-columns: minmax(0, 1fr); }
   .card-item-dialog-actions { display: grid !important; grid-template-columns: 1fr 2fr; gap: 10px; }
 }

@@ -400,11 +400,13 @@ test("کارت‌های فروش: جستجو، مقدار فارسی، کنتر�
   await page.getByRole("button", { name: "پاک کردن فیلترها" }).click();
   await chooseOption(page, "دسته‌بندی کالا", "حبوبات");
   await search.fill("لوبیا");
-  const card = page.getByRole("button", { name: "انتخاب لوبیا چیتی ممتاز", exact: true });
-  await expect(card).toBeVisible();
-  await expect(card).toContainText("۱۸۵٬۰۰۰");
+  const productCard = page.getByRole("button", { name: "انتخاب کالای لوبیا چیتی", exact: true });
+  await expect(productCard).toBeVisible();
   await expectNoHorizontalOverflow(page);
   await page.screenshot({ path: testInfo.outputPath("sale-product-cards.png"), fullPage: true });
+  await productCard.click();
+  const card = page.getByRole("checkbox", { name: "انتخاب گونه لوبیا چیتی ممتاز", exact: true });
+  await expect(card).toContainText("۱۸۵٬۰۰۰");
   await card.click();
   const dialog = page.getByRole("dialog", { name: "افزودن به فروش · لوبیا چیتی ممتاز" });
   await expect(dialog).toBeVisible();
@@ -638,6 +640,7 @@ test("خرید و فروش مرحله‌ای: حفظ پیش‌نویس، محا�
   expect(Number(await getStock())).toBe(stockBefore + 2.5);
 
   await navigate(page, "فروش", "ثبت فروش", mobile);
+  await page.getByTestId(`product-group-${variant.product_id}`).click();
   await page.getByTestId(`product-card-${variant.id}`).click();
   itemDialog = page.getByRole("dialog");
   await itemDialog.getByRole("textbox", { name: "مقدار", exact: true }).fill("۱٫۵");
