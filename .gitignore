@@ -30,6 +30,11 @@ vite.config.d.ts
 *.sqlite3
 *.db
 .store-data.lock
+backend/media/
+
+# Local generated work files
+.artifact-work/
+outputs/
 
 # Logs and OS files
 *.log
