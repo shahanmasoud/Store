@@ -22,9 +22,20 @@ RECEIVED_BY_DEFAULT = {"cash", "card", "transfer"}
 
 
 def get_sales_form_options(db: Session) -> SalesFormOptionsRead:
+    products = catalog_service.list_products(db)
+    sales_by_product = dict(
+        db.execute(
+            select(ProductVariant.product_id, func.coalesce(func.sum(SaleInvoiceItem.quantity), 0))
+            .join(SaleInvoiceItem, SaleInvoiceItem.variant_id == ProductVariant.id)
+            .join(SaleInvoice, SaleInvoice.id == SaleInvoiceItem.invoice_id)
+            .where(SaleInvoice.status == "active", SaleInvoice.is_active.is_(True))
+            .group_by(ProductVariant.product_id)
+        ).all()
+    )
+    products.sort(key=lambda product: (-Decimal(sales_by_product.get(product.id, 0)), product.name.casefold(), product.id))
     return SalesFormOptionsRead(
         variants=catalog_service.list_variants(db),
-        products=catalog_service.list_products(db),
+        products=products,
         categories=catalog_service.list_categories(db),
         units=catalog_service.list_units(db),
         inventory=purchase_service.list_inventory(db),

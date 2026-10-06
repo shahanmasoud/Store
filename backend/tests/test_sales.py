@@ -130,6 +130,35 @@ def test_create_sale_calculates_totals_and_default_payment_statuses(
     assert transaction.sale_invoice_item_id == data["items"][0]["id"]
 
 
+def test_sales_form_options_rank_products_by_total_sold_quantity(
+    client: TestClient,
+    db_session: Session,
+    auth_headers: dict[str, str],
+) -> None:
+    unit = db_session.query(Unit).one()
+    category = db_session.query(Category).one()
+    unsold_product = Product(name="AAA Unsold", category=category)
+    unsold_variant = ProductVariant(
+        product=unsold_product,
+        unit=unit,
+        name="AAA Unsold Variant",
+        retail_price_rial=100_000,
+    )
+    db_session.add_all([unsold_product, unsold_variant])
+    db_session.commit()
+
+    before = client.get("/api/v1/sales/form-options", headers=auth_headers)
+    assert before.status_code == 200
+    assert before.json()["products"][0]["name"] == "AAA Unsold"
+
+    sale = client.post("/api/v1/sales", json=sale_payload(), headers=auth_headers)
+    assert sale.status_code == 201
+
+    after = client.get("/api/v1/sales/form-options", headers=auth_headers)
+    assert after.status_code == 200
+    assert after.json()["products"][0]["name"] == "Tarem Rice"
+
+
 def test_sale_endpoint_accepts_localized_money_quantity_date_and_reference(
     client: TestClient,
     auth_headers: dict[str, str],
