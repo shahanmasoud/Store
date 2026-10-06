@@ -84,8 +84,17 @@ function BaleCustomerLogin({ onToast }: { onToast: (message: string) => void }) 
   const [challenge, setChallenge] = useState<BaleLoginChallenge | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [secondsLeft, setSecondsLeft] = useState(120);
+  const [configurationReady, setConfigurationReady] = useState(false);
   const exchangeStarted = useRef(false);
   const pollingFailures = useRef(0);
+
+  useEffect(() => {
+    let active = true;
+    api.baleConfigurationStatus()
+      .then((result) => { if (active) setConfigurationReady(result.configured); })
+      .catch(() => { if (active) setConfigurationReady(false); });
+    return () => { active = false; };
+  }, []);
 
   const exchangeChallenge = useCallback(async (challengeId: string) => {
     if (exchangeStarted.current) return;
@@ -257,6 +266,8 @@ function BaleCustomerLogin({ onToast }: { onToast: (message: string) => void }) 
     setOpen(false);
     onToast("از حساب مشتری خارج شدید");
   }
+
+  if (!configurationReady && state !== "authenticated") return null;
 
   return (
     <>

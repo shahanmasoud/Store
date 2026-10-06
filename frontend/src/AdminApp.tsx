@@ -2854,6 +2854,11 @@ function OnlineView({ onBack }: { onBack: () => void }) {
   const [orderStatusFilter, setOrderStatusFilter] = useState("");
   const [orderSearch, setOrderSearch] = useState("");
   const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
+  const [baleConfigured, setBaleConfigured] = useState(false);
+  const [baleUsername, setBaleUsername] = useState<string | null>(null);
+  const [baleToken, setBaleToken] = useState("");
+  const [showBaleToken, setShowBaleToken] = useState(false);
+  const [baleSaving, setBaleSaving] = useState(false);
 
   async function loadSection(section: OnlineSection) {
     setStates((current) => ({ ...current, [section]: "loading" }));
@@ -2871,7 +2876,26 @@ function OnlineView({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     (["channels", "rules", "reservations", "orders", "variants"] as OnlineSection[]).forEach((section) => { loadSection(section); });
+    api.baleConfigurationStatus().then((result) => {
+      setBaleConfigured(result.configured);
+      setBaleUsername(result.bot_username ?? null);
+    }).catch(() => undefined);
   }, []);
+
+  async function submitBaleConfiguration(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (baleToken.trim().length < 20) return;
+    setBaleSaving(true); setNotice(null);
+    try {
+      const result = await api.updateBaleConfiguration(baleToken.trim());
+      setBaleConfigured(result.configured);
+      setBaleUsername(result.bot_username ?? null);
+      setBaleToken(""); setShowBaleToken(false);
+      setNotice({ type: "success", text: "توکن بررسی و ذخیره شد؛ ورود با بله در فروشگاه فعال است." });
+    } catch (error) {
+      setNotice({ type: "error", text: error instanceof Error ? error.message : "فعال‌سازی ورود با بله انجام نشد." });
+    } finally { setBaleSaving(false); }
+  }
 
   async function submitChannel(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2944,7 +2968,7 @@ function OnlineView({ onBack }: { onBack: () => void }) {
       {notice ? <Alert severity={notice.type} onClose={() => setNotice(null)}>{notice.text}</Alert> : null}
       <section className="sale-panel online-tabs-panel">
         <Tabs value={tab} onChange={(_, value) => setTab(value)} variant="scrollable" scrollButtons="auto" aria-label="بخش‌های عملیات آنلاین">
-          <Tab label="کانال‌ها" /><Tab label="قیمت‌ها" /><Tab label="رزروها" /><Tab label="سفارش‌ها" />
+          <Tab label="کانال‌ها" /><Tab label="قیمت‌ها" /><Tab label="رزروها" /><Tab label="سفارش‌ها" /><Tab label="ورود با بله" />
         </Tabs>
       </section>
 
@@ -2995,6 +3019,19 @@ function OnlineView({ onBack }: { onBack: () => void }) {
         {states.orders === "ready" && orders.length > 0 && filteredOrders.length === 0 ? <div className="record-state"><SearchRounded /><strong>سفارشی با این فیلتر پیدا نشد</strong></div> : null}
         <div className="online-order-list">{filteredOrders.map((order) => <article key={order.id} className="online-order-card"><button type="button" className="online-order-summary" onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)} aria-expanded={expandedOrder === order.id}><div><strong>سفارش {toPersianDigits(order.external_order_id)}</strong><small>{channelNameFor(order.channel_id)} • {order.customer_name || "مشتری نامشخص"}</small></div><div><strong>{formatRial(order.total_rial)}</strong><Chip size="small" color={order.status === "canceled" ? "error" : order.status === "pending" ? "warning" : "success"} label={orderStatusLabel(order.status)} /></div></button>{expandedOrder === order.id ? <div className="online-order-details"><div className="online-order-meta"><span><small>تاریخ</small><strong>{toPersianDigits(order.jalali_date)}، {toPersianDigits(order.local_time)}</strong></span><span><small>تلفن مشتری</small><strong>{order.customer_phone ? toPersianDigits(order.customer_phone) : "ثبت نشده"}</strong></span><span><small>جمع قبل تخفیف</small><strong>{formatRial(order.subtotal_rial)}</strong></span><span><small>تخفیف</small><strong>{formatRial(order.discount_amount_rial)}</strong></span></div><div className="online-order-lines">{order.items.map((item) => <div key={item.id}><span><strong>{item.product_snapshot}</strong><small>{formatDecimal(item.quantity)} × {formatRial(item.unit_price_rial)}</small></span><strong>{formatRial(item.line_total_rial)}</strong></div>)}</div></div> : null}</article>)}</div>
       </section> : null}
+
+      {tab === 4 ? <div className="online-split">
+        <form className="sale-panel online-form" onSubmit={submitBaleConfiguration} noValidate>
+          <div className="ledger-section-heading"><div><strong>اتصال بازوی بله</strong><small>توکن بازو را وارد کنید تا ورود مشتریان فعال شود</small></div></div>
+          <TextField type={showBaleToken ? "text" : "password"} label="توکن بازوی بله" value={baleToken} onChange={(event) => setBaleToken(event.target.value)} required disabled={baleSaving} error={baleToken.length > 0 && baleToken.trim().length < 20} helperText={baleToken.length > 0 && baleToken.trim().length < 20 ? "توکن واردشده کوتاه است." : "توکن با سرویس بله بررسی و به‌صورت رمزگذاری‌شده ذخیره می‌شود."} slotProps={{ htmlInput: { autoComplete: "new-password", dir: "ltr" }, input: { endAdornment: <InputAdornment position="end"><Button size="small" type="button" onClick={() => setShowBaleToken((value) => !value)}>{showBaleToken ? "پنهان" : "نمایش"}</Button></InputAdornment> } }} />
+          <Alert severity="info">پس از ذخیره موفق، نام بازو خودکار دریافت می‌شود و دکمه «ورود با بله» در فروشگاه نمایش داده خواهد شد.</Alert>
+          <Button type="submit" variant="contained" size="large" disabled={baleSaving || baleToken.trim().length < 20} startIcon={baleSaving ? <CircularProgress size={18} color="inherit" /> : <SyncRounded />}>{baleSaving ? "در حال بررسی…" : baleConfigured ? "جایگزینی توکن" : "بررسی و فعال‌سازی"}</Button>
+        </form>
+        <section className="sale-panel online-list-panel">
+          <div className="ledger-section-heading"><div><strong>وضعیت ورود مشتری</strong><small>توکن ذخیره‌شده از سرور قابل مشاهده نیست</small></div><Chip color={baleConfigured ? "success" : "default"} label={baleConfigured ? "فعال" : "غیرفعال"} /></div>
+          {baleConfigured ? <div className="record-state"><SyncRounded /><strong>ورود با بله فعال است</strong><span dir="ltr">@{baleUsername}</span><span>برای تغییر بازو، توکن جدید را در فرم وارد کنید.</span></div> : <div className="record-state"><SyncRounded /><strong>هنوز بازویی متصل نشده است</strong><span>توکن بازوی بله را وارد کنید.</span></div>}
+        </section>
+      </div> : null}
     </CrudWorkspace>
   );
 }

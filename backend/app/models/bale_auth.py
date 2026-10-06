@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -8,6 +8,18 @@ from app.db.base import Base
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class BaleBotConfiguration(Base):
+    __tablename__ = "bale_bot_configurations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    token_ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+    webhook_secret_ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+    bot_username: Mapped[str] = mapped_column(String(120), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class CustomerAccount(Base):

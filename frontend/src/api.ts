@@ -83,6 +83,7 @@ export type BaleLoginExchange = {
   return_path: string;
   customer: BaleCustomer;
 };
+export type BaleConfigurationStatus = { configured: boolean; bot_username?: string | null };
 export type PriceType = "retail" | "wholesale" | "online";
 export type PriceList = {
   id: number;
@@ -724,6 +725,15 @@ export const api = {
   },
   removeProductImage(id: number) {
     return request<ProductImageResult>(`/products/${id}/image`, { method: "DELETE" });
+  },
+  baleConfigurationStatus() {
+    return request<BaleConfigurationStatus>("/auth/bale/configuration/status");
+  },
+  updateBaleConfiguration(token: string) {
+    return request<BaleConfigurationStatus>("/auth/bale/configuration", {
+      method: "PUT",
+      body: JSON.stringify({ token }),
+    });
   },
   uploadVariantImage(id: number, file: File) {
     const body = new FormData();

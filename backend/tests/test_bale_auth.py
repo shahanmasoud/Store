@@ -12,7 +12,7 @@ from app.core.security import create_access_token, decode_access_token
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.bale_auth import BaleLoginChallenge, CustomerAccount
+from app.models.bale_auth import BaleBotConfiguration, BaleLoginChallenge, CustomerAccount
 from app.services import bale_auth as bale_service
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -277,6 +277,24 @@ def test_unconfigured_bale_login_returns_actionable_error(
     response = client.post("/api/v1/auth/bale/challenges", json={"return_path": "/"})
     assert response.status_code == 503
     assert response.json()["detail"] == "ورود با بله هنوز روی سرور پیکربندی نشده است."
+
+
+def test_saved_bale_configuration_is_encrypted_and_overrides_environment(
+    db_session: Session,
+) -> None:
+    bale_service.save_bale_configuration(
+        db_session,
+        token="1234567890:very-secret-bale-token",
+        bot_username="stored_bot",
+    )
+
+    stored = db_session.get(BaleBotConfiguration, 1)
+    assert stored is not None
+    assert "very-secret-bale-token" not in stored.token_ciphertext
+    username, token, webhook_secret = bale_service.require_bale_configuration(db_session)
+    assert username == "stored_bot"
+    assert token == "1234567890:very-secret-bale-token"
+    assert len(webhook_secret) >= 32
 
 
 def test_customer_me_rejects_missing_or_non_customer_token(client: TestClient) -> None:

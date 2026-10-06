@@ -6,6 +6,8 @@ from threading import Event, Lock, Thread
 from urllib import error, request
 
 from app.core.config import get_settings
+from app.db.session import SessionLocal
+from app.services.bale_auth import get_bale_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +48,16 @@ class BalePollingWorker:
                 self.stop_event.wait(3)
 
     def fetch_updates(self) -> list[dict]:
-        settings = get_settings()
+        with SessionLocal() as db:
+            credentials = get_bale_credentials(db)
+        if credentials is None:
+            return []
+        _, token, _ = credentials
         payload: dict[str, int] = {"timeout": 0, "limit": 50}
         if self.offset is not None:
             payload["offset"] = self.offset
         req = request.Request(
-            f"https://tapi.bale.ai/bot{settings.bale_bot_token.strip()}/getUpdates",
+            f"https://tapi.bale.ai/bot{token}/getUpdates",
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -64,9 +70,14 @@ class BalePollingWorker:
 
     def deliver_update(self, update_payload: dict) -> bool:
         settings = get_settings()
+        with SessionLocal() as db:
+            credentials = get_bale_credentials(db)
+        if credentials is None:
+            return False
+        _, _, webhook_secret = credentials
         webhook_url = (
             f"{settings.public_base_url.rstrip('/')}{settings.api_v1_prefix}"
-            f"/auth/bale/webhook/{settings.bale_webhook_secret}"
+            f"/auth/bale/webhook/{webhook_secret}"
         )
         req = request.Request(
             webhook_url,
@@ -86,11 +97,12 @@ _worker_lock = Lock()
 
 
 def start_bale_poller() -> None:
-    settings = get_settings()
-    if not settings.bale_polling_fallback:
-        return
-    if not settings.bale_bot_token.strip() or not settings.bale_webhook_secret.strip():
-        logger.error("Bale polling fallback is enabled but credentials are incomplete")
+    try:
+        with SessionLocal() as db:
+            configured = get_bale_credentials(db) is not None
+    except Exception:
+        configured = False
+    if not configured:
         return
     with _worker_lock:
         _worker.start()

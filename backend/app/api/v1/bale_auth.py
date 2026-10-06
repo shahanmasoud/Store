@@ -7,12 +7,14 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.core.security import create_access_token
 from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.bale_auth import CustomerAccount
+from app.api.v1.auth import require_superuser
 from app.schemas.bale_auth import (
+    BaleConfigurationRead,
+    BaleConfigurationUpdate,
     BaleChallengeCreate,
     BaleChallengeCreated,
     BaleChallengeExchange,
@@ -23,6 +25,7 @@ from app.services.bale_auth import (
     BaleBotGateway,
     BaleChallengeUnavailable,
     BaleIdentity,
+    BaleLoginError,
     BaleLoginNotConfigured,
     approve_challenge,
     as_utc,
@@ -30,13 +33,41 @@ from app.services.bale_auth import (
     exchange_challenge,
     find_challenge_by_code,
     get_challenge,
+    get_bale_credentials,
+    save_bale_configuration,
+    validate_bale_token,
     utc_now,
 )
+from app.services.bale_poller import start_bale_poller
 
 router = APIRouter()
 customer_bearer = HTTPBearer(auto_error=False)
 CODE_PATTERN = re.compile(r"(?:^/start\s+)?(?P<code>\d{6})$")
 CALLBACK_PREFIX = "bale_login_confirm:"
+
+
+@router.get("/configuration/status", response_model=BaleConfigurationRead)
+def bale_configuration_status(db: Session = Depends(get_db)) -> BaleConfigurationRead:
+    credentials = get_bale_credentials(db)
+    return BaleConfigurationRead(configured=credentials is not None, bot_username=credentials[0] if credentials else None)
+
+
+@router.put(
+    "/configuration",
+    response_model=BaleConfigurationRead,
+    dependencies=[Depends(require_superuser)],
+)
+def update_bale_configuration(
+    payload: BaleConfigurationUpdate,
+    db: Session = Depends(get_db),
+) -> BaleConfigurationRead:
+    try:
+        username = validate_bale_token(payload.token)
+    except BaleLoginError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    save_bale_configuration(db, token=payload.token, bot_username=username)
+    start_bale_poller()
+    return BaleConfigurationRead(configured=True, bot_username=username)
 
 
 def remaining_seconds(expires_at) -> int:
@@ -135,12 +166,13 @@ def identity_from_update(source: dict, chat_id: object) -> BaleIdentity | None:
 
 @router.post("/webhook/{webhook_secret}", include_in_schema=False)
 def bale_webhook(webhook_secret: str, update_payload: dict, db: Session = Depends(get_db)) -> dict[str, bool]:
-    configured_secret = get_settings().bale_webhook_secret
+    credentials = get_bale_credentials(db)
+    configured_secret = credentials[2] if credentials else ""
     if not configured_secret or not secrets.compare_digest(webhook_secret, configured_secret):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
     try:
-        gateway = BaleBotGateway()
+        gateway = BaleBotGateway(db)
     except BaleLoginNotConfigured as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 

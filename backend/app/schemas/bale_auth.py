@@ -7,6 +7,15 @@ from pydantic import BaseModel, Field, field_validator
 BaleChallengeStatus = Literal["pending", "approved", "consumed", "expired"]
 
 
+class BaleConfigurationUpdate(BaseModel):
+    token: str = Field(min_length=20, max_length=300)
+
+
+class BaleConfigurationRead(BaseModel):
+    configured: bool
+    bot_username: str | None = None
+
+
 class BaleChallengeCreate(BaseModel):
     return_path: str = Field(default="/", min_length=1, max_length=255)
 

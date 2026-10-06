@@ -5,16 +5,18 @@ import hmac
 import json
 import logging
 import secrets
+from base64 import urlsafe_b64encode
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from urllib import error, request
 from uuid import uuid4
 
+from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models.bale_auth import BaleLoginChallenge, CustomerAccount
+from app.models.bale_auth import BaleBotConfiguration, BaleLoginChallenge, CustomerAccount
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,63 @@ class BaleLoginNotConfigured(BaleLoginError):
 
 class BaleChallengeUnavailable(BaleLoginError):
     pass
+
+
+def _configuration_cipher() -> Fernet:
+    digest = hashlib.sha256(get_settings().secret_key.encode("utf-8")).digest()
+    return Fernet(urlsafe_b64encode(digest))
+
+
+def _encrypt(value: str) -> str:
+    return _configuration_cipher().encrypt(value.encode("utf-8")).decode("ascii")
+
+
+def _decrypt(value: str) -> str:
+    try:
+        return _configuration_cipher().decrypt(value.encode("ascii")).decode("utf-8")
+    except InvalidToken as exc:
+        raise BaleLoginNotConfigured("اطلاعات بازوی بله با کلید فعلی سرور قابل خواندن نیست.") from exc
+
+
+def get_bale_credentials(db: Session) -> tuple[str, str, str] | None:
+    config = db.get(BaleBotConfiguration, 1)
+    if config and config.is_active:
+        return config.bot_username, _decrypt(config.token_ciphertext), _decrypt(config.webhook_secret_ciphertext)
+    settings = get_settings()
+    username = settings.bale_bot_username.strip().lstrip("@")
+    token = settings.bale_bot_token.strip()
+    secret = settings.bale_webhook_secret.strip()
+    return (username, token, secret) if username and token and secret else None
+
+
+def validate_bale_token(token: str) -> str:
+    clean_token = token.strip()
+    req = request.Request(f"https://tapi.bale.ai/bot{clean_token}/getMe", method="GET")
+    try:
+        with request.urlopen(req, timeout=10) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except (error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        raise BaleLoginError("ارتباط با بله برای بررسی توکن برقرار نشد.") from exc
+    username = str((result.get("result") or {}).get("username") or "").strip().lstrip("@")
+    if not result.get("ok") or not username:
+        raise BaleLoginError("توکن بازوی بله معتبر نیست یا نام کاربری بازو دریافت نشد.")
+    return username
+
+
+def save_bale_configuration(db: Session, *, token: str, bot_username: str) -> BaleBotConfiguration:
+    config = db.get(BaleBotConfiguration, 1)
+    webhook_secret = secrets.token_urlsafe(32)
+    if config is None:
+        config = BaleBotConfiguration(id=1, token_ciphertext="", webhook_secret_ciphertext="", bot_username=bot_username)
+        db.add(config)
+    config.token_ciphertext = _encrypt(token.strip())
+    config.webhook_secret_ciphertext = _encrypt(webhook_secret)
+    config.bot_username = bot_username
+    config.is_active = True
+    config.updated_at_utc = utc_now()
+    db.commit()
+    db.refresh(config)
+    return config
 
 
 @dataclass(frozen=True)
@@ -54,16 +113,15 @@ def hash_login_code(code: str) -> str:
     return hmac.new(secret, code.encode("ascii"), hashlib.sha256).hexdigest()
 
 
-def require_bale_configuration() -> tuple[str, str]:
-    settings = get_settings()
-    username = settings.bale_bot_username.strip().lstrip("@")
-    if not settings.bale_bot_token.strip() or not username or not settings.bale_webhook_secret.strip():
+def require_bale_configuration(db: Session) -> tuple[str, str, str]:
+    credentials = get_bale_credentials(db)
+    if credentials is None:
         raise BaleLoginNotConfigured("ورود با بله هنوز روی سرور پیکربندی نشده است.")
-    return username, settings.bale_bot_token.strip()
+    return credentials
 
 
 def create_challenge(db: Session, *, return_path: str) -> tuple[BaleLoginChallenge, str, str]:
-    username, _ = require_bale_configuration()
+    username, _, _ = require_bale_configuration(db)
     settings = get_settings()
     now = utc_now()
     ttl_seconds = settings.bale_login_ttl_seconds
@@ -223,8 +281,8 @@ def exchange_challenge(db: Session, *, challenge_id: str) -> tuple[BaleLoginChal
 
 
 class BaleBotGateway:
-    def __init__(self) -> None:
-        _, token = require_bale_configuration()
+    def __init__(self, db: Session) -> None:
+        _, token, _ = require_bale_configuration(db)
         self.base_url = f"https://tapi.bale.ai/bot{token}"
 
     def call(self, method: str, payload: dict) -> None:
