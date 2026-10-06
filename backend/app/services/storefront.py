@@ -66,7 +66,7 @@ def list_public_catalog(db: Session) -> list[StorefrontCatalogItem]:
             unit_symbol=unit.symbol,
             retail_price_rial=variant.retail_price_rial,
             available_quantity=max(Decimal("0"), (inventory.quantity_on_hand if inventory else Decimal("0")) - Decimal(reserved or 0)),
-            image_url=variant.image_url,
+            image_url=variant.image_url or product.image_url,
         )
         for variant, product, category, unit, inventory, reserved in rows
     ]
