@@ -21,13 +21,54 @@ export function ProductCardPicker({ variants, catalog, value, onSelect, quantiti
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const products = useMemo(() => new Map(catalog.products.map((item) => [item.id, item])), [catalog.products]);
   const units = useMemo(() => new Map(catalog.units.map((item) => [item.id, item.name])), [catalog.units]);
+  const orderedCategories = useMemo(() => {
+    const children = new Map<number | null, Category[]>();
+    catalog.categories.forEach((item) => {
+      const parentId = item.parent_id ?? null;
+      children.set(parentId, [...(children.get(parentId) ?? []), item]);
+    });
+    children.forEach((items) => items.sort((a, b) => a.name.localeCompare(b.name, "fa")));
+    const result: Array<Category & { depth: number }> = [];
+    const seen = new Set<number>();
+    const visit = (parentId: number | null, depth: number) => {
+      (children.get(parentId) ?? []).forEach((item) => {
+        if (seen.has(item.id)) return;
+        seen.add(item.id);
+        result.push({ ...item, depth });
+        visit(item.id, depth + 1);
+      });
+    };
+    visit(null, 0);
+    catalog.categories.forEach((item) => {
+      if (!seen.has(item.id)) result.push({ ...item, depth: 0 });
+    });
+    return result;
+  }, [catalog.categories]);
+  const selectedCategoryIds = useMemo(() => {
+    if (!category || category === "none") return null;
+    const rootId = Number(category);
+    const ids = new Set<number>([rootId]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      catalog.categories.forEach((item) => {
+        if (item.parent_id != null && ids.has(item.parent_id) && !ids.has(item.id)) {
+          ids.add(item.id);
+          changed = true;
+        }
+      });
+    }
+    return ids;
+  }, [catalog.categories, category]);
+  const matchesCategory = (categoryId: number | null | undefined) => !category
+    || (category === "none" ? categoryId == null : selectedCategoryIds?.has(categoryId ?? -1) === true);
   const selected = variants.find((variant) => String(variant.id) === value);
   const hierarchical = mode === "sale";
   const productRows = useMemo(() => catalog.products.map((product) => ({ product, variants: variants.filter((variant) => variant.product_id === product.id) })).filter((row) => row.variants.length > 0), [catalog.products, variants]);
-  const filteredProducts = productRows.filter(({ product, variants: childVariants }) => (!category || String(product.category_id ?? "none") === category) && normalizeSearch(`${product.name} ${product.description ?? ""} ${childVariants.map((variant) => `${variant.name} ${variant.sku ?? ""}`).join(" ")}`).includes(normalizeSearch(search)));
+  const filteredProducts = productRows.filter(({ product, variants: childVariants }) => matchesCategory(product.category_id) && normalizeSearch(`${product.name} ${product.description ?? ""} ${childVariants.map((variant) => `${variant.name} ${variant.sku ?? ""}`).join(" ")}`).includes(normalizeSearch(search)));
   const filteredVariants = variants.filter((variant) => {
     const product = products.get(variant.product_id);
-    return (!hierarchical || selectedProductId === null || variant.product_id === selectedProductId) && (!category || String(product?.category_id ?? "none") === category) && normalizeSearch(`${variant.name} ${variant.sku ?? ""} ${product?.name ?? ""}`).includes(normalizeSearch(search));
+    return (!hierarchical || selectedProductId === null || variant.product_id === selectedProductId) && matchesCategory(product?.category_id) && normalizeSearch(`${variant.name} ${variant.sku ?? ""} ${product?.name ?? ""}`).includes(normalizeSearch(search));
   });
   const activeProduct = selectedProductId === null ? undefined : products.get(selectedProductId);
   const showingProducts = hierarchical && selectedProductId === null;
@@ -39,7 +80,7 @@ export function ProductCardPicker({ variants, catalog, value, onSelect, quantiti
     <div className="product-picker-filters">
       <TextField size="small" label={showingProducts ? "جستجوی کالا" : "جستجوی گونه"} placeholder={showingProducts ? "نام کالا" : "نام یا کد گونه"} value={search} onChange={(event) => setSearch(event.target.value)} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} />
       <TextField select size="small" slotProps={{ select: { displayEmpty: true } }} label="دسته‌بندی کالا" value={category} onChange={(event) => { setCategory(event.target.value); if (activeProduct) setSelectedProductId(null); }}>
-        <MenuItem value="">همه دسته‌ها</MenuItem>{catalog.categories.map((item) => <MenuItem key={item.id} value={String(item.id)}>{item.name}</MenuItem>)}<MenuItem value="none">بدون دسته‌بندی</MenuItem>
+        <MenuItem value="">همه دسته‌ها</MenuItem>{orderedCategories.map((item) => <MenuItem key={item.id} value={String(item.id)}>{`${"— ".repeat(item.depth)}${item.name}`}</MenuItem>)}<MenuItem value="none">بدون دسته‌بندی</MenuItem>
       </TextField>
     </div>
     <div className="product-picker-count" role="status">{toPersianDigits(visibleCount)} {showingProducts ? "کالا" : hierarchical ? "گونه" : "کالا"}{selected ? ` · انتخاب فعلی: ${selected.name}` : ""}</div>
