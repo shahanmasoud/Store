@@ -1575,6 +1575,8 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
     return result;
   }, [categories]);
 
+  const categoryById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
+
   const unavailableParentIds = useMemo(() => {
     if (editingCategoryId === null) return new Set<number>();
     const ids = new Set<number>([editingCategoryId]);
@@ -2022,8 +2024,8 @@ function ProductsView({ onBack, isSuperuser }: { onBack: () => void; isSuperuser
             {categoryStatus === "ready" && orderedCategories.length > 0 ? (
               <div className="category-list">
                 {orderedCategories.map((category) => (
-                  <article className="category-item" key={category.id} style={{ "--category-depth": Math.min(category.depth, 4) } as CSSProperties}>
-                    <div className="category-item-name"><FolderOutlined /><div><strong>{category.name}</strong><small>{category.parent_id == null ? "دسته اصلی" : "زیرمجموعه"}</small></div></div>
+                  <article className={`category-item ${category.parent_id == null ? "category-item-root" : "category-item-child"}`} key={category.id} style={{ "--category-depth": Math.min(category.depth, 4) } as CSSProperties}>
+                    <div className="category-item-name"><FolderOutlined /><div><strong>{category.name}</strong><small><span className="category-level-badge">{category.parent_id == null ? "دسته اصلی" : "زیرمجموعه"}</span>{category.parent_id == null ? "گروه مادر" : `زیرِ ${categoryById.get(category.parent_id)?.name ?? "دسته اصلی"}`}</small></div></div>
                     <div className="category-item-actions">
                       <Button type="button" variant="text" startIcon={<EditRounded />} onClick={() => startCategoryEdit(category)} disabled={deactivatingCategoryId !== null}>ویرایش</Button>
                       {isSuperuser ? <Button type="button" color="error" variant="text" startIcon={deactivatingCategoryId === category.id ? <CircularProgress size={17} color="inherit" /> : <DeleteOutlineRounded />} onClick={() => setPendingDeactivateCategory(category)} disabled={deactivatingCategoryId !== null}>غیرفعال</Button> : null}
