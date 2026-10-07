@@ -41,6 +41,10 @@ export type StorefrontProduct = {
   description?: string | null;
   category_id?: number | null;
   category_name?: string | null;
+  main_category_id?: number | null;
+  main_category_name?: string | null;
+  subcategory_id?: number | null;
+  subcategory_name?: string | null;
   unit_id: number;
   unit_name: string;
   unit_symbol?: string | null;

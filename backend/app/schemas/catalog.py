@@ -127,6 +127,10 @@ class StorefrontCatalogItem(BaseModel):
     description: str | None
     category_id: int | None
     category_name: str | None
+    main_category_id: int | None
+    main_category_name: str | None
+    subcategory_id: int | None
+    subcategory_name: str | None
     unit_id: int
     unit_name: str
     unit_symbol: str

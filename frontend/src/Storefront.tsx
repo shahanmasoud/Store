@@ -382,7 +382,8 @@ function BaleCustomerLogin({ onToast }: { onToast: (message: string) => void }) 
 }
 
 export default function Storefront({ onOpenAdmin }: StorefrontProps) {
-  const [category, setCategory] = useState("همه");
+  const [mainCategory, setMainCategory] = useState("همه");
+  const [subcategory, setSubcategory] = useState("همه");
   const [query, setQuery] = useState("");
   const [products, setProducts] = useState<StorefrontProduct[]>([]);
   const [catalogState, setCatalogState] = useState<CatalogState>("loading");
@@ -416,16 +417,18 @@ export default function Storefront({ onOpenAdmin }: StorefrontProps) {
 
   useEffect(() => { void loadProducts(); }, [loadProducts]);
 
-  const categories = useMemo(() => ["همه", ...Array.from(new Set(products.map((item) => item.category_name?.trim() || "بدون دسته")))], [products]);
+  const mainCategories = useMemo(() => ["همه", ...Array.from(new Set(products.map((item) => item.main_category_name?.trim() || "بدون دسته")))], [products]);
+  const subcategories = useMemo(() => ["همه", ...Array.from(new Set(products.filter((item) => mainCategory === "همه" || (item.main_category_name?.trim() || "بدون دسته") === mainCategory).map((item) => item.subcategory_name?.trim()).filter((name): name is string => Boolean(name))))], [mainCategory, products]);
   const visibleProducts = useMemo(() => {
     return products.filter((product) => {
-      const productCategory = product.category_name?.trim() || "بدون دسته";
+      const productMainCategory = product.main_category_name?.trim() || "بدون دسته";
+      const productSubcategory = product.subcategory_name?.trim() || "";
       const normalizedQuery = query.trim().toLocaleLowerCase("fa");
-      const matchesCategory = category === "همه" || productCategory === category;
+      const matchesCategory = (mainCategory === "همه" || productMainCategory === mainCategory) && (subcategory === "همه" || productSubcategory === subcategory);
       const matchesQuery = !normalizedQuery || `${product.variant_name} ${product.product_name} ${product.description ?? ""} ${product.sku ?? ""}`.toLocaleLowerCase("fa").includes(normalizedQuery);
       return matchesCategory && matchesQuery;
     }).sort((left, right) => Number(Number(right.available_quantity) > 0) - Number(Number(left.available_quantity) > 0));
-  }, [category, products, query]);
+  }, [mainCategory, products, query, subcategory]);
 
   const cartItems = products.filter((product) => cart[product.variant_id]);
   const cartCount = Object.values(cart).reduce((sum, quantity) => sum + quantity, 0);
@@ -456,8 +459,8 @@ export default function Storefront({ onOpenAdmin }: StorefrontProps) {
             <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }} className="storefront-brand">
               <Box className="storefront-logo"><StorefrontRounded /></Box>
               <Box>
-                <Typography variant="h6">حبوباتین</Typography>
-                <Typography variant="caption" color="text.secondary">خرید تازه و مطمئن</Typography>
+                <Typography variant="h6">خوش‌چین</Typography>
+                <Typography variant="caption" color="text.secondary">خوش‌چین انتخاب کن • khoshchin.ir</Typography>
               </Box>
             </Stack>
             <TextField
@@ -487,8 +490,8 @@ export default function Storefront({ onOpenAdmin }: StorefrontProps) {
         <Container maxWidth="xl" className="storefront-hero-inner">
           <Box className="storefront-hero-copy">
             <Chip icon={<VerifiedRounded />} label="تضمین تازگی و کیفیت" color="primary" variant="outlined" />
-            <Typography component="h1" variant="h2">خرید روزانه، تازه و بی‌دردسر</Typography>
-            <Typography color="text.secondary">حبوبات، برنج و غلات منتخب را با قیمت روشن انتخاب کن و سفارش را در چند قدم کوتاه ثبت کن.</Typography>
+            <Typography component="h1" variant="h2">خوش‌چین؛ انتخاب خوش‌طعم هر روز</Typography>
+            <Typography color="text.secondary">حبوبات، برنج و غلات تازه و دست‌چین را با قیمت شفاف انتخاب کن؛ سفارش ساده، کیفیت مطمئن و ارسال سریع.</Typography>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
               <Button variant="contained" size="large" endIcon={<ArrowBackRounded />} href="#products">مشاهده محصولات</Button>
               <Button variant="outlined" size="large" startIcon={<LocalShippingRounded />}>ارسال سریع تهران</Button>
@@ -506,11 +509,13 @@ export default function Storefront({ onOpenAdmin }: StorefrontProps) {
           <Typography color="text.secondary">{catalogState === "ready" ? `${visibleProducts.length.toLocaleString("fa-IR")} کالا` : "کاتالوگ آنلاین"}</Typography>
         </Box>
 
+        <Typography variant="subtitle2" color="text.secondary">دسته‌های اصلی</Typography>
         <Stack direction="row" spacing={1} className="category-scroll">
-          {categories.map((item) => (
-            <Chip key={item} label={item} clickable color={category === item ? "primary" : "default"} variant={category === item ? "filled" : "outlined"} onClick={() => setCategory(item)} />
+          {mainCategories.map((item) => (
+            <Chip key={item} label={item} clickable color={mainCategory === item ? "primary" : "default"} variant={mainCategory === item ? "filled" : "outlined"} onClick={() => { setMainCategory(item); setSubcategory("همه"); }} />
           ))}
         </Stack>
+        {subcategories.length > 1 ? <><Typography variant="subtitle2" color="text.secondary">زیرمجموعه‌ها</Typography><Stack direction="row" spacing={1} className="category-scroll">{subcategories.map((item) => <Chip key={item} label={item} clickable color={subcategory === item ? "secondary" : "default"} variant={subcategory === item ? "filled" : "outlined"} onClick={() => setSubcategory(item)} />)}</Stack></> : null}
 
         {catalogState === "loading" ? (
           <Box className="storefront-product-grid" aria-label="در حال بارگذاری کالاها" aria-busy="true">
@@ -553,7 +558,7 @@ export default function Storefront({ onOpenAdmin }: StorefrontProps) {
             ))}
           </Box>
         ) : null}
-        {catalogState === "ready" && !visibleProducts.length ? products.length ? <Box className="storefront-empty"><SearchRounded /><Typography variant="h6">کالایی با این جست‌وجو پیدا نشد</Typography><Button onClick={() => { setQuery(""); setCategory("همه"); }}>پاک‌کردن فیلترها</Button></Box> : <Box className="storefront-empty"><StorefrontRounded /><Typography variant="h6">هنوز کالایی برای فروش آماده نیست</Typography><Typography color="text.secondary">پس از ثبت و فعال‌کردن کالا، اینجا نمایش داده می‌شود.</Typography><Button variant="outlined" startIcon={<RefreshRounded />} onClick={() => void loadProducts()}>تازه‌سازی</Button></Box> : null}
+        {catalogState === "ready" && !visibleProducts.length ? products.length ? <Box className="storefront-empty"><SearchRounded /><Typography variant="h6">کالایی با این جست‌وجو پیدا نشد</Typography><Button onClick={() => { setQuery(""); setMainCategory("همه"); setSubcategory("همه"); }}>پاک‌کردن فیلترها</Button></Box> : <Box className="storefront-empty"><StorefrontRounded /><Typography variant="h6">هنوز کالایی برای فروش آماده نیست</Typography><Typography color="text.secondary">پس از ثبت و فعال‌کردن کالا، اینجا نمایش داده می‌شود.</Typography><Button variant="outlined" startIcon={<RefreshRounded />} onClick={() => void loadProducts()}>تازه‌سازی</Button></Box> : null}
 
         <Box className="storefront-trust-band">
           <Stack><VerifiedRounded color="primary" /><Box><Typography sx={{ fontWeight: 900 }}>کنترل کیفیت</Typography><Typography variant="body2" color="text.secondary">بررسی تازگی پیش از بسته‌بندی</Typography></Box></Stack>

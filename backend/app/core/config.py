@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "اتوماسیون فروشگاه حبوبات"
+    app_name: str = "فروشگاه خوش‌چین"
     api_v1_prefix: str = "/api/v1"
     database_url: str = Field(
         default_factory=lambda: f"sqlite:///{(Path(__file__).resolve().parents[2] / 'store.db').as_posix()}"

@@ -565,7 +565,7 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
           <div className="brand-mark">
             <span aria-hidden="true">ح</span>
           </div>
-          <p className="eyebrow">اتوماسیون فروشگاه حبوبات</p>
+          <p className="eyebrow">مدیریت فروشگاه خوش‌چین</p>
           <h1 id="login-title">مدیریت فروشگاه، ساده و سریع</h1>
           <p className="intro">
             برای ورود به داشبورد و مدیریت فروش، خرید و موجودی حساب مدیر را وارد کنید.
@@ -607,7 +607,7 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
       <aside className="app-sidebar" aria-label="ناوبری اصلی">
         <div className="sidebar-brand">
           <span className="sidebar-logo" aria-hidden="true">ح</span>
-          <div><strong>حبوباتین</strong><small>پنل مدیریت</small></div>
+          <div><strong>خوش‌چین</strong><small>پنل مدیریت</small></div>
         </div>
         {renderNavigation()}
       </aside>
@@ -620,7 +620,7 @@ function AdminApp({ onOpenStore }: { onOpenStore: () => void }) {
         slotProps={{ paper: { component: "aside", "aria-label": "منوی بخش‌های مدیریت" } }}
       >
         <div className="mobile-drawer-header">
-          <div className="sidebar-brand"><span className="sidebar-logo" aria-hidden="true">ح</span><div><strong>حبوباتین</strong><small>پنل مدیریت</small></div></div>
+          <div className="sidebar-brand"><span className="sidebar-logo" aria-hidden="true">خ</span><div><strong>خوش‌چین</strong><small>پنل مدیریت</small></div></div>
           <IconButton aria-label="بستن منوی مدیریت" onClick={() => setMobileNavOpen(false)}><CloseRounded /></IconButton>
         </div>
         {renderNavigation()}
